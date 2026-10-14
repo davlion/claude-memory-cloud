@@ -20,13 +20,18 @@ export async function s256(verifier: string): Promise<string> {
 }
 
 async function tokenRequest(env: Env, params: Record<string, string>) {
-  const res = await fetch("https://github.com/login/oauth/access_token", {
-    method: "POST",
-    headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded", "user-agent": "claude-memory-cloud" },
-    body: new URLSearchParams({ client_id: env.GITHUB_CLIENT_ID, client_secret: env.GITHUB_CLIENT_SECRET, ...params }),
-  });
-  const data = (res.ok ? await res.json() : {}) as Record<string, unknown>;
-  return { res, data };
+  // Network errors and non-JSON bodies are reported as { ok: false, data: {} } rather than thrown.
+  try {
+    const res = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded", "user-agent": "claude-memory-cloud" },
+      body: new URLSearchParams({ client_id: env.GITHUB_CLIENT_ID, client_secret: env.GITHUB_CLIENT_SECRET, ...params }),
+    });
+    const data = (res.ok ? await res.json() : {}) as Record<string, unknown>;
+    return { res: { ok: res.ok, status: res.status }, data };
+  } catch {
+    return { res: { ok: false, status: 0 }, data: {} as Record<string, unknown> };
+  }
 }
 
 export async function exchangeCode(env: Env, code: string, verifier: string) {
@@ -38,9 +43,9 @@ export async function exchangeCode(env: Env, code: string, verifier: string) {
 export async function refreshGitHubToken(env: Env, refreshToken: string) {
   const { res, data } = await tokenRequest(env, { grant_type: "refresh_token", refresh_token: refreshToken });
   if (res.ok && data.access_token) {
-    return { ok: true as const, accessToken: String(data.access_token), refreshToken: String(data.refresh_token ?? ""), expiresIn: Number(data.expires_in ?? 28800) };
+    return { ok: true as const, accessToken: String(data.access_token), refreshToken: data.refresh_token ? String(data.refresh_token) : refreshToken, expiresIn: Number(data.expires_in ?? 28800) };
   }
-  return { ok: false as const, revoked: res.ok && typeof data.error === "string" };
+  return { ok: false as const, revoked: res.ok && data.error === "bad_refresh_token" };
 }
 
 /** Refresh the upstream GitHub token when our refresh grant runs and GitHub's token is within 2h of expiry. */
@@ -75,7 +80,7 @@ export const authHandler = {
     } catch (e) {
       // Validation failures carry no secrets; render locally, or redirect only when the library says it is safe.
       if (e instanceof AuthorizationError) {
-        if (e.redirectTo) return new Response(null, { status: 302, headers: { Location: e.redirectTo } });
+        if (e.redirectTo && e.redirectUri && isAllowedRedirect(e.redirectUri)) return new Response(null, { status: 302, headers: { Location: e.redirectTo } });
         return html("<h1>Sign-in could not continue</h1><p>This page expired, was already used, or was opened in another browser. Start again from the app.</p>");
       }
       if (e instanceof CimdFetchError) return html("<h1>This app could not be verified</h1>");
@@ -120,12 +125,19 @@ async function handle(req: Request, env: Env): Promise<Response> {
         headers.set("Location", authorizationErrorRedirect(request, "access_denied"));
         return new Response(null, { status: 302, headers });
       }
-      const tok = await exchangeCode(env, code, data.verifier);
-      const userRes = await fetch("https://api.github.com/user", {
-        headers: { authorization: `Bearer ${tok.accessToken}`, accept: "application/vnd.github+json", "user-agent": "claude-memory-cloud" },
-      });
-      if (!userRes.ok) return html("<h1>GitHub sign-in failed</h1>", 502);
-      const user = (await userRes.json()) as { login: string; id: number };
+      const failed = () => html("<h1>Sign-in failed</h1><p>Please try connecting again.</p>", 502);
+      let tok: Awaited<ReturnType<typeof exchangeCode>>;
+      let user: { login: string; id: number };
+      try {
+        tok = await exchangeCode(env, code, data.verifier);
+        const userRes = await fetch("https://api.github.com/user", {
+          headers: { authorization: `Bearer ${tok.accessToken}`, accept: "application/vnd.github+json", "user-agent": "claude-memory-cloud" },
+        });
+        if (!userRes.ok) return failed();
+        user = (await userRes.json()) as { login: string; id: number };
+      } catch {
+        return failed();
+      }
       const props: Props = {
         login: user.login, githubToken: tok.accessToken, githubRefreshToken: tok.refreshToken,
         githubTokenExpiresAt: Date.now() + tok.expiresIn * 1000,
