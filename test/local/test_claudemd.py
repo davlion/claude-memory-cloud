@@ -33,7 +33,7 @@ class Block(unittest.TestCase):
         self.assertIn("memkit.py outbox-done <filename>", out)
 
     def test_template_example_matches_task5_fixture(self):
-        fx = FIXTURES / "outbox-example.md"
+        fx = FIXTURES / "outbox" / "20261013T180400Z-prefer-small-commits.md"
         if not fx.exists():
             self.skipTest("Task 5 fixture not present yet")
         tpl = (KIT / "templates" / "routing-rule.md").read_text()
@@ -44,6 +44,8 @@ class Block(unittest.TestCase):
         tpl = (KIT / "templates" / "routing-rule.md").read_text()
         flush = tpl[tpl.index("- **Flushing:**"):]
         self.assertIn("ONLY after a result of `created`, `updated` or `deleted`", flush)
+        self.assertIn("`conflict` for a `memory_save`", flush)
+        self.assertIn("`conflict` for a `memory_delete` (nothing was deleted)", flush)
         for word in ["conflict", "exists", "similar_found", "not_found", "rejected_secret", "repo_public", "write_rejected",
                      "invalid", "internal", "no_memory_repo_for_owner", "unknown_scope", "access_denied"]:
             self.assertIn(word, flush)
