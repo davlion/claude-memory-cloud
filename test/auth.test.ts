@@ -1,6 +1,6 @@
-import { exports } from "cloudflare:workers";
+import { env, exports } from "cloudflare:workers";
 import { expect, it } from "vitest";
-import { s256 } from "../src/github-auth";
+import { authHandler, s256 } from "../src/github-auth";
 import { json, mockFetch } from "./setup";
 
 const BASE = "https://memory.test";
@@ -16,7 +16,8 @@ const storeCookies = (res: Response) => {
 };
 const cookieHeader = () => [...cookieJar].map(([k, v]) => `${k}=${v}`).join("; ");
 const go = async (url: string, init: RequestInit = {}) => {
-  const res = await exports.default.fetch(url, { redirect: "manual", ...init, headers: { cookie: cookieHeader(), ...(init.headers ?? {}) } });
+  const res = await exports.default.fetch(url, { redirect: "manual", ...init,
+    headers: { cookie: cookieHeader(), "cf-connecting-ip": crypto.randomUUID(), ...(init.headers ?? {}) } });
   storeCookies(res);
   return res;
 };
@@ -92,21 +93,18 @@ it("register → consent → GitHub → callback → token → tools/list with p
   expect(instAuth.at(-1)).toBe("Bearer ghu_live");
 });
 
-it("rejects a disallowed redirect URI before showing consent", async () => {
+it("refuses to register a client with a non-allowlisted redirect URI", async () => {
   const reg = await go(`${BASE}/register`, { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ client_name: "Evil", redirect_uris: ["https://evil.example/cb"], token_endpoint_auth_method: "none" }) });
-  const { client_id } = (await reg.json()) as { client_id: string };
-  const res = await go(`${BASE}/authorize?` + new URLSearchParams({ response_type: "code", client_id, redirect_uri: "https://evil.example/cb",
-    state: "s", code_challenge: await s256("x".repeat(50)), code_challenge_method: "S256", resource: `${BASE}/mcp` }));
-  expect(res.status).toBe(400);
-  expect(await res.text()).toContain("Redirect URI not allowed");
+  expect(reg.status).toBe(400);
+  expect(await reg.json()).toMatchObject({ error: "invalid_redirect_uri" });
 });
 
-it("never redirects to a non-allowlisted URI on an invalid authorize request", async () => {
+it("never redirects to a non-allowlisted URI on an authorize request", async () => {
   const reg = await go(`${BASE}/register`, { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ client_name: "Evil", redirect_uris: ["https://evil.example/cb"], token_endpoint_auth_method: "none" }) });
+    body: JSON.stringify({ client_name: "Claude", redirect_uris: [CB], token_endpoint_auth_method: "none" }) });
   const { client_id } = (await reg.json()) as { client_id: string };
-  const res = await go(`${BASE}/authorize?` + new URLSearchParams({ response_type: "bogus", client_id, redirect_uri: "https://evil.example/cb",
+  const res = await go(`${BASE}/authorize?` + new URLSearchParams({ response_type: "code", client_id, redirect_uri: "https://evil.example/cb",
     state: "s", code_challenge: await s256("x".repeat(50)), code_challenge_method: "S256", resource: `${BASE}/mcp` }));
   expect(res.status).toBe(400);
   expect(res.headers.get("location")).toBeNull();
@@ -182,4 +180,25 @@ it("asks for consent every time (no remembered consent)", async () => {
   const second = await go(await authUrl("r2"));
   expect(second.status).toBe(200);
   expect(await second.text()).toContain('name="handle"');
+});
+
+it("/callback stores githubId and authorizedAt in the grant props", async () => {
+  const state = await startFlow("s-props");
+  mockFetch([
+    { method: "POST", url: "https://github.com/login/oauth/access_token", respond: () => json({ access_token: "ghu_x", refresh_token: "ghr_x", expires_in: 28800 }) },
+    { url: "https://api.github.com/user", respond: () => json({ login: "carol", id: 7 }) },
+  ]);
+  let seen: { props?: Record<string, unknown> } | undefined;
+  const oauth = new Proxy(env.OAUTH_PROVIDER, {
+    get: (t, k) => k === "completeAuthorization"
+      ? async (o: { props?: Record<string, unknown> }) => { seen = o; return { redirectTo: CB }; }
+      : (t as never)[k],
+  });
+  const before = Date.now();
+  const res = await authHandler.fetch(new Request(`${BASE}/callback?code=C&state=${state}`, { headers: { cookie: cookieHeader() } }),
+    { ...env, OAUTH_PROVIDER: oauth } as never);
+  expect(res.status).toBe(302);
+  expect(seen?.props).toMatchObject({ login: "carol", githubId: 7 });
+  expect(seen?.props?.authorizedAt as number).toBeGreaterThanOrEqual(before);
+  expect(seen?.props?.authorizedAt as number).toBeLessThanOrEqual(Date.now());
 });

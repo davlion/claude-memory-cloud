@@ -133,6 +133,11 @@ export function formatHealth(checks: Check[]): string {
 /** A commit the server made: it carries the Memory-Source trailer, or it's the server's README init commit. */
 export const isServerCommit = (message: string) => /^Memory-Source: /m.test(message) || message.trim() === "init: claude-memory";
 
+export const KV_WRITE_CHECK: Check = {
+  check: "kv_writes", status: "warn", detail: "Cloudflare KV writes are failing",
+  action: "The memory server's Cloudflare KV writes failed (on the Free plan: 1,000 writes/day, resets 00:00 UTC). Reads still work; signing in and token refresh may fail until then. Server owner: check the Cloudflare dashboard.",
+};
+
 /**
  * One warning per memory repo whose latest commit was made outside the server (spec §10b provenance check).
  * Only trusted values are printed: the author name, message and GitHub-supplied URL are attacker-controlled

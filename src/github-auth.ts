@@ -1,4 +1,4 @@
-import { AuthorizationError, authorizationErrorRedirect, CimdFetchError, OAuthError, type AuthRequest, type TokenExchangeCallbackResult } from "@cloudflare/workers-oauth-provider";
+import { AuthorizationError, authorizationErrorRedirect, CimdFetchError, OAuthError, type AuthRequest, type ClientRegistrationCallbackResult, type TokenExchangeCallbackResult } from "@cloudflare/workers-oauth-provider";
 import { consentPage, esc } from "./consent";
 import type { Env, Props } from "./env";
 import { parseScopeMap, scopesFor } from "./scopes";
@@ -13,6 +13,17 @@ export function isAllowedRedirect(uri: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** DCR filter (spec §10b): store a client only if every redirect URI is on the allowlist, so junk registrations cost nothing. */
+export function checkRegistration(meta: Record<string, unknown>): ClientRegistrationCallbackResult | undefined {
+  const uris = meta.redirect_uris;
+  if (Array.isArray(uris) && uris.length > 0 && uris.every((u) => typeof u === "string" && isAllowedRedirect(u))) return undefined;
+  return {
+    code: "invalid_redirect_uri",
+    description: "redirect_uris must be https://claude.ai/api/mcp/auth_callback, https://claude.com/api/mcp/auth_callback, or a loopback http:// URL",
+    status: 400,
+  };
 }
 
 export async function s256(verifier: string): Promise<string> {

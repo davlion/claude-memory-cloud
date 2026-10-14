@@ -53,14 +53,54 @@ describe("per-user scopes at /mcp", () => {
   });
   it("accepts a grant whose githubId matches the pin", async () => {
     await env.OAUTH_KV.put("allowlist:github-id:erin", "100");
-    expect((await call(100)).status).not.toBe(403);
+    expect((await call(100)).status).toBe(415); // past the pin; the bare body fails later
   });
   it("accepts when no pin exists", async () => {
     await env.OAUTH_KV.delete("allowlist:github-id:erin");
-    expect((await call(100)).status).not.toBe(403);
+    expect((await call(100)).status).toBe(415); // past the pin; the bare body fails later
   });
   it("accepts a legacy grant without githubId (login check still applies)", async () => {
     await env.OAUTH_KV.put("allowlist:github-id:erin", "100");
-    expect((await call()).status).not.toBe(403);
+    expect((await call()).status).toBe(415);
+  });
+});
+
+describe("pin read failure", () => {
+  it("answers a retryable 503 'unavailable' when OAUTH_KV throws", async () => {
+    const broken = { ...env, OAUTH_KV: { get: async () => { throw new Error("KV GET failed: 429"); } } } as never;
+    const props = { login: "erin", githubToken: "t", githubRefreshToken: "r", githubTokenExpiresAt: Date.now() + 3600_000, githubId: 100 };
+    const res = await mcpApi.fetch(new Request("https://memory.test/mcp", { method: "POST", body: "{}" }), broken, { props } as never);
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ error: "unavailable", retryable: true });
+  });
+});
+
+describe("rate limiting of unauthenticated KV-writing endpoints", () => {
+  const statuses = async (path: string, init: RequestInit) => {
+    const out: number[] = [];
+    // 25 > 2 × the limit of 10, so a 429 shows up even if a 60 s window rolls over mid-loop.
+    for (let i = 0; i < 25; i++) out.push((await exports.default.fetch(`https://memory.test${path}`, init)).status);
+    return out;
+  };
+  it("POST /register", async () => {
+    const s = await statuses("/register", { method: "POST", headers: { "content-type": "application/json", "cf-connecting-ip": "198.51.100.7" },
+      body: JSON.stringify({ client_name: "x", redirect_uris: ["https://claude.ai/api/mcp/auth_callback"], token_endpoint_auth_method: "none" }) });
+    expect(s[0]).toBe(201);
+    expect(s).toContain(429);
+  });
+  it("GET /authorize", async () => {
+    const s = await statuses("/authorize", { headers: { "cf-connecting-ip": "198.51.100.8" } });
+    expect(s[0]).not.toBe(429);
+    expect(s).toContain(429);
+  });
+  it("not /health", async () => {
+    expect(await statuses("/health", { headers: { "cf-connecting-ip": "198.51.100.9" } })).not.toContain(429);
+  });
+  it("429 carries retry-after: 60", async () => {
+    const init = { headers: { "cf-connecting-ip": "198.51.100.10" } };
+    let last!: Response;
+    for (let i = 0; i < 25; i++) { last = await exports.default.fetch("https://memory.test/authorize", init); if (last.status === 429) break; }
+    expect(last.status).toBe(429);
+    expect(last.headers.get("retry-after")).toBe("60");
   });
 });

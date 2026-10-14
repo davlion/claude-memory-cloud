@@ -141,6 +141,17 @@ describe("GitHubStore.snapshot", () => {
     expect(puts).toEqual([{ key: "snap:v1:dav/mem:c1:", opts: { expirationTtl: 604800 } }]);
   });
 
+  it("skips the cache for an oversized snapshot without flagging a write failure", async () => {
+    mockFetch(repoRoutes());
+    let puts = 0;
+    const kv = { get: async () => null, put: async () => { puts++; } } as unknown as KVNamespace;
+    const store = new GitHubStore(new GitHub("t"), kv);
+    store.maxCacheBytes = 10;
+    expect((await store.snapshot("dav/mem", "")).files.size).toBe(2);
+    expect(puts).toBe(0);
+    expect(store.cacheWriteFailed).toBe(false);
+  });
+
   it("truncated tree → error", async () => {
     mockFetch([...repoRoutes().filter((r) => !r.url.includes("/git/trees/")),
       { method: "GET", url: `${R}/git/trees/t-c1?recursive=1`, respond: () => json({ truncated: true, tree: [] }) }]);

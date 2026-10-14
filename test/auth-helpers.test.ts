@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { AuthorizationError } from "@cloudflare/workers-oauth-provider";
-import { authHandler, exchangeCode, GRANT_IDLE_SECONDS, isAllowedRedirect, isAllowedUser, refreshGitHubToken, s256, tokenExchangeCallback } from "../src/github-auth";
+import { authHandler, exchangeCode, GRANT_IDLE_SECONDS, checkRegistration, isAllowedRedirect, isAllowedUser, refreshGitHubToken, s256, tokenExchangeCallback } from "../src/github-auth";
 import { json, mockFetch } from "./setup";
 
 describe("isAllowedRedirect", () => {
@@ -177,4 +177,18 @@ describe("tokenExchangeCallback: grant lifetime and refresh resilience", () => {
     mockFetch([{ method: "POST", url, respond: () => json({}, 502) }]);
     await expect(call(expired)).rejects.toMatchObject({ code: "temporarily_unavailable" });
   });
+});
+
+describe("checkRegistration (DCR redirect filter)", () => {
+  it.each([
+    [["https://claude.ai/api/mcp/auth_callback"]],
+    [["https://claude.com/api/mcp/auth_callback", "http://localhost:3334/callback"]],
+  ])("allows %j", (uris) => expect(checkRegistration({ redirect_uris: uris })).toBeUndefined());
+  it.each([
+    [["https://evil.example/cb"]],
+    [["https://claude.ai/api/mcp/auth_callback", "https://evil.example/cb"]],
+    [[]],
+    [undefined],
+    [[42]],
+  ])("rejects %j", (uris) => expect(checkRegistration({ redirect_uris: uris })).toMatchObject({ code: "invalid_redirect_uri", status: 400 }));
 });

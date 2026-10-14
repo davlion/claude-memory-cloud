@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Props } from "./env";
 import { errorPayload, OpError } from "./errors";
 import { GitHub, toOpError } from "./github";
-import { formatHealth, provenanceChecks, runHealth, scopeReachability, type Check } from "./health";
+import { formatHealth, KV_WRITE_CHECK, provenanceChecks, runHealth, scopeReachability, type Check } from "./health";
 import { INSTRUCTIONS } from "./instructions";
 import {
   deleteMemory, getIndex, getIndexVersioned, readMemories, saveMemory, scopeFailure, searchMemories, type OpResult, type ScopeFailure,
@@ -112,6 +112,7 @@ async function memoryIndex(d: ToolDeps, a: Record<string, unknown>, nonce: strin
     }
   }
   health.push(...provenanceChecks(heads));
+  if (d.store.cacheWriteFailed) health.push(KV_WRITE_CHECK);
   return [preamble(nonce), healthBlock(health, nonce), ...blocks, sinceBlock(since, nonce)].join("\n\n");
 }
 

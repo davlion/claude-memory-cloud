@@ -10,6 +10,10 @@
     { "binding": "OAUTH_KV", "id": "<staging OAUTH_KV id>" },
     { "binding": "CACHE_KV", "id": "<staging CACHE_KV id>" }
   ],
+  // Workers rate-limiting binding (available on Free and Paid): 10 requests / 60 s per key on /register and GET /authorize.
+  "ratelimits": [
+    { "name": "AUTH_RATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }
+  ],
   // SCOPES is a secret (it names clients): npx wrangler secret put SCOPES [--env production] < scopes.<env>.json
   "vars": {
     "PUBLIC_URL": "https://claude-memory-staging.<subdomain>.workers.dev",
@@ -23,6 +27,9 @@
       "kv_namespaces": [
         { "binding": "OAUTH_KV", "id": "REPLACE_IN_PLAN_4" },
         { "binding": "CACHE_KV", "id": "REPLACE_IN_PLAN_4" }
+      ],
+      "ratelimits": [
+        { "name": "AUTH_RATE_LIMIT", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } }
       ],
       "vars": {
         "PUBLIC_URL": "https://claude-memory.<subdomain>.workers.dev",

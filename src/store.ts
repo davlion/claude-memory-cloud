@@ -34,6 +34,8 @@ Memories for Claude, maintained by the claude-memory-cloud server.
 
 /** Snapshot cache lifetime (spec §10b): memory text in KV lives at most a week. */
 export const CACHE_TTL_SECONDS = 7 * 24 * 3600;
+/** KV values max out at 25 MiB; a larger snapshot is simply not cached (that is not a KV write problem). */
+export const MAX_CACHE_BYTES = 24 * 1024 * 1024;
 const GRAPHQL_CHUNK = 100;
 const GRAPHQL_CONCURRENCY = 2;
 const OID_RE = /^[0-9a-f]{40}$/;
@@ -63,6 +65,8 @@ const isEmptyRepo = (e: unknown) =>
 
 export class GitHubStore implements Store {
   cacheWriteFailed = false;
+  /** Snapshots serialized larger than this skip the KV cache. Overridable for tests. */
+  maxCacheBytes = MAX_CACHE_BYTES;
   private meta = new Map<string, Promise<{ branch: string; isPrivate: boolean }>>();
   private heads = new Map<string, Promise<string | null>>();
   private trees = new Map<string, Promise<CommitTree>>();
@@ -128,7 +132,9 @@ export class GitHubStore implements Store {
   private async cachePut(key: string, v: CachedSnapshot): Promise<void> {
     if (!this.cache) return;
     try {
-      await this.cache.put(key, JSON.stringify(v), { expirationTtl: CACHE_TTL_SECONDS });
+      const body = JSON.stringify(v);
+      if (new TextEncoder().encode(body).length > this.maxCacheBytes) return; // too big for KV: skip, don't flag a write failure
+      await this.cache.put(key, body, { expirationTtl: CACHE_TTL_SECONDS });
     } catch {
       this.cacheWriteFailed = true;
     }

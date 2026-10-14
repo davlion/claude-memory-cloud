@@ -444,3 +444,15 @@ describe("nonce discipline and untrusted text", () => {
     expect(t).not.toContain("\n## Health [server:000000000000]");
   });
 });
+
+describe("KV write health", () => {
+  it("memory_index warns when a cache write failed during the request", async () => {
+    store.cacheWriteFailed = true;
+    healthyGitHub();
+    expect((await callTool(deps, "memory_index", {})).text).toContain("⚠ kv_writes — Cloudflare KV writes are failing");
+  });
+  it("silent otherwise", async () => {
+    healthyGitHub();
+    expect((await callTool(deps, "memory_index", {})).text).not.toContain("kv_writes");
+  });
+});

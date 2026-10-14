@@ -4,6 +4,7 @@ export interface Env {
   OAUTH_KV: KVNamespace;
   CACHE_KV: KVNamespace;
   OAUTH_PROVIDER: OAuthHelpers;
+  AUTH_RATE_LIMIT: RateLimit;
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
   PUBLIC_URL: string;
