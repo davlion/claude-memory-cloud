@@ -38,6 +38,7 @@ export function parseScopeMap(json: string): ScopeMap {
   for (const [login, scopes] of Object.entries(v)) {
     if (!LOGIN_RE.test(login)) throw new Error(`SCOPES: invalid GitHub login ${login}`);
     if (typeof scopes !== "object" || scopes === null) throw new Error(`SCOPES: scopes for ${login} must be an object`);
+    if (Object.hasOwn(out, login.toLowerCase())) throw new Error(`SCOPES: duplicate login ${login} (logins are case-insensitive)`);
     out[login.toLowerCase()] = validateScopes(scopes, `SCOPES.${login}`);
   }
   return out;
@@ -50,7 +51,7 @@ export function scopesFor(map: ScopeMap, login: string): ScopeConfig | undefined
 
 export function resolveTarget(cfg: ScopeConfig, scope: string, project?: string): Target {
   if (scope !== "project") {
-    const repo = cfg[scope];
+    const repo = Object.hasOwn(cfg, scope) ? cfg[scope] : undefined;
     if (!repo) throw new OpError("unknown_scope", `unknown scope "${scope}"; valid: ${[...Object.keys(cfg), "project"].join(", ")}`);
     return { scopeLabel: scope, displayLabel: scope, repo, prefix: "" };
   }
@@ -66,4 +67,26 @@ export function resolveTarget(cfg: ScopeConfig, scope: string, project?: string)
     );
   }
   return { scopeLabel: `project:${r.owner}/${r.repo}`, displayLabel: `project ${r.repo}`, repo, prefix: `projects/${r.repo}/` };
+}
+
+/**
+ * Default scope set for a context (spec §10b): general, plus each client scope owned by the project's owner, plus
+ * any named extras. Without a project (claude.ai chat), general only; named extras widen it, never replace it.
+ */
+export function contextScopes(cfg: ScopeConfig, project?: string, extra: string[] = []): { names: string[]; unknown: string[] } {
+  const names: string[] = [];
+  if (Object.hasOwn(cfg, "general")) names.push("general");
+  const owner = project ? normalizeRemote(project)?.owner : undefined;
+  if (owner) {
+    for (const [name, repo] of Object.entries(cfg)) {
+      if (name !== "general" && repo.split("/")[0]!.toLowerCase() === owner && !names.includes(name)) names.push(name);
+    }
+  }
+  const unknown: string[] = [];
+  for (const s of extra) {
+    if (s === "project") continue;
+    if (!Object.hasOwn(cfg, s)) unknown.push(s);
+    else if (!names.includes(s)) names.push(s);
+  }
+  return { names, unknown };
 }

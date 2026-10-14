@@ -8,7 +8,7 @@ import { INSTRUCTIONS } from "./instructions";
 import {
   deleteMemory, getIndex, getIndexVersioned, readMemories, saveMemory, scopeFailure, searchMemories, type ScopeFailure,
 } from "./operations";
-import { resolveTarget, type ScopeConfig, type Target } from "./scopes";
+import { contextScopes, resolveTarget, type ScopeConfig, type Target } from "./scopes";
 import type { Store } from "./store";
 
 export interface ToolDeps { store: Store; gh: GitHub; cfg: ScopeConfig; props: Props; appSlug: string; now?: () => Date }
@@ -19,14 +19,22 @@ export const MAX_SINCE_KEYS = 10;
 
 const ok = (v: unknown): ToolResult => ({ text: typeof v === "string" ? v : JSON.stringify(v, null, 2), isError: false });
 
-async function reachableTargets(d: ToolDeps, scopes?: string[]): Promise<{ targets: Target[]; failure?: unknown }> {
+async function reachableTargets(d: ToolDeps, names: string[]): Promise<{ targets: Target[]; failure?: unknown }> {
   try {
     const reach = await scopeReachability(d.gh, d.cfg, d.appSlug);
-    const wanted = scopes ?? Object.keys(d.cfg);
-    return { targets: reach.filter((r) => r.reachable && wanted.includes(r.scope)).map((r) => resolveTarget(d.cfg, r.scope)) };
+    return { targets: reach.filter((r) => r.reachable && names.includes(r.scope)).map((r) => resolveTarget(d.cfg, r.scope)) };
   } catch (e) {
     return { targets: [], failure: e };
   }
+}
+
+function contextOf(d: ToolDeps, a: Record<string, unknown>) {
+  return contextScopes(d.cfg, a.project as string | undefined, (a.scopes as string[] | undefined) ?? []);
+}
+
+function unknownScopeChecks(d: ToolDeps, unknown: string[]): Check[] {
+  return unknown.map((s) => ({ check: `scope:${s}`, status: "fail" as const, detail: "unknown_scope",
+    action: `No scope named "${s}". Your scopes: ${[...Object.keys(d.cfg), "project"].join(", ")}.` }));
 }
 
 const sinceBlock = (m: Record<string, string>) =>
@@ -72,10 +80,12 @@ export async function callTool(d: ToolDeps, name: string, a: Record<string, unkn
 
 async function memoryIndex(d: ToolDeps, a: Record<string, unknown>): Promise<string> {
   const project = a.project as string | undefined;
-  const health = await runHealth({ gh: d.gh, cfg: d.cfg, props: d.props, appSlug: d.appSlug, project });
+  const ctx = contextOf(d, a);
+  const health = await runHealth({ gh: d.gh, cfg: d.cfg, props: d.props, appSlug: d.appSlug, project, scopes: ctx.names });
+  health.push(...unknownScopeChecks(d, ctx.unknown));
   const tokenBad = health.some((c) => (c.check === "github_token" && c.status === "fail") || c.check === "github_api");
   if (tokenBad) return `## Health\n${formatHealth(health)}`;
-  const { targets, failure } = await reachableTargets(d, a.scopes as string[] | undefined);
+  const { targets, failure } = await reachableTargets(d, ctx.names);
   if (failure) {
     // Health passed a moment ago but this second look failed: say so rather than return an index with scopes missing.
     const err = toOpError(failure);
@@ -97,8 +107,11 @@ async function memoryIndex(d: ToolDeps, a: Record<string, unknown>): Promise<str
 }
 
 async function memorySearch(d: ToolDeps, a: Record<string, unknown>) {
-  const { targets, failure } = await reachableTargets(d, a.scopes as string[] | undefined);
-  const failures: ScopeFailure[] = failure ? [scopeFailure("all", failure)] : [];
+  const ctx = contextOf(d, a);
+  const { targets, failure } = await reachableTargets(d, ctx.names);
+  const failures: ScopeFailure[] = ctx.unknown.map((s) => ({ scope: s, error: "unknown_scope" as const, message: `unknown scope "${s}"`,
+    action: `Your scopes: ${[...Object.keys(d.cfg), "project"].join(", ")}.`, retryable: false }));
+  if (failure) failures.push(scopeFailure("all", failure));
   const project = a.project as string | undefined;
   if (project) {
     try { targets.push(resolveTarget(d.cfg, "project", project)); } catch (e) { failures.push(scopeFailure("project", e)); }
@@ -115,8 +128,11 @@ async function dispatch(d: ToolDeps, name: string, a: Record<string, unknown>): 
     switch (name) {
       case "memory_scopes":
         return ok(await scopeReachability(d.gh, d.cfg, d.appSlug));
-      case "memory_health":
-        return ok(formatHealth(await runHealth({ gh: d.gh, cfg: d.cfg, props: d.props, appSlug: d.appSlug, project })));
+      case "memory_health": {
+        const ctx = contextOf(d, a);
+        const health = await runHealth({ gh: d.gh, cfg: d.cfg, props: d.props, appSlug: d.appSlug, project, scopes: ctx.names });
+        return ok(formatHealth([...health, ...unknownScopeChecks(d, ctx.unknown)]));
+      }
       case "memory_index":
         return ok(await memoryIndex(d, a));
       case "memory_read":
@@ -154,12 +170,13 @@ export function createServer(d: ToolDeps): McpServer {
     });
 
   reg("memory_scopes", "List memory scopes and whether you can reach and write them.", {});
-  reg("memory_health", "Check memory health: sign-in, scopes, project, rate limit. Each problem includes an action for the user.", { project: projectArg });
-  reg("memory_index", "Call at conversation start. Health, then the MEMORY.md index of each reachable scope and the project.", {
+  reg("memory_health", "Check memory health for this context (sign-in, scopes, project, rate limit). Each problem includes an action for the user.", {
+    project: projectArg, scopes: z.array(z.string()).optional() });
+  reg("memory_index", "Call at conversation start. Health, then the memory index for this context: general; with project, also the client scope that owns it and the project. scopes adds named client scopes.", {
     scopes: z.array(z.string()).optional(), project: projectArg });
   reg("memory_read", "Read memories in full. Returns each memory's version for safe updates.", {
     scope: scopeArg, project: projectArg, names: z.array(z.string()).min(1).max(20), since: sinceArg });
-  reg("memory_search", "Search memories (all terms must match) across reachable scopes and the project.", {
+  reg("memory_search", "Search memories (all terms must match) in the same scopes memory_index loads; scopes adds named client scopes.", {
     query: z.string().min(1), scopes: z.array(z.string()).optional(), project: projectArg, since: sinceArg });
   reg("memory_save", "Create a memory (no version) or update one (pass version from memory_read).", {
     scope: scopeArg, project: projectArg, name: z.string(), description: z.string(),

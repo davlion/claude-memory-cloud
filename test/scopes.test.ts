@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OpError } from "../src/errors";
-import { parseScopeMap, resolveTarget, scopesFor } from "../src/scopes";
+import { contextScopes, parseScopeMap, resolveTarget, scopesFor } from "../src/scopes";
 
 const cfg = { general: "dav/claude-memory", acme: "Acme-Org/claude-memory" };
 
@@ -44,4 +44,23 @@ describe("parseScopeMap (per-user SCOPES)", () => {
     [JSON.stringify({ dav: { general: "no-slash" } }), /invalid repo/],
     [JSON.stringify({ dav: { project: "a/b" } }), /reserved/],
   ])("rejects %s", (j, msg) => expect(() => parseScopeMap(j)).toThrow(msg));
+});
+
+describe("contextScopes (per-context loading)", () => {
+  const c = { general: "dav/claude-memory", acme: "Acme-Org/claude-memory", beta: "beta-inc/claude-memory" };
+  it("no project → general only", () => expect(contextScopes(c)).toEqual({ names: ["general"], unknown: [] }));
+  it("project → general + the client that owns it", () =>
+    expect(contextScopes(c, "git@github.com:acme-org/billing.git")).toEqual({ names: ["general", "acme"], unknown: [] }));
+  it("own project → general only", () => expect(contextScopes(c, "dav/app").names).toEqual(["general"]));
+  it("extra names widen, unknown names are reported, 'project' is ignored", () =>
+    expect(contextScopes(c, undefined, ["beta", "nope", "project", "general"])).toEqual({ names: ["general", "beta"], unknown: ["nope"] }));
+  it("non-GitHub project → general only", () => expect(contextScopes(c, "git@gitlab.com:a/b.git").names).toEqual(["general"]));
+  it("no general scope configured", () => expect(contextScopes({ acme: "acme-org/claude-memory" }, "acme-org/x").names).toEqual(["acme"]));
+});
+
+describe("scope-map hardening", () => {
+  it("rejects two logins that differ only in case", () =>
+    expect(() => parseScopeMap(JSON.stringify({ Dav: { general: "a/b" }, dav: { general: "a/b" } }))).toThrow(/duplicate login/));
+  it.each(["toString", "constructor", "__proto__", "hasOwnProperty"])("%s is an unknown scope", (name) =>
+    expect(() => resolveTarget(cfg, name)).toThrow(expect.objectContaining({ code: "unknown_scope" })));
 });

@@ -62,7 +62,7 @@ describe("callTool", () => {
       { url: "https://api.github.com/user/installations/1/repositories", respond: () => json({ repositories: [{ full_name: "dav/mem", private: true, permissions: { push: true } }] }) },
       { url: "https://api.github.com/user", respond: () => json({ login: "dav" }) },
     ]);
-    const r = await callTool(deps, "memory_index", {});
+    const r = await callTool(deps, "memory_index", { project: "acme-org/billing" });
     expect(r.text).toContain("✗ scope:acme — app_not_installed");
     expect(r.text).not.toContain("# Memory index — acme");
   });
@@ -253,11 +253,11 @@ describe("per-scope resilience", () => {
       return real(repo, prefix);
     };
     healthyGitHub();
-    const idx = await callTool(deps, "memory_index", {});
+    const idx = await callTool(deps, "memory_index", { project: "acme-org/billing" });
     expect(idx.text).toContain("✗ index:acme");
     expect(idx.text).not.toContain("ghu_secret");
     healthyGitHub();
-    const s = await callTool(deps, "memory_search", { query: "tuesday" });
+    const s = await callTool(deps, "memory_search", { query: "tuesday", project: "acme-org/billing" });
     expect(s.text).toContain("acme");
     expect(s.text).not.toContain("ghu_secret");
   });
@@ -270,5 +270,29 @@ describe("per-scope resilience", () => {
     expect(out.results).toEqual([]);
     expect(out.failed_scopes).toEqual([expect.objectContaining({
       scope: "all", error: "unavailable", retryable: true, action: expect.stringContaining("githubstatus.com") })]);
+  });
+});
+
+describe("per-context loading", () => {
+  it("memory_index without a project loads general only (and checks only general)", async () => {
+    healthyGitHub();
+    const t = (await callTool(deps, "memory_index", {})).text;
+    expect(t).toContain("# Memory index — general");
+    expect(t).not.toContain("# Memory index — acme");
+    expect(t).not.toContain("scope:acme");
+  });
+  it("scopes adds a named client scope; unknown names become a failing check listing the user's scopes", async () => {
+    healthyGitHub();
+    const t = (await callTool(deps, "memory_index", { scopes: ["acme", "nope"] })).text;
+    expect(t).toContain("# Memory index — acme");
+    expect(t).toContain('✗ scope:nope — unknown_scope → No scope named "nope". Your scopes: general, acme, project.');
+  });
+  it("memory_search defaults to the same context", async () => {
+    await saveMemory(store, resolveTarget(cfg, "acme"), { name: "acme-fact", description: "acme deploys fridays", type: "project", body: "fridays\n", source: "t" });
+    healthyGitHub();
+    expect(JSON.parse((await callTool(deps, "memory_search", { query: "fridays" })).text).results).toEqual([]);
+    healthyGitHub();
+    const widened = JSON.parse((await callTool(deps, "memory_search", { query: "fridays", scopes: ["acme"] })).text);
+    expect(widened.results.map((x: { name: string }) => x.name)).toEqual(["acme-fact"]);
   });
 });

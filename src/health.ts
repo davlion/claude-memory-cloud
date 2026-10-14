@@ -57,10 +57,11 @@ function fmtDuration(ms: number) {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-export async function runHealth(o: { gh: GitHub; cfg: ScopeConfig; props: Props; appSlug: string; project?: string; now?: number }): Promise<Check[]> {
+export async function runHealth(o: { gh: GitHub; cfg: ScopeConfig; props: Props; appSlug: string; project?: string; now?: number; scopes?: string[] }): Promise<Check[]> {
   const now = o.now ?? Date.now();
   const install = `https://github.com/apps/${o.appSlug}/installations/select_target`;
   const checks: Check[] = [];
+  const scopeCfg: ScopeConfig = o.scopes ? Object.fromEntries(Object.entries(o.cfg).filter(([k]) => o.scopes!.includes(k))) : o.cfg;
   try {
     await o.gh.request("GET", "/user");
     const left = o.props.githubTokenExpiresAt - now;
@@ -80,7 +81,7 @@ export async function runHealth(o: { gh: GitHub; cfg: ScopeConfig; props: Props;
   }
 
   try {
-    for (const r of await scopeReachability(o.gh, o.cfg, o.appSlug)) {
+    for (const r of await scopeReachability(o.gh, scopeCfg, o.appSlug)) {
       const [owner] = r.repo.split("/");
       const name = `scope:${r.scope}`;
       if (r.reason === "repo_public") checks.push({ check: name, status: "fail", detail: `repo_public ${r.repo}`, action:

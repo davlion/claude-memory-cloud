@@ -109,6 +109,15 @@ describe("runHealth", () => {
   });
 });
 
+describe("runHealth scopes option", () => {
+  it("checks only the given scopes", async () => {
+    mockFetch(routes({ installs: [{ id: 1, account: { login: "dav" } }] }));
+    const cs = await runHealth({ gh: new GitHub("t"), cfg, props, appSlug: "s", now: NOW, scopes: ["general"] });
+    expect(cs.find((c) => c.check === "scope:acme")).toBeUndefined();
+    expect(byCheck(cs, "scope:general").status).toBe("ok");
+  });
+});
+
 describe("github_api failure classification", () => {
   it("a thrown TypeError containing a token never reaches the output", async () => {
     mockFetch([{ url: "https://api.github.com/", respond: () => { throw new TypeError("fetch failed ghu_secret"); } }]);
