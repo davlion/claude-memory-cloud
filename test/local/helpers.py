@@ -31,12 +31,18 @@ def clean_env(home: Path, **extra: str) -> Dict[str, str]:
     return env
 
 
+def git_env(home: Path) -> Dict[str, str]:
+    """Isolated git environment: no global/system config (so no signing, hooks or insteadOf from the real user)."""
+    return clean_env(home, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1")
+
+
 def make_git_dir(parent: Path, name: str, origin: Optional[str]) -> Path:
     d = parent / name
     d.mkdir(parents=True)
-    subprocess.run(["git", "init", "-q", str(d)], check=True)
+    env = git_env(parent)
+    subprocess.run(["git", "init", "-q", str(d)], check=True, env=env)
     if origin:
-        subprocess.run(["git", "-C", str(d), "remote", "add", "origin", origin], check=True)
+        subprocess.run(["git", "-C", str(d), "remote", "add", "origin", origin], check=True, env=env)
     return d
 
 
