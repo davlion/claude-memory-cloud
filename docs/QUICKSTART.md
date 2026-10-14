@@ -159,8 +159,8 @@ The GitHub App is how the server gets access to your memory repo, **and only tha
 1. On claude.ai: **Settings** → **Connectors** → **Add custom connector**.
    - **Name:** `claude-memory`
    - **URL:** `https://claude-memory.<sub>.workers.dev/mcp`
-2. Click **Connect**. Approve the consent page, then approve on GitHub.
-3. Test it: in a new chat, ask *"What's in my memory index?"* You should see a health line and an empty index.
+2. Click **Connect**. Your browser shows your server's consent page ("Allow Claude to use your claude-memory?"). Click **Allow**. You're then sent to GitHub to approve the app; if your browser is already signed in to GitHub (and Cloudflare), these pages recognize it and go quickly. Make sure the browser is signed in to the GitHub account that owns your memory repo.
+3. Test it: in a new chat, ask *"What's in my memory index?"* You should see a health line and your index. A better test once you have a memory: ask about it in plain words (e.g. *"What kind of soup do I like?"*) and check that Claude finds it without being told to look.
 
 The connector now works in claude.ai chat (web, Desktop, mobile), in Claude Code cloud sessions, and in local Claude Code when you're logged in with your claude.ai account.
 
