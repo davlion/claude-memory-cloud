@@ -35,6 +35,19 @@ class Probe(unittest.TestCase):
         self.assertEqual(self.probe("garbage").kind, "bad_response")
         self.assertEqual(HealthProbe("http://127.0.0.1:9", 1.0).result().kind, "unreachable")
 
+    def test_deeply_nested_json_is_bad_response_without_traceback(self):
+        import io
+        import contextlib
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            r = self.probe("deep")
+        self.assertEqual(r.kind, "bad_response")
+        self.assertEqual(err.getvalue(), "")
+
+    def test_redirect_is_not_followed(self):
+        r = self.probe("302")
+        self.assertEqual((r.kind, r.status), ("http_error", 302))
+
     def test_blackhole_respects_the_deadline(self):
         t = time.monotonic()
         self.assertEqual(self.probe("blackhole").kind, "unreachable")

@@ -19,10 +19,18 @@ class HealthResult:
     min_hook_version: str = ""
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):  # refuse: the 3xx surfaces as an HTTPError
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def _get(url: str, timeout: float) -> HealthResult:
     req = urllib.request.Request(url.rstrip("/") + "/health", headers={"user-agent": "claude-memory-kit"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _OPENER.open(req, timeout=timeout) as r:
             status, body = r.status, r.read(4096)
     except urllib.error.HTTPError as e:
         body = e.read(4096) if e.fp is not None else b""
@@ -33,7 +41,7 @@ def _get(url: str, timeout: float) -> HealthResult:
         return HealthResult("unreachable")
     try:
         d = json.loads(body)
-    except ValueError:
+    except Exception:  # noqa: BLE001 — ValueError, and RecursionError on deeply nested input
         return HealthResult("bad_response", status)
     if not isinstance(d, dict) or d.get("ok") is not True:
         return HealthResult("bad_response", status)
@@ -51,7 +59,10 @@ class HealthProbe:
         self._thread.start()
 
     def _run(self, url: str) -> None:
-        self._result = _get(url, self._timeout)
+        try:
+            self._result = _get(url, self._timeout)
+        except BaseException:  # noqa: BLE001 — never let a traceback reach threading.excepthook
+            self._result = HealthResult("unreachable")
 
     def result(self) -> HealthResult:
         self._thread.join(max(0.0, self._deadline - time.monotonic()))

@@ -75,7 +75,7 @@ def run_hook(script: str, payload: dict, env: Dict[str, str], hook_dir: Path = K
 
 
 class FakeWorker:
-    """A local /health endpoint. mode: ok | old | 429 | 1027 | 500 | garbage | blackhole."""
+    """A local /health endpoint. mode: ok | old | 429 | 1027 | 500 | deep | 302 | garbage | blackhole."""
 
     def __init__(self, mode: str = "ok") -> None:
         self.mode = mode
@@ -103,6 +103,14 @@ class FakeWorker:
                     code, body = 503, b"<html>error code: 1027</html>"
                 elif m == "500":
                     code, body = 500, b"oops"
+                elif m == "deep":
+                    code, body = 200, b"[" * 4000
+                elif m == "302":
+                    self.send_response(302)
+                    self.send_header("location", outer.url + "/elsewhere")
+                    self.send_header("content-length", "0")
+                    self.end_headers()
+                    return
                 else:
                     code, body = 200, b"<html>not json</html>"
                 self.send_response(code)
