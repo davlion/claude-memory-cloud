@@ -29,6 +29,7 @@ describe("GitHub.request", () => {
     [409, {}, { message: "Git Repository is empty." }, "empty_repo"],
     [409, {}, { message: "conflict" }, "conflict"],
     [422, {}, { message: "Update is not a fast forward" }, "conflict"],
+    [422, {}, { message: "Reference cannot be updated" }, "conflict"],
     [422, {}, { message: "Invalid request" }, "unprocessable"],
     [502, {}, {}, "unavailable"],
   ];

@@ -66,7 +66,7 @@ function classify(res: Response, message: string): GitHubError {
   if (s === 403) return new GitHubError(message, s, "forbidden");
   if (s === 404) return new GitHubError(message, s, "not_found");
   if (s === 409) return new GitHubError(message, s, /empty/i.test(message) ? "empty_repo" : "conflict");
-  if (s === 422) return new GitHubError(message, s, /fast.forward/i.test(message) ? "conflict" : "unprocessable");
+  if (s === 422) return new GitHubError(message, s, /fast.forward|reference cannot be updated/i.test(message) ? "conflict" : "unprocessable");
   if (s >= 500) return new GitHubError(message, s, "unavailable");
   return new GitHubError(message, s, "other");
 }
