@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GitHub, GitHubError, toOpError } from "../src/github";
+import { RETRYABLE } from "../src/errors";
 import { json, mockFetch } from "./setup";
 
 describe("GitHub.request", () => {
@@ -57,4 +58,59 @@ describe("toOpError", () => {
     expect([e.code, e.retryAfter]).toEqual(["unavailable", 30]);
   });
   it("not_found → not_reachable", () => expect(toOpError(new GitHubError("x", 404, "not_found")).code).toBe("not_reachable"));
+});
+
+describe("non-JSON and limit responses", () => {
+  it.each([
+    [502, "unavailable"], [503, "unavailable"], [401, "unauthorized"], [404, "not_found"], [403, "forbidden"],
+  ] as const)("a non-JSON %i is classified by status as %s", async (status, kind) => {
+    mockFetch([{ url: "https://api.github.com/h", respond: () =>
+      new Response("<html>oops</html>", { status, headers: { "content-type": "text/html" } }) }]);
+    const err = await new GitHub("t").request("GET", "/h").catch((e) => e);
+    expect(err).toBeInstanceOf(GitHubError);
+    expect((err as GitHubError).kind).toBe(kind);
+  });
+
+  it("a non-JSON 200 is unavailable, not a raw SyntaxError", async () => {
+    mockFetch([{ url: "https://api.github.com/h", respond: () => new Response("<html>", { status: 200 }) }]);
+    const err = await new GitHub("t").request("GET", "/h").catch((e) => e);
+    expect(err).toBeInstanceOf(GitHubError);
+    expect((err as GitHubError).kind).toBe("unavailable");
+  });
+
+  it("Cloudflare's 'Too many subrequests' becomes server_limit", async () => {
+    mockFetch([{ url: "https://api.github.com/s", respond: () => { throw new Error("Too many subrequests."); } }]);
+    expect(((await new GitHub("t").request("GET", "/s").catch((e) => e)) as GitHubError).kind).toBe("server_limit");
+  });
+
+  it("returns JSON arrays as-is", async () => {
+    mockFetch([{ url: "https://api.github.com/list", respond: () => json([{ a: 1 }]) }]);
+    expect(await new GitHub("t").request("GET", "/list")).toEqual([{ a: 1 }]);
+  });
+});
+
+describe("toOpError: final vs retryable", () => {
+  it("unprocessable → write_rejected with an action", () => {
+    const e = toOpError(new GitHubError("Protected branch update failed", 422, "unprocessable"));
+    expect(e.code).toBe("write_rejected");
+    expect(e.action).toMatch(/branch protection rule or ruleset/);
+  });
+  it("an unconfirmed conflict → write_rejected", () =>
+    expect(toOpError(new GitHubError("x", 409, "conflict")).code).toBe("write_rejected"));
+  it("server_limit → server_limit", () => {
+    const e = toOpError(new GitHubError("x", 0, "server_limit"));
+    expect(e.code).toBe("server_limit");
+    expect(e.action).toMatch(/Cloudflare/);
+  });
+  it("5xx → unavailable", () => expect(toOpError(new GitHubError("x", 502, "unavailable")).code).toBe("unavailable"));
+  it("other GitHub responses → internal", () => expect(toOpError(new GitHubError("x", 400, "other")).code).toBe("internal"));
+  it("non-GitHub errors → internal, without echoing the error text", () => {
+    const e = toOpError(new TypeError("token ghu_secret leaked"));
+    expect(e.code).toBe("internal");
+    expect(e.message).not.toContain("ghu_secret");
+    expect(e.message).toContain("TypeError");
+    expect(e.action).toMatch(/bug/);
+  });
+  it("RETRYABLE is exactly reauth_required, unavailable, server_limit", () =>
+    expect([...RETRYABLE].sort()).toEqual(["reauth_required", "server_limit", "unavailable"]));
 });

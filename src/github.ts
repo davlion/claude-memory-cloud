@@ -2,7 +2,7 @@ import { OpError } from "./errors";
 
 export type GitHubErrorKind =
   | "unauthorized" | "not_found" | "forbidden" | "rate_limited" | "unavailable"
-  | "conflict" | "empty_repo" | "unprocessable" | "other";
+  | "conflict" | "empty_repo" | "unprocessable" | "server_limit" | "other";
 
 export class GitHubError extends Error {
   constructor(message: string, public status: number, public kind: GitHubErrorKind, public retryAfter?: number) {
@@ -14,6 +14,14 @@ export interface RateLimit { limit: number; remaining: number; reset: number }
 
 export const RECONNECT_ACTION =
   "Reconnect: claude.ai → Settings → Connectors → claude-memory → Disconnect, then Connect, and approve on GitHub.";
+
+export const GITHUB_DOWN_ACTION = "GitHub is having problems (githubstatus.com). Saves will be queued; nothing to do.";
+export const SERVER_LIMIT_ACTION =
+  "The memory server hit a Cloudflare per-request limit while reading this scope. Try again in a moment; if it keeps happening, tell the server's owner (the scope may hold too many memories for Cloudflare's Free plan).";
+export const WRITE_REJECTED_ACTION =
+  "GitHub refused the write, usually because of a branch protection rule or ruleset on the memory repo's default branch. Ask a repo admin to let your account push directly to that branch (a ruleset that only blocks force pushes and deletion is fine).";
+export const INTERNAL_ACTION =
+  "This is a bug in the memory server, not a temporary problem, so retrying won't help. Report it to the server's owner.";
 
 export class GitHub {
   lastRateLimit: RateLimit | null = null;
@@ -34,7 +42,10 @@ export class GitHub {
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (e) {
-      throw new GitHubError(`network error: ${(e as Error).message}`, 0, "unavailable");
+      const msg = e instanceof Error ? e.message : String(e);
+      // Workers throws this from fetch() once a request has used up its subrequest allowance.
+      if (/too many subrequests/i.test(msg)) throw new GitHubError(`server limit: ${msg}`, 0, "server_limit");
+      throw new GitHubError(`network error: ${msg}`, 0, "unavailable");
     }
     const limit = res.headers.get("x-ratelimit-limit");
     if (limit) {
@@ -46,9 +57,20 @@ export class GitHub {
     }
     if (res.status === 204) return null as T;
     const text = await res.text();
-    const data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    let data: unknown = {};
+    let parsed = true;
+    try {
+      if (text) data = JSON.parse(text);
+    } catch {
+      parsed = false;
+    }
+    if (!parsed) {
+      // Proxies and outages answer with HTML: classify by status instead of throwing a raw SyntaxError.
+      if (res.ok) throw new GitHubError(`non-JSON response (HTTP ${res.status})`, res.status, "unavailable");
+      throw classify(res, `HTTP ${res.status} (non-JSON response)`);
+    }
     if (res.ok) return data as T;
-    throw classify(res, String(data.message ?? res.statusText));
+    throw classify(res, String((data as { message?: unknown } | null)?.message ?? res.statusText));
   }
 }
 
@@ -73,7 +95,10 @@ function classify(res: Response, message: string): GitHubError {
 
 export function toOpError(e: unknown): OpError {
   if (e instanceof OpError) return e;
-  if (!(e instanceof GitHubError)) return new OpError("unavailable", String(e));
+  if (!(e instanceof GitHubError)) {
+    // Never echo the raw error: it can carry request details. Its name is enough to report the bug.
+    return new OpError("internal", `unexpected server error (${e instanceof Error ? e.name : typeof e})`, INTERNAL_ACTION);
+  }
   switch (e.kind) {
     case "unauthorized":
       return new OpError("reauth_required", "GitHub sign-in expired or was revoked", RECONNECT_ACTION);
@@ -82,7 +107,14 @@ export function toOpError(e: unknown): OpError {
     case "not_found":
     case "forbidden":
       return new OpError("not_reachable", e.message);
+    case "unavailable":
+      return new OpError("unavailable", `GitHub error: ${e.message}`, GITHUB_DOWN_ACTION);
+    case "server_limit":
+      return new OpError("server_limit", "Cloudflare per-request limit reached", SERVER_LIMIT_ACTION);
+    case "unprocessable":
+    case "conflict":
+      return new OpError("write_rejected", `GitHub rejected the write: ${e.message}`, WRITE_REJECTED_ACTION);
     default:
-      return new OpError("unavailable", `GitHub error: ${e.message}`, "GitHub is having problems (githubstatus.com). Saves will be queued; nothing to do.");
+      return new OpError("internal", `unexpected GitHub response: ${e.message}`, INTERNAL_ACTION);
   }
 }

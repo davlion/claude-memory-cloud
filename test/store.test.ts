@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { GitHub } from "../src/github";
+import { GitHub, GitHubError, toOpError } from "../src/github";
 import { GitHubStore } from "../src/store";
 import { json, mockFetch } from "./setup";
 
@@ -88,16 +88,35 @@ describe("GitHubStore.commit", () => {
     expect(patch).toEqual({ sha: "c2", force: false });
   });
 
-  it("non-fast-forward → ref_moved", async () => {
+  it("422 from the ref update with the ref moved → ref_moved (a real race)", async () => {
     mockFetch([
-      { method: "GET", url: R, respond: () => json({ default_branch: "main", private: true }) },
+      { method: "GET", url: R, respond: () => json({ default_branch: "main", private: true, visibility: "private" }) },
       { method: "GET", url: `${R}/git/commits/c1`, respond: () => json({ tree: { sha: "t1" } }) },
       { method: "POST", url: `${R}/git/trees`, respond: () => json({ sha: "t2" }) },
       { method: "POST", url: `${R}/git/commits`, respond: () => json({ sha: "c2", html_url: "u" }) },
       { method: "PATCH", url: `${R}/git/refs/heads/main`, respond: () => json({ message: "Update is not a fast forward" }, 422) },
+      { method: "GET", url: `${R}/git/ref/heads/main`, respond: () => json({ object: { sha: "c9" } }) },
     ]);
     expect(await new GitHubStore(new GitHub("t")).commit("dav/mem", "", "c1", [{ path: "MEMORY.md", content: "i" }], "m"))
       .toEqual({ ok: false, reason: "ref_moved" });
+  });
+
+  it.each([
+    [422, "Protected branch update failed for refs/heads/main."],
+    [409, "Repository rule violations found"],
+  ])("%i from the ref update with the ref unchanged → write_rejected, not a race", async (status, message) => {
+    mockFetch([
+      { method: "GET", url: R, respond: () => json({ default_branch: "main", private: true, visibility: "private" }) },
+      { method: "GET", url: `${R}/git/commits/c1`, respond: () => json({ tree: { sha: "t1" } }) },
+      { method: "POST", url: `${R}/git/trees`, respond: () => json({ sha: "t2" }) },
+      { method: "POST", url: `${R}/git/commits`, respond: () => json({ sha: "c2", html_url: "u" }) },
+      { method: "PATCH", url: `${R}/git/refs/heads/main`, respond: () => json({ message }, status) },
+      { method: "GET", url: `${R}/git/ref/heads/main`, respond: () => json({ object: { sha: "c1" } }) },
+    ]);
+    const err = await new GitHubStore(new GitHub("t")).commit("dav/mem", "", "c1", [{ path: "MEMORY.md", content: "i" }], "m").catch((e) => e);
+    expect(err).toBeInstanceOf(GitHubError);
+    expect((err as GitHubError).kind).toBe("unprocessable");
+    expect(toOpError(err).code).toBe("write_rejected");
   });
 
   it("empty repo (base null) → initializes README via contents API, then reports ref_moved so the caller retries", async () => {

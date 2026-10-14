@@ -101,7 +101,12 @@ export class GitHubStore implements Store {
     try {
       await this.gh.request("PATCH", `/repos/${repo}/git/refs/heads/${branch}`, { sha: commit.sha, force: false });
     } catch (e) {
-      if (e instanceof GitHubError && e.kind === "conflict") return { ok: false, reason: "ref_moved" };
+      if (e instanceof GitHubError && (e.status === 409 || e.status === 422)) {
+        // A racing writer and a branch rule both answer 409/422. Only a ref that actually moved is a race.
+        const cur = await this.gh.request<{ object: { sha: string } }>("GET", `/repos/${repo}/git/ref/heads/${branch}`);
+        if (cur.object.sha !== base) return { ok: false, reason: "ref_moved" };
+        throw new GitHubError(e.message, e.status, "unprocessable");
+      }
       throw e;
     }
     return { ok: true, commitSha: commit.sha, url: commit.html_url };

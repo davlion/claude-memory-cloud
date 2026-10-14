@@ -168,3 +168,24 @@ describe("createServer", () => {
     expect(INSTRUCTIONS).toContain("summarized");
   });
 });
+
+describe("error taxonomy at the tool boundary", () => {
+  it("write_rejected is final (not retryable) and names the fix", async () => {
+    const { GitHubError } = await import("../src/github");
+    store.commit = async () => { throw new GitHubError("Protected branch update failed", 422, "unprocessable"); };
+    const r = await save({ name: "a" });
+    expect(r.isError).toBe(true);
+    expect(JSON.parse(r.text)).toMatchObject({ error: "write_rejected", retryable: false, action: expect.stringMatching(/ruleset/) });
+  });
+  it("unexpected errors are internal, final, and don't echo details", async () => {
+    store.snapshot = async () => { throw new TypeError("detail ghu_abc"); };
+    const r = await save({ name: "a" });
+    expect(JSON.parse(r.text)).toMatchObject({ error: "internal", retryable: false });
+    expect(r.text).not.toContain("ghu_abc");
+  });
+  it("server_limit is retryable", async () => {
+    const { GitHubError } = await import("../src/github");
+    store.snapshot = async () => { throw new GitHubError("server limit", 0, "server_limit"); };
+    expect(JSON.parse((await save({ name: "a" })).text)).toMatchObject({ error: "server_limit", retryable: true });
+  });
+});

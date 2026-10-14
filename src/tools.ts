@@ -1,7 +1,7 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { Props } from "./env";
-import { OpError } from "./errors";
+import { errorPayload } from "./errors";
 import { GitHub, toOpError } from "./github";
 import { formatHealth, runHealth, scopeReachability } from "./health";
 import { INSTRUCTIONS } from "./instructions";
@@ -11,7 +11,6 @@ import type { Store } from "./store";
 
 export interface ToolDeps { store: Store; gh: GitHub; cfg: ScopeConfig; props: Props; appSlug: string; now?: () => Date }
 
-const RETRYABLE = new Set(["reauth_required", "unavailable"]);
 const ok = (v: unknown) => ({ text: typeof v === "string" ? v : JSON.stringify(v, null, 2), isError: false });
 
 async function reachableTargets(d: ToolDeps, scopes?: string[]): Promise<{ targets: Target[] }> {
@@ -100,11 +99,7 @@ async function dispatch(d: ToolDeps, name: string, a: Record<string, unknown>): 
         return { text: JSON.stringify({ error: "invalid", message: `unknown tool ${name}` }), isError: true };
     }
   } catch (e) {
-    const err = e instanceof OpError ? e : toOpError(e);
-    return {
-      text: JSON.stringify({ error: err.code, message: err.message, action: err.action, retryable: RETRYABLE.has(err.code), retry_after: err.retryAfter }, null, 2),
-      isError: true,
-    };
+    return { text: JSON.stringify(errorPayload(toOpError(e)), null, 2), isError: true };
   }
 }
 
