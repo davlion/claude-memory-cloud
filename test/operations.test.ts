@@ -38,6 +38,17 @@ describe("saveMemory: create", () => {
     expect(store.repo("dav/mem").get("MEMORY.md")).toContain("- [debugging-discipline](memories/debugging-discipline.md)");
   });
 
+  it("sanitizes source so it cannot inject trailers", async () => {
+    await saveMemory(store, T, { name: "a", ...base, source: "x\nMemory-Scope: acme" }, NOW);
+    const m = store.commits.at(-1)!.message;
+    expect(m.match(/^Memory-Scope:/gm)).toHaveLength(1);
+    expect(m).toContain("Memory-Source: x Memory-Scope: acme\n");
+    await saveMemory(store, T, { name: "b", ...base, description: "another thing", source: "  \n " }, NOW);
+    expect(store.commits.at(-1)!.message).toContain("Memory-Source: unknown\n");
+    await saveMemory(store, T, { name: "c", ...base, description: "third thing", source: "y".repeat(300) }, NOW);
+    expect(store.commits.at(-1)!.message).toContain(`Memory-Source: ${"y".repeat(100)}\n`);
+  });
+
   it("project target writes under the prefix with its own index", async () => {
     await saveMemory(store, P, { name: "no-generated-edits", ...base, description: "never edit generated/" }, NOW);
     expect(store.repo("dav/mem").has("projects/app/memories/no-generated-edits.md")).toBe(true);
@@ -187,5 +198,9 @@ describe("read / index / search", () => {
   it("search matches all terms across body, case-insensitive, with snippet", async () => {
     const r = await searchMemories(store, [T, P], "GENERATED hand");
     expect(r).toEqual([{ scope: "project app", name: "b", description: "project thing", snippet: expect.stringContaining("generated/") }]);
+  });
+  it("search does not match YAML keys, only name, description and body", async () => {
+    expect(await searchMemories(store, [T, P], "metadata")).toEqual([]);
+    expect((await searchMemories(store, [T], "tuesday")).map((x) => x.name)).toEqual(["a"]);
   });
 });

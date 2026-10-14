@@ -44,8 +44,10 @@ function indexAfter(t: Target, snap: Snapshot, changes: Change[]): string {
   return buildIndex(t.displayLabel, list, conflicts);
 }
 
+const cleanSource = (source?: string) => (source ?? "").replace(/\s+/g, " ").trim().slice(0, 100).trim() || "unknown";
+
 const message = (op: string, name: string, t: Target, source?: string) =>
-  `${op}: ${name}\n\nMemory-Source: ${source?.trim() || "unknown"}\nMemory-Scope: ${t.scopeLabel}\n`;
+  `${op}: ${name}\n\nMemory-Source: ${cleanSource(source)}\nMemory-Scope: ${t.scopeLabel}\n`;
 
 /** Runs `decide` against fresh snapshots, committing its changes; retries on ref races. */
 async function withRetry(
@@ -140,11 +142,16 @@ export async function searchMemories(store: Store, targets: Target[], query: str
     for (const [path, f] of snap.files) {
       const p = parseMemoryPath(path);
       if (!p || p.conflict) continue;
-      const hay = f.content.toLowerCase();
-      if (!terms.every((term) => hay.includes(term))) continue;
       let description = "";
-      try { description = parseMemory(f.content).description; } catch { /* keep empty */ }
-      const at = Math.max(0, hay.indexOf(terms[0] ?? "") - 40);
+      let searchable = f.content;
+      try {
+        const m = parseMemory(f.content);
+        description = m.description;
+        searchable = `${m.name}\n${m.description}\n${m.body}`;
+      } catch { /* unparseable: search the raw content */ }
+      const lower = searchable.toLowerCase();
+      if (!terms.every((term) => lower.includes(term))) continue;
+      const at = Math.max(0, f.content.toLowerCase().indexOf(terms[0] ?? "") - 40);
       out.push({ scope: t.displayLabel, name: p.name, description, snippet: f.content.slice(at, at + 120).replace(/\s+/g, " ").trim() });
       if (out.length >= 20) return out;
     }
