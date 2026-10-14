@@ -9,9 +9,9 @@ You'll set up four things:
 | What | Where | Cost | Time |
 |---|---|---|---|
 | A private memory repo | your GitHub account | free | 1 min |
-| A Cloudflare account | cloudflare.com | free plan works; Workers Paid ($5/month) gives more headroom | 10 min |
+| A Cloudflare account | cloudflare.com | Workers Paid, $5/month (needed for CPU time; see the FAQ) | 10 min |
 | A GitHub App (lets the server use your memory repo, and nothing else) | your GitHub account | free | 10 min |
-| The server, deployed as a Cloudflare Worker | your Cloudflare account | free plan works; Workers Paid ($5/month) gives more headroom | 10 min |
+| The server, deployed as a Cloudflare Worker | your Cloudflare account | included in Workers Paid | 10 min |
 
 Then you connect it to Claude and run a setup script on each machine.
 
@@ -157,7 +157,7 @@ The GitHub App is how the server gets access to your memory repo, **and only tha
 
    Expected: `{"ok":true,...}`.
 
-**Which Cloudflare plan?** The server fits Workers Free; this deployment uses Workers Paid for headroom. Workers Paid ($5/month) raises the limits that matter here (subrequests, KV writes, CPU time). See "What are the Cloudflare limits?" in the FAQ.
+**Which Cloudflare plan?** Workers Paid ($5/month). Each call uses about 30–110 ms of CPU and the free plan allows 10 ms, so on Free most calls would fail with "exceeded resource limits". Upgrade under Workers & Pages → Plans before deploying. See "What are the Cloudflare limits?" in the FAQ for the measurements.
 
 ---
 

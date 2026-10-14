@@ -126,17 +126,27 @@ The setup script turns it off, so memories don't end up in two places. Your exis
 ## Setup and operations
 
 ### What does it cost?
-GitHub private repos and the GitHub App are free. Cloudflare Workers' free plan works for personal use. Workers Paid ($5/month) gives far more headroom, and the owner's own server runs on it. The server is built to work on either.
+GitHub private repos and the GitHub App are free. The server needs **Cloudflare Workers Paid ($5/month)**: each call uses about 30–110 ms of CPU (measured below), and the free plan allows 10 ms. Everything else about the design stays within the free plan's limits, so if the per-call overhead is reduced later, Free may become an option again.
 
 ### What are the Cloudflare limits, and what happens when they're hit?
-On the free plan:
+Limits that matter here (the free plan's numbers; Workers Paid raises all of them far beyond personal use):
 - **100,000 requests a day.** Past that, Cloudflare answers for the server ("error 1027") until 00:00 UTC. Claude sees the connector as unavailable: local Claude Code queues saves in the outbox; elsewhere Claude says the memory wasn't saved.
 - **50 outgoing requests per call.** One `memory_index` for general + a client + a project makes about 15 GitHub requests. If a call still hits the limit, only that scope fails, with `server_limit` (temporary; try again).
 - **1,000 KV writes a day.** The cache is optional: if writes fail, reads still work and Health shows `kv_writes`. Signing in and token refresh need KV, so they can fail until 00:00 UTC; they never disconnect you.
-- **10 ms of CPU per request.** The server is designed to fit; Paid raises this to 30 seconds.
+- **10 ms of CPU per request on Free; 30 seconds on Paid.** The server currently needs more than 10 ms per call (see the table below), which is why Workers Paid is required.
 - Sign-in endpoints are rate-limited to about 10 requests a minute per address. Cloudflare's rate limiter is approximate (it counts per data center and errs on the permissive side), so expect occasional 429s after a burst of a few dozen requests rather than a hard cutoff at 10. It slows abuse down; it isn't an exact quota.
 
 Workers Paid raises all of these far beyond personal use.
+
+Measured on staging (2026-10-14, CPU time per call, one sample each; Free allows 10 ms):
+
+| Memories in the project | `memory_index` (cold cache) | `memory_index` (warm cache) | `memory_search` |
+|---|---|---|---|
+| 1 | 108 ms | 29 ms | — |
+| 50 | 78 ms | 41 ms | — |
+| 200 | 109 ms | 91 ms | 110 ms |
+
+Most of the cost is fixed per-call overhead (token decryption, building the MCP server and tool schemas, health checks), not the number of memories.
 
 ### How do I know it's working?
 At session start, Claude runs a health check and stays silent if everything's fine. Each problem is reported in one line with what to do, e.g. "reconnect the claude-memory connector in claude.ai → Settings → Connectors". You can also ask "is memory working?" at any time. Errors say whether they're temporary (`unavailable`, `reauth_required`, `server_limit`) or need a fix first (for example `write_rejected`, when a branch rule blocks the server's commits, or `repo_public`).
