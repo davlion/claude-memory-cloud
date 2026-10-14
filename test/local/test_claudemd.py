@@ -1,7 +1,7 @@
 import unittest
 
 from helpers import FIXTURES, KIT
-from memory_kit.claudemd import BEGIN, END, has_marker, remove_block, render_rule, upsert_block
+from memory_kit.claudemd import BEGIN, END, MarkerError, has_marker, remove_block, render_rule, upsert_block
 
 BLOCK = f"{BEGIN}\nrule\n{END}"
 
@@ -56,6 +56,28 @@ class Block(unittest.TestCase):
                   "unavailable", "reauth_required", "server_limit", "memory connector unavailable", "once at session start",
                   "`scope` is required", "`source`", "`since`"]:
             self.assertIn(s, tpl)
+
+    def test_broken_markers_raise_and_leave_text_alone(self):
+        cases = {"orphan begin": f"a\n{BEGIN}\nuser stuff\n",
+                 "orphan end": f"a\n{END}\nuser stuff\n",
+                 "end before begin": f"{END}\nx\n{BEGIN}\n",
+                 "duplicate blocks": f"{BEGIN}\n1\n{END}\nmid\n{BEGIN}\n2\n{END}\n"}
+        for name, text in cases.items():
+            for fn in (lambda t: upsert_block(t, BLOCK), lambda t: remove_block(t, "\n")):
+                with self.subTest(case=name):
+                    with self.assertRaises(MarkerError) as cm:
+                        fn(text)
+                    self.assertIn("CLAUDE.md", str(cm.exception))
+
+    def test_rule_wording(self):
+        tpl = (KIT / "templates" / "routing-rule.md").read_text()
+        self.assertIn("run `/mcp` to see if it's enabled in this session. Saves will be queued.", tpl)
+        self.assertNotIn("unavailable — …", tpl)
+        self.assertIn("keep `project` as at session start", tpl)
+        self.assertIn("only after a `memory_index` call that included the session's project", tpl)
+        flush = tpl[tpl.index("- **Flushing:**"):]
+        self.assertIn("`not_reachable`", flush)
+        self.assertIn("`unsupported_remote`", flush)
 
 
 if __name__ == "__main__":
