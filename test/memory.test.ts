@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildIndex, conflictPath, findSimilar, isValidName, MemoryFormatError,
+  buildIndex, cleanDescription, conflictPath, findSimilar, isValidName, MAX_DESCRIPTION, MemoryFormatError,
   memoryPath, parseMemory, parseMemoryPath, serializeMemory, type Memory,
 } from "../src/memory";
 
@@ -104,4 +104,16 @@ describe("findSimilar", () => {
   it("excludes an identical name (that is 'exists', not 'similar')", () => {
     expect(findSimilar({ name: "debugging-discipline", description: "x" }, existing)).toEqual([]);
   });
+});
+
+describe("cleanDescription", () => {
+  it("one line, no fences, no leading heading marks", () =>
+    expect(cleanDescription("## Title\n```js\nrun()\n```\n  tail")).toBe("Title js run() tail"));
+  it("caps at 200 characters with an ellipsis", () => {
+    const out = cleanDescription("x".repeat(500));
+    expect(out).toHaveLength(MAX_DESCRIPTION);
+    expect(out.endsWith("…")).toBe(true);
+  });
+  it("buildIndex applies it", () =>
+    expect(buildIndex("general", [{ name: "a", description: `### ${"y".repeat(300)}` }], [])).toContain(`— ${"y".repeat(199)}…\n`));
 });

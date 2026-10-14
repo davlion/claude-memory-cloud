@@ -11,6 +11,16 @@ export class MemoryFormatError extends Error {}
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const isValidName = (name: string) => NAME_RE.test(name);
 
+export const MAX_DESCRIPTION = 200;
+export const MAX_BODY = 32_000;
+
+/** One line, at most MAX_DESCRIPTION characters, with nothing that opens a heading or a code block. */
+export function cleanDescription(d: string): string {
+  let s = d.replace(/`{3,}/g, " ").replace(/\s+/g, " ").trim().replace(/^#+\s*/, "");
+  if (s.length > MAX_DESCRIPTION) s = `${s.slice(0, MAX_DESCRIPTION - 1)}…`;
+  return s;
+}
+
 export function parseMemory(text: string): Memory {
   const m = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(text.replace(/\r\n/g, "\n"));
   if (!m) throw new MemoryFormatError("missing frontmatter");
@@ -59,8 +69,8 @@ export function buildIndex(label: string, entries: IndexEntry[], conflictPaths: 
   const sorted = [...entries].sort((a, b) => a.name.localeCompare(b.name));
   if (sorted.length === 0) lines.push("(no memories yet)");
   for (const e of sorted) {
-    // One entry = one line: collapse newlines so a description can't break the index or forge a heading.
-    const desc = e.description.replace(/\s+/g, " ").trim();
+    // One entry = one line, capped: a description can't break the index or forge a heading.
+    const desc = cleanDescription(e.description);
     lines.push(`- [${e.name}](${memoryPath(e.name)}) — ${desc}`);
   }
   if (conflictPaths.length > 0) {

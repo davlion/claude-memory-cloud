@@ -2,6 +2,7 @@ import type { Props } from "./env";
 import { OpError } from "./errors";
 import { GitHub, GitHubError, RECONNECT_ACTION, toOpError } from "./github";
 import { resolveTarget, type ScopeConfig } from "./scopes";
+import type { HeadCommit } from "./store";
 
 export interface Check { check: string; status: "ok" | "warn" | "fail"; detail: string; action?: string }
 export interface ScopeReach { scope: string; repo: string; reachable: boolean; writable: boolean; private?: boolean; reason?: "app_not_installed" | "not_reachable" | "repo_public" }
@@ -127,4 +128,21 @@ export async function runHealth(o: { gh: GitHub; cfg: ScopeConfig; props: Props;
 export function formatHealth(checks: Check[]): string {
   const icon = { ok: "✓", warn: "⚠", fail: "✗" } as const;
   return checks.map((c) => `${icon[c.status]} ${c.check} — ${c.detail}${c.action ? ` → ${c.action}` : ""}`).join("\n");
+}
+
+/** A commit the server made: it carries the Memory-Source trailer, or it's the server's README init commit. */
+export const isServerCommit = (message: string) => /^Memory-Source: /m.test(message) || message.trim() === "init: claude-memory";
+
+/** One warning per memory repo whose latest commit was made outside the server (spec §10b provenance check). */
+export function provenanceChecks(heads: Map<string, HeadCommit>): Check[] {
+  const out: Check[] = [];
+  for (const [repo, h] of heads) {
+    if (isServerCommit(h.message)) continue;
+    out.push({
+      check: `provenance:${repo}`, status: "warn",
+      detail: `latest commit ${h.sha.slice(0, 7)} by ${h.author} on ${h.date.slice(0, 10)} has no Memory-Source trailer`,
+      action: `${repo} was changed outside claude-memory. Review that change before relying on these memories: ${h.url}`,
+    });
+  }
+  return out;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GitHub } from "../src/github";
-import { formatHealth, runHealth, scopeReachability } from "../src/health";
+import { formatHealth, isServerCommit, provenanceChecks, runHealth, scopeReachability } from "../src/health";
 import type { Check } from "../src/health";
 import { json, mockFetch } from "./setup";
 
@@ -163,5 +163,22 @@ describe("formatHealth", () => {
       { check: "github_token", status: "ok", detail: "ok (expires in 6h 0m)" },
       { check: "scope:acme", status: "fail", detail: "app_not_installed", action: "Ask an owner…" },
     ])).toBe("✓ github_token — ok (expires in 6h 0m)\n✗ scope:acme — app_not_installed → Ask an owner…");
+  });
+});
+
+describe("provenance", () => {
+  const head = (message: string) => ({ sha: "abcdef1234567", message, author: "Eve", date: "2026-10-14T09:00:00Z", url: "https://github.com/acme-org/claude-memory/commit/abcdef1" });
+  it("recognizes server commits", () => {
+    expect(isServerCommit("save: a\n\nMemory-Source: claude.ai chat\nMemory-Scope: acme\n")).toBe(true);
+    expect(isServerCommit("init: claude-memory")).toBe(true);
+    expect(isServerCommit("Update a.md")).toBe(false);
+    expect(isServerCommit("Update a.md (mentions Memory-Source: in the middle)")).toBe(false);
+  });
+  it("warns once per repo whose head commit was made outside the server, with a review link", () => {
+    expect(provenanceChecks(new Map([["acme-org/claude-memory", head("Update a.md")], ["dav/mem", head("save: x\n\nMemory-Source: t\n")]]))).toEqual([{
+      check: "provenance:acme-org/claude-memory", status: "warn",
+      detail: "latest commit abcdef1 by Eve on 2026-10-14 has no Memory-Source trailer",
+      action: "acme-org/claude-memory was changed outside claude-memory. Review that change before relying on these memories: https://github.com/acme-org/claude-memory/commit/abcdef1",
+    }]);
   });
 });

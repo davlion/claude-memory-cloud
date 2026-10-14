@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { GitHubError } from "../src/github";
-import { serializeMemory } from "../src/memory";
+import { MAX_BODY, serializeMemory } from "../src/memory";
 import { deleteMemory, getIndex, getIndexVersioned, readMemories, saveMemory, searchMemories } from "../src/operations";
 import type { Target } from "../src/scopes";
 import { FakeStore } from "./fake-store";
@@ -237,5 +237,22 @@ describe("index rebuilt from frontmatter (never the stored MEMORY.md)", () => {
   it("returns the head commit for provenance checks", async () => {
     await saveMemory(store, T, { name: "a", ...base }, NOW);
     expect((await getIndexVersioned(store, T)).head?.message).toContain("Memory-Source: test");
+  });
+});
+
+describe("save limits", () => {
+  it("description: whitespace collapsed to one line; over 200 characters → invalid", async () => {
+    const r = await saveMemory(store, T, { name: "a", ...base, description: "line one\n\nline   two" }, NOW);
+    expect(r.status).toBe("created");
+    expect(store.repo("dav/mem").get("memories/a.md")).toContain("description: line one line two\n");
+    expect((await saveMemory(store, T, { name: "b", ...base, description: "d".repeat(201) }, NOW)).status).toBe("invalid");
+    expect((await saveMemory(store, T, { name: "c", ...base, description: "e".repeat(200) }, NOW)).status).toBe("created");
+  });
+  it("body over 32,000 characters → invalid", async () => {
+    expect((await saveMemory(store, T, { name: "a", ...base, body: "b".repeat(MAX_BODY + 1) }, NOW)).status).toBe("invalid");
+  });
+  it("a secret in source is rejected too", async () => {
+    const r = await saveMemory(store, T, { name: "a", ...base, source: "ghp_" + "a".repeat(36) }, NOW);
+    expect(r).toMatchObject({ status: "rejected_secret", pattern: "github-token" });
   });
 });

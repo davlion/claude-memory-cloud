@@ -1,7 +1,7 @@
 import { OpError, RETRYABLE, type ErrorCode } from "./errors";
 import { toOpError } from "./github";
 import {
-  buildIndex, conflictPath, findSimilar, isValidName, memoryPath, MemoryFormatError,
+  buildIndex, cleanDescription, conflictPath, findSimilar, isValidName, MAX_BODY, MAX_DESCRIPTION, memoryPath, MemoryFormatError,
   parseMemory, parseMemoryPath, serializeMemory, type IndexEntry, type Memory,
 } from "./memory";
 import type { Target } from "./scopes";
@@ -35,7 +35,7 @@ function entries(snap: Snapshot): { list: IndexEntry[]; conflicts: string[] } {
     if (p.conflict) { conflicts.push(path); continue; }
     try {
       const m = parseMemory(f.content);
-      list.push({ name: p.name, description: m.description });
+      list.push({ name: p.name, description: cleanDescription(m.description) });
     } catch {
       list.push({ name: p.name, description: "(unparseable frontmatter — fix by hand)" });
     }
@@ -81,14 +81,17 @@ async function withRetry(
 
 export async function saveMemory(store: Store, t: Target, input: SaveInput, now = new Date()): Promise<OpResult> {
   const r = (status: OpResult["status"], extra: Partial<OpResult> = {}): OpResult => ({ status, name: input.name, scope: t.displayLabel, ...extra });
+  const description = (input.description ?? "").replace(/\s+/g, " ").trim();
   if (!isValidName(input.name)) return r("invalid", { message: "name must match ^[a-z0-9][a-z0-9-]{0,63}$" });
   if (!TYPES.includes(input.type)) return r("invalid", { message: `type must be one of ${TYPES.join(", ")}` });
-  if (!input.description?.trim()) return r("invalid", { message: "description is required" });
+  if (!description) return r("invalid", { message: "description is required" });
+  if (description.length > MAX_DESCRIPTION) return r("invalid", { message: `description must be at most ${MAX_DESCRIPTION} characters on one line; put details in the body` });
   if (!input.body?.trim()) return r("invalid", { message: "body is required" });
-  const pattern = scanForSecrets(`${input.name}\n${input.description}\n${input.body}`);
+  if (input.body.length > MAX_BODY) return r("invalid", { message: `body must be at most ${MAX_BODY} characters; split it into several memories` });
+  const pattern = scanForSecrets(`${input.name}\n${description}\n${input.body}\n${input.source ?? ""}`);
   if (pattern) return r("rejected_secret", { pattern, message: "Remove the credential and save again." });
 
-  const mem: Memory = { name: input.name, description: input.description, type: input.type as Memory["type"], body: input.body };
+  const mem: Memory = { name: input.name, description, type: input.type as Memory["type"], body: input.body };
   let content: string;
   try { content = serializeMemory(mem); parseMemory(content); }
   catch (e) { return r("invalid", { message: (e as MemoryFormatError).message }); }
@@ -99,7 +102,7 @@ export async function saveMemory(store: Store, t: Target, input: SaveInput, now 
     if (input.version === undefined) {
       if (existing) return { result: r("exists", { version: existing.sha, message: "Read it and update with its version instead." }) };
       if (!input.force) {
-        const similar = findSimilar({ name: input.name, description: input.description }, entries(snap).list);
+        const similar = findSimilar({ name: input.name, description }, entries(snap).list);
         if (similar.length) return { result: r("similar_found", { similar, message: "Update one of these, or save again with force: true." }) };
       }
       return { result: r("created"), changes: [{ path, content }], op: "save", source: input.source };
