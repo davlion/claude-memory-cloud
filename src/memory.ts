@@ -58,7 +58,11 @@ export function buildIndex(label: string, entries: IndexEntry[], conflictPaths: 
   const lines = [`# Memory index — ${label}`, ""];
   const sorted = [...entries].sort((a, b) => a.name.localeCompare(b.name));
   if (sorted.length === 0) lines.push("(no memories yet)");
-  for (const e of sorted) lines.push(`- [${e.name}](${memoryPath(e.name)}) — ${e.description}`);
+  for (const e of sorted) {
+    // One entry = one line: collapse newlines so a description can't break the index or forge a heading.
+    const desc = e.description.replace(/\s+/g, " ").trim();
+    lines.push(`- [${e.name}](${memoryPath(e.name)}) — ${desc}`);
+  }
   if (conflictPaths.length > 0) {
     lines.push("", "## Conflicts");
     for (const p of [...conflictPaths].sort()) {

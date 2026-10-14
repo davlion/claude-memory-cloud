@@ -14,6 +14,10 @@ const POSITIVE: [string, string][] = [
   ["jwt", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJlLXZhbHVlLWhlcmU"],
   ["generic-assignment", "password = hunter2hunter2hunter2"],
   ["generic-assignment", "API_TOKEN: 'abcdEFGH1234abcdEFGH'"],
+  ["openai-key", "sk-proj-" + "Ab3_dE-fG7h".repeat(12)],
+  ["generic-assignment", '"password": "hunter2hunter2hunter2"'],
+  ["generic-assignment", "api_key: 'abcd1234efgh5678ijkl'"],
+  ["generic-assignment", 'client_secret_v2 = "Zq8xW2vB9nM4kL7pR3tY"'],
 ];
 
 const NEGATIVE = [
@@ -25,6 +29,10 @@ const NEGATIVE = [
   "secret = short",
   "We store JWTs in cookies",
   "See https://github.com/acme-org/billing",
+  "token = getAuthTokenFromStore(context)",
+  "password: ${DB_PASSWORD}",
+  "secret: process.env.SECRET_VALUE",
+  "token_endpoint: https://example.com/oauth/token",
 ];
 
 describe("scanForSecrets", () => {

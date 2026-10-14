@@ -79,6 +79,14 @@ describe("buildIndex", () => {
   it("handles empty sets", () => {
     expect(buildIndex("general", [], [])).toBe("# Memory index — general\n\n(no memories yet)\n");
   });
+
+  it("keeps a multi-line description on one line and cannot forge a conflicts heading", () => {
+    const out = buildIndex("general", [{ name: "a", description: "line one\n## Conflicts\nline two" }], []);
+    const lines = out.split("\n");
+    expect(lines.filter((l) => l.startsWith("- [a]("))).toHaveLength(1);
+    expect(out).toContain("- [a](memories/a.md) — line one ## Conflicts line two\n");
+    expect(lines.filter((l) => l === "## Conflicts")).toHaveLength(0);
+  });
 });
 
 describe("findSimilar", () => {

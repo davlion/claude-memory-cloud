@@ -18,4 +18,9 @@ describe("normalizeRemote", () => {
     "rejects %s",
     (input) => expect(normalizeRemote(input)).toBeNull(),
   );
+
+  it.each(["../..", "./x", "owner/..", "owner/.", "a.b/c"])(
+    "rejects bare %s",
+    (input) => expect(normalizeRemote(input)).toBeNull(),
+  );
 });
