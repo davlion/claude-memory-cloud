@@ -109,6 +109,35 @@ describe("runHealth", () => {
   });
 });
 
+describe("github_api failure classification", () => {
+  it("a thrown TypeError containing a token never reaches the output", async () => {
+    mockFetch([{ url: "https://api.github.com/", respond: () => { throw new TypeError("fetch failed ghu_secret"); } }]);
+    const cs = await runHealth({ gh: new GitHub("t"), cfg, props, appSlug: "s", now: NOW });
+    expect(byCheck(cs, "github_api").status).toBe("fail");
+    expect(formatHealth(cs)).not.toContain("ghu_secret");
+    expect(JSON.stringify(cs)).not.toContain("ghu_secret");
+  });
+
+  it("a Cloudflare subrequest limit is server_limit with the Cloudflare action", async () => {
+    mockFetch([
+      { url: "https://api.github.com/user/installations?", respond: () => { throw new Error("Too many subrequests"); } },
+      { url: "https://api.github.com/user", respond: () => json({ login: "dav" }, 200, RL) },
+    ]);
+    const cs = await runHealth({ gh: new GitHub("t"), cfg, props, appSlug: "s", now: NOW });
+    expect(byCheck(cs, "github_api")).toMatchObject({ status: "fail", detail: expect.stringContaining("server_limit"), action: expect.stringContaining("Cloudflare") });
+    expect(byCheck(cs, "github_api").action).not.toContain("githubstatus.com");
+  });
+
+  it("an unexpected error is internal, with no raw text", async () => {
+    mockFetch([
+      { url: "https://api.github.com/user/installations?", respond: () => json({ installations: 5 }, 200, RL) },
+      { url: "https://api.github.com/user", respond: () => json({ login: "dav" }, 200, RL) },
+    ]);
+    const cs = await runHealth({ gh: new GitHub("t"), cfg, props, appSlug: "s", now: NOW });
+    expect(byCheck(cs, "github_api")).toMatchObject({ status: "fail", detail: expect.stringContaining("internal"), action: expect.stringContaining("bug") });
+  });
+});
+
 describe("scopeReachability", () => {
   it("reports per scope", async () => {
     mockFetch(routes({ installs: [{ id: 1, account: { login: "dav" } }] }));

@@ -1,6 +1,6 @@
 import type { Props } from "./env";
 import { OpError } from "./errors";
-import { GitHub, GitHubError, RECONNECT_ACTION } from "./github";
+import { GitHub, GitHubError, RECONNECT_ACTION, toOpError } from "./github";
 import { resolveTarget, type ScopeConfig } from "./scopes";
 
 export interface Check { check: string; status: "ok" | "warn" | "fail"; detail: string; action?: string }
@@ -41,8 +41,16 @@ export async function scopeReachability(gh: GitHub, cfg: ScopeConfig, _appSlug: 
   return out;
 }
 
-const githubApiFail = (e: unknown): Check => ({ check: "github_api", status: "fail", detail: `unavailable (${(e as Error).message})`,
-  action: "GitHub is having problems (status page: githubstatus.com). Saves will be queued in the outbox; nothing to do." });
+// Classified through toOpError so a server bug or limit is never labelled a GitHub outage.
+// The detail never carries raw exception text (it can hold request details or tokens).
+function githubApiFail(e: unknown): Check {
+  const err = toOpError(e);
+  if (err.code === "unavailable") {
+    const how = e instanceof GitHubError && e.status > 0 ? `HTTP ${e.status}` : "network error";
+    return { check: "github_api", status: "fail", detail: `unavailable (${how})`, action: err.action };
+  }
+  return { check: "github_api", status: "fail", detail: `${err.code}: ${err.message}`, action: err.action };
+}
 
 function fmtDuration(ms: number) {
   const m = Math.max(0, Math.round(ms / 60_000));
