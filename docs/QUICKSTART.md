@@ -157,7 +157,7 @@ The GitHub App is how the server gets access to your memory repo, **and only tha
 
    Expected: `{"ok":true,...}`.
 
-**Which Cloudflare plan?** The server runs on Workers Free. Workers Paid ($5/month) raises the limits that matter here (subrequests, KV writes, CPU time). See "What are the Cloudflare limits?" in the FAQ.
+**Which Cloudflare plan?** The server fits Workers Free; this deployment uses Workers Paid for headroom. Workers Paid ($5/month) raises the limits that matter here (subrequests, KV writes, CPU time). See "What are the Cloudflare limits?" in the FAQ.
 
 ---
 
@@ -231,13 +231,13 @@ Memories about the client's codebases go to `<client-org>/claude-memory` under `
 
 Up to about five people can share one server, each with their own repos. Nobody sees anyone else's scopes.
 
-1. Your friend creates their own private `<friend>/claude-memory` and installs **your** GitHub App on it (Part 4, using your app's link).
+1. Your friend creates their own private `<friend>/claude-memory` and installs **your** GitHub App on it (Part 4, using your app's link). Your app must be public first, because a private app can be installed only by its owner account: see "Adding a client organization", step 2 ("Make public").
 2. You add them to `scopes.production.json`: `{"<you>": {…}, "<friend>": {"general": "<friend>/claude-memory"}}`, then rerun `npx wrangler secret put SCOPES --env production < scopes.production.json`.
 3. They add the connector in claude.ai with your server's URL (Part 6).
 
-The server pins each login to its numeric GitHub ID at first sign-in. If someone deletes and recreates their GitHub account under the same name, sign-in is refused until you delete the pin: `npx wrangler kv key delete --binding OAUTH_KV --env production "allowlist:github-id:<login, lower-case>"`.
+The server pins each login to its numeric GitHub ID at first sign-in. If someone deletes and recreates their GitHub account under the same name, sign-in is refused until you delete the pin: `npx wrangler kv key delete --binding OAUTH_KV --env production --remote "allowlist:github-id:<login, lower-case>"`. Existing grants with the old ID are refused until that user reconnects.
 
-To remove someone, delete their entry from `SCOPES` and rerun `secret put`: their next request gets "access denied".
+To remove someone, delete their entry from `SCOPES` and rerun `secret put`: their next request gets a 403, "This GitHub account is no longer on this memory server's allowlist.", and a fresh sign-in shows "This GitHub account isn't on this memory server".
 
 ---
 
