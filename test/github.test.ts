@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GitHub, GitHubError, toOpError } from "../src/github";
-import { RETRYABLE } from "../src/errors";
+import { errorPayload, RETRYABLE } from "../src/errors";
 import { json, mockFetch } from "./setup";
 
 describe("GitHub.request", () => {
@@ -122,6 +122,17 @@ describe("toOpError: final vs retryable", () => {
 });
 
 describe("cachedGet and graphql", () => {
+  it("an unknown GraphQL error type is internal and not retryable", async () => {
+    mockFetch([{ method: "POST", url: "https://api.github.com/graphql", respond: () => json({ errors: [{ type: "INSUFFICIENT_SCOPES", message: "m ghu_secret" }] }) }]);
+    const err = await new GitHub("t").graphql("q", {}).catch((e) => e);
+    const op = toOpError(err);
+    expect(op.code).toBe("internal");
+    expect(errorPayload(op).retryable).toBe(false);
+  });
+  it("a rate-limit message without a type is still rate limited (retryable)", async () => {
+    mockFetch([{ method: "POST", url: "https://api.github.com/graphql", respond: () => json({ errors: [{ message: "API rate limit exceeded" }] }) }]);
+    expect(toOpError(await new GitHub("t").graphql("q", {}).catch((e) => e)).code).toBe("unavailable");
+  });
   it("cachedGet fetches a path once per client", async () => {
     const { calls } = mockFetch([{ url: "https://api.github.com/user/installations", respond: () => json({ installations: [] }) }]);
     const gh = new GitHub("t");
@@ -141,7 +152,7 @@ describe("cachedGet and graphql", () => {
     expect(await new GitHub("t").graphql("query { viewer { login } }", {})).toEqual({ viewer: { login: "dav" } });
     expect(await calls[0]!.json()).toEqual({ query: "query { viewer { login } }", variables: {} });
   });
-  it.each([["RATE_LIMITED", "rate_limited"], ["NOT_FOUND", "not_found"], ["FORBIDDEN", "forbidden"], ["SOMETHING", "unavailable"]])(
+  it.each([["RATE_LIMITED", "rate_limited"], ["NOT_FOUND", "not_found"], ["FORBIDDEN", "forbidden"], ["INSUFFICIENT_SCOPES", "other"], ["SOMETHING", "other"]])(
     "graphql error %s → %s", async (type, kind) => {
       mockFetch([{ method: "POST", url: "https://api.github.com/graphql", respond: () => json({ errors: [{ type, message: "m" }] }) }]);
       const err = await new GitHub("t").graphql("q", {}).catch((e) => e);

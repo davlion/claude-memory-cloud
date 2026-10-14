@@ -140,12 +140,12 @@ The GitHub App is how the server gets access to your memory repo, **and only tha
    {"<you>": {"general": "<you>/claude-memory"}}
    ```
 
-5. Set the secrets. Each `secret put` prompts for a value (paste it there, not on the command line), except `SCOPES`, which is read from the file:
+5. Set the secrets. Each `secret put` prompts for a value (paste it there, not on the command line), except `SCOPES`, which is read from the file. Always run `node scripts/check-scopes.mjs <file>` first (it prints `OK` or what is wrong): a malformed `SCOPES` secret makes every sign-in and every memory call fail with "memory server misconfigured: SCOPES is invalid".
 
    ```bash
    npx wrangler secret put GITHUB_CLIENT_ID --env production        # the Client ID from Part 3
    npx wrangler secret put GITHUB_CLIENT_SECRET --env production    # the client secret from Part 3
-   npx wrangler secret put SCOPES --env production < scopes.production.json
+   node scripts/check-scopes.mjs scopes.production.json && npx wrangler secret put SCOPES --env production < scopes.production.json
    ```
 
 6. Deploy and check:
@@ -168,7 +168,7 @@ The GitHub App is how the server gets access to your memory repo, **and only tha
    - **URL:** `https://claude-memory.<sub>.workers.dev/mcp`
 2. Click **Connect**. Your browser shows your server's consent page ("Allow Claude to use your claude-memory?"). Click **Allow**. You're then sent to GitHub to approve the app; if your browser is already signed in to GitHub (and Cloudflare), these pages recognize it and go quickly. Make sure the browser is signed in to the GitHub account that owns your memory repo. You'll see this consent page every time you connect a new client; there's no "remember me".
 3. Test it: in a new chat, ask *"What's in my memory index?"* You should see a health line and your index. A better test once you have a memory: ask about it in plain words (e.g. *"What kind of soup do I like?"*) and check that Claude finds it without being told to look.
-4. If you see **"This GitHub account isn't on this memory server"**, the GitHub account you approved with isn't in `SCOPES`. Sign in to GitHub with the right account, or add yours to `scopes.production.json` and rerun `npx wrangler secret put SCOPES --env production < scopes.production.json`.
+4. If you see **"This GitHub account isn't on this memory server"**, the GitHub account you approved with isn't in `SCOPES`. Sign in to GitHub with the right account, or add yours to `scopes.production.json` and rerun `node scripts/check-scopes.mjs scopes.production.json && npx wrangler secret put SCOPES --env production < scopes.production.json`.
 
 The connector now works in claude.ai chat (web, Desktop, mobile), in Claude Code cloud sessions, and in local Claude Code when you're logged in with your claude.ai account.
 
@@ -210,7 +210,7 @@ To keep a client's memories in the client's own GitHub org:
 1. **The client** (an org owner) creates a private, empty repo `<client-org>/claude-memory`. They add you to it if you don't already have access.
 2. Make sure your app is public, so other accounts can install it: open `https://github.com/settings/apps/<slug>/advanced`. If the Danger zone offers **Make public**, click it (this doesn't list the app anywhere; it only allows other accounts to install it). If the client's org doesn't appear in the install page's account picker, this is the usual cause.
 3. **The client** installs your app: `https://github.com/apps/<slug>/installations/select_target` → their org → **Only select repositories** → `claude-memory`. No secrets change hands.
-4. **You** add the scope under your login in `scopes.production.json`, e.g. `{"<you>": {"general": "<you>/claude-memory", "acme": "acme-org/claude-memory"}}`, then run `npx wrangler secret put SCOPES --env production < scopes.production.json`. No redeploy is needed: the secret takes effect immediately.
+4. **You** add the scope under your login in `scopes.production.json`, e.g. `{"<you>": {"general": "<you>/claude-memory", "acme": "acme-org/claude-memory"}}`, then run `node scripts/check-scopes.mjs scopes.production.json && npx wrangler secret put SCOPES --env production < scopes.production.json`. No redeploy is needed: the secret takes effect immediately.
 5. **You** add the scope to the local scope map by rerunning `./setup.sh` on each machine.
 
 **Before you start writing client memories,** agree these with the client (whatever is written there loads into your Claude sessions, so write access matters):
@@ -232,7 +232,7 @@ Memories about the client's codebases go to `<client-org>/claude-memory` under `
 Up to about five people can share one server, each with their own repos. Nobody sees anyone else's scopes.
 
 1. Your friend creates their own private `<friend>/claude-memory` and installs **your** GitHub App on it (Part 4, using your app's link). Your app must be public first, because a private app can be installed only by its owner account: see "Adding a client organization", step 2 ("Make public").
-2. You add them to `scopes.production.json`: `{"<you>": {…}, "<friend>": {"general": "<friend>/claude-memory"}}`, then rerun `npx wrangler secret put SCOPES --env production < scopes.production.json`.
+2. You add them to `scopes.production.json`: `{"<you>": {…}, "<friend>": {"general": "<friend>/claude-memory"}}`, then rerun `node scripts/check-scopes.mjs scopes.production.json && npx wrangler secret put SCOPES --env production < scopes.production.json`.
 3. They add the connector in claude.ai with your server's URL (Part 6).
 
 The server pins each login to its numeric GitHub ID at first sign-in. If someone deletes and recreates their GitHub account under the same name, sign-in is refused until you delete the pin: `npx wrangler kv key delete --binding OAUTH_KV --env production --remote "allowlist:github-id:<login, lower-case>"`. Existing grants with the old ID are refused until that user reconnects.

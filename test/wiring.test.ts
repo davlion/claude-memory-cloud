@@ -38,7 +38,7 @@ describe("per-user scopes at /mcp", () => {
     const props = { login: "gone", githubToken: "t", githubRefreshToken: "r", githubTokenExpiresAt: Date.now() + 3600_000 };
     const res = await mcpApi.fetch(new Request("https://memory.test/mcp", { method: "POST", body: "{}" }), env, { props } as never);
     expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ error: "access_denied" });
+    expect(await res.json()).toEqual({ error: "access_denied", message: "This GitHub account is no longer on this memory server's allowlist.", retryable: false });
   });
 
   const call = (githubId?: number) => {
@@ -102,5 +102,25 @@ describe("rate limiting of unauthenticated KV-writing endpoints", () => {
     for (let i = 0; i < 25; i++) { last = await exports.default.fetch("https://memory.test/authorize", init); if (last.status === 429) break; }
     expect(last.status).toBe(429);
     expect(last.headers.get("retry-after")).toBe("60");
+  });
+});
+
+describe("a broken server configuration is a shaped response, not a 500", () => {
+  const props = { login: "dav", githubToken: "t", githubRefreshToken: "r", githubTokenExpiresAt: Date.now() + 3600_000 };
+  it("/mcp with a malformed SCOPES → 503 JSON, nothing echoed", async () => {
+    const bad = { ...env, SCOPES: '{"dav": {"general": "not a repo ghu_secret"}}' };
+    const res = await mcpApi.fetch(new Request("https://memory.test/mcp", { method: "POST", body: "{}" }), bad as never, { props } as never);
+    expect(res.status).toBe(503);
+    const body = await res.text();
+    expect(JSON.parse(body)).toEqual({ error: "internal", message: "memory server misconfigured: SCOPES is invalid",
+      action: "The server owner must fix the SCOPES secret (see SELF-HOSTING/QUICKSTART)", retryable: false });
+    expect(body).not.toContain("ghu_secret");
+  });
+  it("/mcp 503 for an unavailable KV uses the same shape", async () => {
+    const kv = { ...env, OAUTH_KV: { get: () => { throw new Error("KV down"); } } };
+    const res = await mcpApi.fetch(new Request("https://memory.test/mcp", { method: "POST", body: "{}" }),
+      kv as never, { props: { ...props, githubId: 1 } } as never);
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ error: "unavailable", retryable: true });
   });
 });

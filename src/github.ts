@@ -89,8 +89,9 @@ export class GitHub {
     const res = await this.request<{ data?: T; errors?: { type?: string; message?: string }[] }>("POST", "/graphql", { query, variables });
     if (res.errors?.length) {
       const err = res.errors[0]!;
-      const kind: GitHubErrorKind = err.type === "RATE_LIMITED" ? "rate_limited"
-        : err.type === "NOT_FOUND" ? "not_found" : err.type === "FORBIDDEN" ? "forbidden" : "unavailable";
+      // Only known types are classified; an unknown type (INSUFFICIENT_SCOPES, ...) won't fix itself on retry, so it is "other" → internal.
+      const kind: GitHubErrorKind = err.type === "RATE_LIMITED" || /rate limit/i.test(err.message ?? "") ? "rate_limited"
+        : err.type === "NOT_FOUND" ? "not_found" : err.type === "FORBIDDEN" ? "forbidden" : "other";
       throw new GitHubError(`GraphQL: ${err.message ?? err.type ?? "error"}`, 200, kind);
     }
     if (!res.data) throw new GitHubError("GraphQL: empty response", 200, "unavailable");

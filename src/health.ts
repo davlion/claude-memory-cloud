@@ -7,12 +7,14 @@ import type { HeadCommit } from "./store";
 export interface Check { check: string; status: "ok" | "warn" | "fail"; detail: string; action?: string }
 export interface ScopeReach {
   scope: string; repo: string; reachable: boolean; writable: boolean; private?: boolean;
-  reason?: "app_not_installed" | "not_reachable" | "repo_public";
+  reason?: "app_not_installed" | "not_reachable" | "repo_public" | "installation_suspended" | "error";
+  /** Only on reason "error": why this scope's installation could not be checked (status-only, never raw text). */
+  error?: { code: string; message: string; action?: string };
   /** Only on repo_public entries: what GitHub reported ("public", "internal", or "unknown" when missing). */
   visibility?: string;
 }
 
-type Installation = { id: number; account: { login: string }; repository_selection?: "all" | "selected" };
+type Installation = { id: number; account: { login: string }; repository_selection?: "all" | "selected"; suspended_at?: string | null };
 type InstRepo = { full_name: string; private?: boolean; visibility?: string; permissions?: { push?: boolean } };
 
 async function listAll<T>(gh: GitHub, path: string, key: string): Promise<T[]> {
@@ -29,18 +31,41 @@ async function listAll<T>(gh: GitHub, path: string, key: string): Promise<T[]> {
 
 const installations = (gh: GitHub) => listAll<Installation>(gh, "/user/installations", "installations");
 
-export async function scopeReachability(gh: GitHub, cfg: ScopeConfig, _appSlug: string): Promise<ScopeReach[]> {
-  const installs = await installations(gh);
-  const reposByInstall = new Map<number, InstRepo[]>();
+const errorInfo = (e: unknown) => {
+  const err = toOpError(e);
+  return { code: err.code, message: err.message, action: err.action };
+};
+
+/**
+ * Reachability per scope. A failure is contained: if one installation's repository list can't be read, only that
+ * installation's scopes are marked (reason "error"); if the installation list itself fails, `listingError` is set
+ * and every scope is marked.
+ */
+export async function scopeReachabilityDetailed(gh: GitHub, cfg: ScopeConfig, _appSlug: string): Promise<{ reach: ScopeReach[]; listingError?: unknown }> {
   const out: ScopeReach[] = [];
+  let installs: Installation[];
+  try {
+    installs = await installations(gh);
+  } catch (e) {
+    for (const [scope, repo] of Object.entries(cfg)) out.push({ scope, repo, reachable: false, writable: false, reason: "error", error: errorInfo(e) });
+    return { reach: out, listingError: e };
+  }
+  const reposByInstall = new Map<number, InstRepo[] | { error: unknown }>();
   for (const [scope, repo] of Object.entries(cfg)) {
     const owner = repo.split("/")[0]!.toLowerCase();
     const inst = installs.find((i) => i.account.login.toLowerCase() === owner);
     if (!inst) { out.push({ scope, repo, reachable: false, writable: false, reason: "app_not_installed" }); continue; }
+    if (inst.suspended_at) { out.push({ scope, repo, reachable: false, writable: false, reason: "installation_suspended" }); continue; }
     if (!reposByInstall.has(inst.id)) {
-      reposByInstall.set(inst.id, await listAll<InstRepo>(gh, `/user/installations/${inst.id}/repositories`, "repositories"));
+      try {
+        reposByInstall.set(inst.id, await listAll<InstRepo>(gh, `/user/installations/${inst.id}/repositories`, "repositories"));
+      } catch (e) {
+        reposByInstall.set(inst.id, { error: e });
+      }
     }
-    const r = reposByInstall.get(inst.id)!.find((x) => x.full_name.toLowerCase() === repo.toLowerCase());
+    const listed = reposByInstall.get(inst.id)!;
+    if (!Array.isArray(listed)) { out.push({ scope, repo, reachable: false, writable: false, reason: "error", error: errorInfo(listed.error) }); continue; }
+    const r = listed.find((x) => x.full_name.toLowerCase() === repo.toLowerCase());
     if (!r) { out.push({ scope, repo, reachable: false, writable: false, reason: "not_reachable" }); continue; }
     if (r.visibility !== "private") {
       out.push({ scope, repo, reachable: true, writable: false, private: false, reason: "repo_public", visibility: r.visibility ?? "unknown" });
@@ -48,7 +73,21 @@ export async function scopeReachability(gh: GitHub, cfg: ScopeConfig, _appSlug: 
     }
     out.push({ scope, repo, reachable: true, writable: Boolean(r.permissions?.push), private: true });
   }
-  return out;
+  return { reach: out };
+}
+
+export async function scopeReachability(gh: GitHub, cfg: ScopeConfig, appSlug: string): Promise<ScopeReach[]> {
+  return (await scopeReachabilityDetailed(gh, cfg, appSlug)).reach;
+}
+
+export function notReachableAction(owner: string, repo: string, appSlug: string, login: string): string {
+  return `The app is installed on ${owner} but can't see ${repo}. Likely fixes, in order: add claude-memory to the app's repositories (${owner} → Settings → GitHub Apps → ${appSlug} → Configure); create the private repo ${repo} if it doesn't exist; ask an owner of ${owner} to add your account (${login}) to it.`;
+}
+
+export function suspendedAction(owner: string, appSlug: string, login: string): string {
+  return owner.toLowerCase() === login.toLowerCase()
+    ? `Unsuspend the GitHub App on ${owner}: Settings → Applications → Installed GitHub Apps → ${appSlug} → Unsuspend.`
+    : `Ask an owner of ${owner} to unsuspend the ${appSlug} app (organization Settings → GitHub Apps).`;
 }
 
 /** Installations covering a memory repo's owner that grant access to all of that account's repositories (spec §10b). */
@@ -99,7 +138,9 @@ export async function runHealth(o: { gh: GitHub; cfg: ScopeConfig; props: Props;
   }
 
   try {
-    for (const r of await scopeReachability(o.gh, scopeCfg, o.appSlug)) {
+    const { reach, listingError } = await scopeReachabilityDetailed(o.gh, scopeCfg, o.appSlug);
+    if (listingError) throw listingError;
+    for (const r of reach) {
       const [owner] = r.repo.split("/");
       const name = `scope:${r.scope}`;
       if (r.reason === "repo_public") {
@@ -113,14 +154,17 @@ export async function runHealth(o: { gh: GitHub; cfg: ScopeConfig; props: Props;
         checks.push({ check: name, status: "fail", detail: `repo_public ${r.repo}`, action });
       } else if (r.reachable && r.writable) checks.push({ check: name, status: "ok", detail: `ok ${r.repo}` });
       else if (r.reachable) checks.push({ check: name, status: "warn", detail: `read-only ${r.repo}`, action: `Ask an owner of ${owner} for write access to ${r.repo}.` });
-      else if (r.reason === "app_not_installed") {
+      else if (r.reason === "error") {
+        checks.push({ check: name, status: "fail", detail: `${r.error!.code}: ${r.error!.message}`, action: r.error!.action });
+      } else if (r.reason === "installation_suspended") {
+        checks.push({ check: name, status: "fail", detail: `installation_suspended ${r.repo}`, action: suspendedAction(owner!, o.appSlug, o.props.login) });
+      } else if (r.reason === "app_not_installed") {
         const own = owner!.toLowerCase() === o.props.login.toLowerCase();
         checks.push({ check: name, status: "fail", detail: `app_not_installed ${r.repo}`, action: own
           ? `Install the GitHub App on ${r.repo}: ${install} → Only select repositories → ${r.repo.split("/")[1]}.`
           : `Ask an owner of ${owner} to install the app on ${r.repo}: ${install}` });
       } else {
-        checks.push({ check: name, status: "fail", detail: `not_reachable ${r.repo}`, action:
-          `The app is installed on ${owner} but can't see ${r.repo}. Likely fixes, in order: add claude-memory to the app's repositories (${owner} → Settings → GitHub Apps → ${o.appSlug} → Configure); create the private repo ${r.repo} if it doesn't exist; ask an owner of ${owner} to add your account (${o.props.login}) to it.` });
+        checks.push({ check: name, status: "fail", detail: `not_reachable ${r.repo}`, action: notReachableAction(owner!, r.repo, o.appSlug, o.props.login) });
       }
     }
     for (const inst of await allRepoInstallations(o.gh, scopeCfg)) {

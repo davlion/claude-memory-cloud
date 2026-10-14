@@ -7,6 +7,7 @@ import { callTool, createServer, type ToolDeps } from "../src/tools";
 import { INSTRUCTIONS } from "../src/instructions";
 import { FakeStore } from "./fake-store";
 import { json, mockFetch } from "./setup";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 
 const cfg = { general: "dav/mem", acme: "acme-org/claude-memory" };
 const props = { login: "dav", githubToken: "t", githubRefreshToken: "r", githubTokenExpiresAt: Date.now() + 8 * 3600_000 };
@@ -334,7 +335,7 @@ describe("resilience, outage and leak guards", () => {
     expect(r.isError).toBe(false);
     expect(r.text).toContain("No matching memories.");
     expect(r.text).toContain(`## Search problems [server:${nonceOf(r.text)}]`);
-    expect(r.text).toMatch(/✗ all — unavailable: .* → .*githubstatus\.com/);
+    expect(r.text).toMatch(/✗ general — unavailable: .* → .*githubstatus\.com/);
   });
 
   it("raw network text never leaks into index checks or search problems", async () => {
@@ -461,5 +462,115 @@ describe("KV write health", () => {
   it("silent otherwise", async () => {
     healthyGitHub();
     expect((await callTool(deps, "memory_index", {})).text).not.toContain("kv_writes");
+  });
+});
+
+/** acme's installation (id 2) is broken in the way `o` says; dav's (id 1) is healthy. */
+function partlyBrokenGitHub(o: { listing?: () => Response; suspended?: boolean; user?: number; installList?: number }) {
+  mockFetch([
+    { url: "https://api.github.com/user/installations?", respond: () => o.installList ? json({}, o.installList) : json({ installations: [
+      { id: 1, account: { login: "dav" }, repository_selection: "selected" },
+      { id: 2, account: { login: "acme-org" }, repository_selection: "selected", suspended_at: o.suspended ? "2026-10-01T00:00:00Z" : null }] }) },
+    { url: "https://api.github.com/user/installations/1/repositories", respond: () => json({ repositories: [
+      { full_name: "dav/mem", private: true, visibility: "private", permissions: { push: true } }] }) },
+    { url: "https://api.github.com/user/installations/2/repositories", respond: () => o.listing ? o.listing() : json({ repositories: [
+      { full_name: "acme-org/claude-memory", private: true, visibility: "private", permissions: { push: true } }] }) },
+    { url: "https://api.github.com/user", respond: () => o.user ? json({ message: "Bad credentials" }, o.user) : json({ login: "dav" }) },
+  ]);
+}
+const boom = () => { throw new TypeError("fetch failed ghu_secret"); };
+
+describe("one broken installation never blanks the others", () => {
+  beforeEach(async () => { await save({ name: "a", body: "Deploy on Tuesday.\n" }); });
+
+  it("chat context: general loads even though a client installation's listing throws", async () => {
+    partlyBrokenGitHub({ listing: boom });
+    const t = (await callTool(deps, "memory_index", {})).text;
+    expect(t).toContain('<memory-index scope="general"');
+    expect(t).not.toContain("ghu_secret");
+  });
+  it("client-project context: general loads; only the broken scope fails, once, without leaking", async () => {
+    partlyBrokenGitHub({ listing: boom });
+    const t = (await callTool(deps, "memory_index", { project: "acme-org/billing" })).text;
+    expect(t).toContain('<memory-index scope="general"');
+    expect(t).toMatch(/✗ scope:acme — unavailable: .* → .*githubstatus\.com/);
+    expect(t).not.toContain("✗ index:");
+    expect(t).not.toContain('<memory-index scope="acme"');
+    expect(t).not.toContain("ghu_secret");
+  });
+  it("memory_search still searches general", async () => {
+    partlyBrokenGitHub({ listing: boom });
+    const t = (await callTool(deps, "memory_search", { query: "tuesday", project: "acme-org/billing" })).text;
+    expect(t).toContain('<memory scope="general" name="a">');
+    expect(t).toMatch(/✗ acme — unavailable/);
+    expect(t).not.toContain("ghu_secret");
+  });
+  it("a suspended installation: installation_suspended with the unsuspend action, general still loads", async () => {
+    partlyBrokenGitHub({ suspended: true });
+    const t = (await callTool(deps, "memory_index", { project: "acme-org/billing" })).text;
+    expect(t).toContain("✗ scope:acme — installation_suspended acme-org/claude-memory → Ask an owner of acme-org to unsuspend the dav-claude-memory app (organization Settings → GitHub Apps).");
+    expect(t).toContain('<memory-index scope="general"');
+    expect(t).not.toContain("✗ index:");
+  });
+  it("a suspended installation on your own account says how to unsuspend it", async () => {
+    deps = { ...deps, props: { ...props, login: "acme-org" } };
+    partlyBrokenGitHub({ suspended: true });
+    const t = (await callTool(deps, "memory_health", { project: "acme-org/billing" })).text;
+    expect(t).toContain("Unsuspend the GitHub App on acme-org: Settings → Applications → Installed GitHub Apps → dav-claude-memory → Unsuspend.");
+  });
+  it("tokenBad is only a failed sign-in: a GitHub API problem still returns a Since block", async () => {
+    partlyBrokenGitHub({ installList: 503 });
+    const t = (await callTool(deps, "memory_index", {})).text;
+    expect(t).toContain("✗ github_api");
+    expect(t).toContain("## Since");
+    partlyBrokenGitHub({ user: 401 });
+    const bad = (await callTool(deps, "memory_index", {})).text;
+    expect(bad).toContain("✗ github_token");
+    expect(bad).not.toContain("## Since");
+  });
+  it("an index read that 404s gets the specific not_reachable action", async () => {
+    const real = store.snapshot.bind(store);
+    store.snapshot = async (repo, prefix) => {
+      if (repo === "acme-org/claude-memory") throw new GitHubError("Not Found", 404, "not_found");
+      return real(repo, prefix);
+    };
+    healthyGitHub();
+    const t = (await callTool(deps, "memory_index", { project: "acme-org/billing" })).text;
+    expect(t).toMatch(/✗ index:acme — not_reachable: .* → The app is installed on acme-org but can't see acme-org\/claude-memory/);
+    expect(t).not.toContain("Check memory_health");
+  });
+  it("the project target is skipped when its owner scope isn't reachable (no duplicate failure)", async () => {
+    healthyGitHub({ acmeInstalled: false });
+    const t = (await callTool(deps, "memory_index", { project: "acme-org/billing" })).text;
+    expect(t).toContain("✗ scope:acme — app_not_installed");
+    expect(t).not.toContain("✗ index:");
+    const s = (await callTool(deps, "memory_search", { query: "tuesday", project: "acme-org/billing" })).text;
+    expect(s).not.toContain("project:acme-org/billing");
+  });
+});
+
+describe("memory_health matches memory_index's Health block", () => {
+  it("includes provenance and kv_writes for the same scopes", async () => {
+    store.put("dav/mem", "memories/x.md", serializeMemory({ name: "x", description: "d", type: "user", body: "b\n" }), "Edit x.md on github.com");
+    store.cacheWriteFailed = true;
+    healthyGitHub();
+    const t = (await callTool(deps, "memory_health", {})).text;
+    expect(t).toContain("⚠ provenance:dav/mem");
+    expect(t).toContain("⚠ kv_writes");
+    expect(t).not.toContain("<memory-index scope");
+  });
+});
+
+describe("memory:// resources", () => {
+  it("surface status-only text, never raw exception text", async () => {
+    store.snapshot = async () => { throw new GitHubError("network error: ghu_secret", 0, "unavailable"); };
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    const server = createServer(deps);
+    const client = new Client({ name: "t", version: "0" });
+    await Promise.all([server.connect(st), client.connect(ct)]);
+    const err = await client.readResource({ uri: "memory://general/index" }).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).not.toContain("ghu_secret");
+    expect((err as Error).message).toContain("GitHub unreachable (network error)");
   });
 });

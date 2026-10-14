@@ -1,5 +1,5 @@
 import { env, exports } from "cloudflare:workers";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { authHandler, s256 } from "../src/github-auth";
 import { json, mockFetch } from "./setup";
 
@@ -201,4 +201,32 @@ it("/callback stores githubId and authorizedAt in the grant props", async () => 
   expect(seen?.props).toMatchObject({ login: "carol", githubId: 7 });
   expect(seen?.props?.authorizedAt as number).toBeGreaterThanOrEqual(before);
   expect(seen?.props?.authorizedAt as number).toBeLessThanOrEqual(Date.now());
+});
+
+it("/callback with a malformed SCOPES or a failing OAUTH_KV answers an escaped HTML page, not a 500", async () => {
+  const state = await startFlow("s-bad");
+  const real = env.SCOPES;
+  (env as { SCOPES: string }).SCOPES = '{"dav": <script>ghu_secret</script>';
+  try {
+    const res = await callbackAs({ login: "dav", id: 1 }, state);
+    expect(res.status).toBe(503);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    const body = await res.text();
+    expect(body).toContain("memory server misconfigured: SCOPES is invalid");
+    expect(body).not.toContain("ghu_secret");
+    expect(body).not.toContain("<script>");
+  } finally {
+    (env as { SCOPES: string }).SCOPES = real;
+  }
+  const kvState = await startFlow("s-kv");
+  const realGet = env.OAUTH_KV.get.bind(env.OAUTH_KV) as (...a: unknown[]) => unknown;
+  const spy = vi.spyOn(env.OAUTH_KV, "get").mockImplementation(((k: string, ...rest: unknown[]) => {
+    if (String(k).startsWith("allowlist:")) throw new Error("KV down");
+    return realGet(k, ...rest);
+  }) as never);
+  const res2 = await callbackAs({ login: "dav", id: 1 }, kvState);
+  spy.mockRestore();
+  expect(res2.status).toBe(503);
+  expect(res2.headers.get("content-type")).toContain("text/html");
+  expect(await res2.text()).not.toContain("KV down");
 });

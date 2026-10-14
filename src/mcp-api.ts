@@ -1,19 +1,25 @@
 import { createMcpHandler } from "agents/mcp/server";
 import type { Env, Props } from "./env";
-import { errorPayload, OpError } from "./errors";
+import { errorPayload, OpError, SCOPES_MISCONFIGURED } from "./errors";
 import { GitHub } from "./github";
 import { parseScopeMap, scopesFor } from "./scopes";
 import { GitHubStore } from "./store";
 import { createServer } from "./tools";
 
+const denied = () => Response.json(
+  errorPayload(new OpError("access_denied", "This GitHub account is no longer on this memory server's allowlist.")), { status: 403 });
+
 /** API handler for /mcp. OAuthProvider calls fetch(request, env, ctx) with ctx.props set (decrypted). */
 export const mcpApi = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext & { props?: Props }): Promise<Response> {
     const props = ctx.props as Props;
-    const cfg = scopesFor(parseScopeMap(env.SCOPES), props.login);
-    if (!cfg) {
-      return Response.json({ error: "access_denied", error_description: "This GitHub account is no longer on this memory server's allowlist." }, { status: 403 });
+    let cfg;
+    try {
+      cfg = scopesFor(parseScopeMap(env.SCOPES), props.login);
+    } catch {
+      return Response.json(errorPayload(SCOPES_MISCONFIGURED), { status: 503 });
     }
+    if (!cfg) return denied();
     // Grants made before githubId existed lack it; they age out within the grant lifetime, and the login check above still applies.
     if (props.githubId !== undefined) {
       let pinned: string | null;
@@ -25,7 +31,7 @@ export const mcpApi = {
         return Response.json(errorPayload(e), { status: 503, headers: { "retry-after": "30" } });
       }
       if (pinned !== null && pinned !== String(props.githubId)) {
-        return Response.json({ error: "access_denied", error_description: "This GitHub account is no longer on this memory server's allowlist." }, { status: 403 });
+        return denied();
       }
     }
     const gh = new GitHub(props.githubToken);

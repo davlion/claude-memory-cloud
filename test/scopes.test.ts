@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { OpError } from "../src/errors";
+// @ts-expect-error plain .mjs without types
+import { scopesError } from "../scripts/scopes-rules.mjs";
 import { contextScopes, parseScopeMap, resolveTarget, scopesFor } from "../src/scopes";
 
 const cfg = { general: "dav/claude-memory", acme: "Acme-Org/claude-memory" };
@@ -63,4 +65,17 @@ describe("scope-map hardening", () => {
     expect(() => parseScopeMap(JSON.stringify({ Dav: { general: "a/b" }, dav: { general: "a/b" } }))).toThrow(/duplicate login/));
   it.each(["toString", "constructor", "__proto__", "hasOwnProperty"])("%s is an unknown scope", (name) =>
     expect(() => resolveTarget(cfg, name)).toThrow(expect.objectContaining({ code: "unknown_scope" })));
+});
+
+describe("scripts/scopes-rules.mjs mirrors parseScopeMap", () => {
+  const cases = [
+    '{"dav":{"general":"dav/claude-memory"}}', '{"dav":{"general":"dav/claude-memory"},"DAV":{}}', "[]", "nope", '{"-bad":{}}',
+    '{"dav":[]}', '{"dav":null}', '{"dav":{"project":"a/b"}}', '{"dav":{"general":"a"}}', '{"dav":{"general":5}}', "{}",
+  ];
+  it.each(cases)("agrees on %s", (json) => {
+    let parseError: string | null = null;
+    try { parseScopeMap(json); } catch (e) { parseError = (e as Error).message; }
+    expect(scopesError(json) === null).toBe(parseError === null);
+    if (parseError) expect(scopesError(json)).toBe(parseError);
+  });
 });

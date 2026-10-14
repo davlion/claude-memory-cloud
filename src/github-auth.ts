@@ -1,5 +1,6 @@
 import { AuthorizationError, authorizationErrorRedirect, CimdFetchError, OAuthError, type AuthRequest, type ClientRegistrationCallbackResult, type TokenExchangeCallbackResult } from "@cloudflare/workers-oauth-provider";
 import { consentPage, esc } from "./consent";
+import { SCOPES_MISCONFIGURED } from "./errors";
 import type { Env, Props } from "./env";
 import { parseScopeMap, scopesFor } from "./scopes";
 
@@ -99,6 +100,8 @@ export async function tokenExchangeCallback(o: { grantType: string; props: Props
   throw new OAuthError("temporarily_unavailable", { description: "GitHub is unavailable", statusCode: 503 });
 }
 
+class ScopesError extends Error {}
+
 const html = (body: string, status = 400) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } });
 
 async function startUpstream(env: Env, request: AuthRequest, headers?: Headers) {
@@ -138,7 +141,13 @@ const notAllowed = (login: string) => html(
  * recorded at that login's first sign-in, so a renamed and re-registered login is refused.
  */
 export async function isAllowedUser(env: Env, user: { login: string; id: number }): Promise<boolean> {
-  if (!scopesFor(parseScopeMap(env.SCOPES), user.login)) return false;
+  let cfg;
+  try {
+    cfg = scopesFor(parseScopeMap(env.SCOPES), user.login);
+  } catch {
+    throw new ScopesError();
+  }
+  if (!cfg) return false;
   const key = `allowlist:github-id:${user.login.toLowerCase()}`;
   const pinned = await env.OAUTH_KV.get(key);
   if (pinned === null) {
@@ -196,7 +205,16 @@ async function handle(req: Request, env: Env): Promise<Response> {
       } catch {
         return failed();
       }
-      if (!(await isAllowedUser(env, user))) return notAllowed(user.login);
+      let allowed: boolean;
+      try {
+        allowed = await isAllowedUser(env, user);
+      } catch (e) {
+        // A bad SCOPES secret or an unavailable KV is the server's problem: say so on a page, never a bare 500.
+        return e instanceof ScopesError
+          ? html(`<h1>Sign-in is unavailable</h1><p>${esc(SCOPES_MISCONFIGURED.message)}.</p><p>${esc(SCOPES_MISCONFIGURED.action!)}.</p>`, 503)
+          : html("<h1>Sign-in is unavailable</h1><p>The memory server could not check its allowlist right now. Try connecting again in a moment.</p>", 503);
+      }
+      if (!allowed) return notAllowed(user.login);
       const props: Props = {
         login: user.login, githubToken: tok.accessToken, githubRefreshToken: tok.refreshToken,
         githubTokenExpiresAt: Date.now() + tok.expiresIn * 1000, authorizedAt: Date.now(), githubId: user.id,
