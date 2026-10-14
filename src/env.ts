@@ -6,7 +6,6 @@ export interface Env {
   OAUTH_PROVIDER: OAuthHelpers;
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
-  COOKIE_ENCRYPTION_KEY: string;
   PUBLIC_URL: string;
   /** Worker secret: JSON {"<github login>": {"<scope>": "<owner>/<repo>"}}. The per-user scope map and the sign-in allowlist. */
   SCOPES: string;
@@ -34,4 +33,8 @@ export interface Props {
   githubRefreshToken: string;
   /** epoch ms */
   githubTokenExpiresAt: number;
+  /** epoch ms of the sign-in; the grant ends 180 days later. Missing on grants made before Plan 1b. */
+  authorizedAt?: number;
+  /** numeric GitHub user id at sign-in; checked against the pinned id on every /mcp request. Missing on older grants. */
+  githubId?: number;
 }

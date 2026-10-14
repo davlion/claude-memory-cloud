@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { AuthorizationError } from "@cloudflare/workers-oauth-provider";
-import { authHandler, exchangeCode, isAllowedRedirect, isAllowedUser, refreshGitHubToken, s256, tokenExchangeCallback } from "../src/github-auth";
+import { authHandler, exchangeCode, GRANT_IDLE_SECONDS, isAllowedRedirect, isAllowedUser, refreshGitHubToken, s256, tokenExchangeCallback } from "../src/github-auth";
 import { json, mockFetch } from "./setup";
 
 describe("isAllowedRedirect", () => {
@@ -120,5 +120,61 @@ describe("isAllowedUser (sign-in allowlist)", () => {
     expect(await env.OAUTH_KV.get("allowlist:github-id:erin")).toBe("70");
     expect(await isAllowedUser(env, { login: "Erin", id: 70 })).toBe(true);
     expect(await isAllowedUser(env, { login: "erin", id: 71 })).toBe(false);
+  });
+});
+
+describe("tokenExchangeCallback: grant lifetime and refresh resilience", () => {
+  const url = "https://github.com/login/oauth/access_token";
+  const NOW = 1_800_000_000_000;
+  const DAY = 86400_000;
+  const fresh = { login: "u", githubToken: "ghu_old", githubRefreshToken: "ghr_old", githubTokenExpiresAt: NOW + 6 * 3600_000, authorizedAt: NOW - DAY };
+  const soon = { ...fresh, githubTokenExpiresAt: NOW + 3600_000 };     // inside the 2 h refresh window, still valid
+  const expired = { ...fresh, githubTokenExpiresAt: NOW - 1000 };
+  const call = (props: typeof fresh | Omit<typeof fresh, "authorizedAt">, grantType = "refresh_token") =>
+    tokenExchangeCallback({ grantType, props, env, now: NOW });
+
+  it("ignores other grant types", async () => expect(await call(fresh, "authorization_code")).toBeUndefined());
+
+  it("slides the grant 30 days without calling GitHub while its token is fresh", async () => {
+    mockFetch([]);
+    expect(await call(fresh)).toEqual({ refreshTokenIdleTTL: GRANT_IDLE_SECONDS });
+  });
+
+  it("caps the grant at 180 days from sign-in", async () => {
+    mockFetch([]);
+    expect((await call({ ...fresh, authorizedAt: NOW - 170 * DAY }))?.refreshTokenIdleTTL).toBe(10 * 86400);
+    await expect(call({ ...fresh, authorizedAt: NOW - 180 * DAY })).rejects.toMatchObject({ code: "invalid_grant" });
+  });
+
+  it("records authorizedAt on grants made before it existed", async () => {
+    mockFetch([]);
+    const { authorizedAt: _drop, ...old } = fresh;
+    expect((await call(old))?.newProps).toMatchObject({ authorizedAt: NOW, githubToken: "ghu_old" });
+  });
+
+  it("refreshes GitHub within 2 h of expiry", async () => {
+    mockFetch([{ method: "POST", url, respond: () => json({ access_token: "ghu_new", refresh_token: "ghr_new", expires_in: 28800 }) }]);
+    expect(await call(soon)).toEqual({ refreshTokenIdleTTL: GRANT_IDLE_SECONDS,
+      newProps: { ...soon, githubToken: "ghu_new", githubRefreshToken: "ghr_new", githubTokenExpiresAt: NOW + 28800_000 } });
+  });
+
+  it("a lost refresh race (bad_refresh_token, token still valid) is temporarily_unavailable, never revocation", async () => {
+    mockFetch([{ method: "POST", url, respond: () => json({ error: "bad_refresh_token" }) }]);
+    await expect(call(soon)).rejects.toMatchObject({ code: "temporarily_unavailable" });
+  });
+
+  it("a transient failure while the token is still valid keeps the grant unchanged", async () => {
+    mockFetch([{ method: "POST", url, respond: () => json({}, 502) }]);
+    expect(await call(soon)).toEqual({ refreshTokenIdleTTL: GRANT_IDLE_SECONDS });
+  });
+
+  it("an expired token with bad_refresh_token is revoked (invalid_grant)", async () => {
+    mockFetch([{ method: "POST", url, respond: () => json({ error: "bad_refresh_token" }) }]);
+    await expect(call(expired)).rejects.toMatchObject({ code: "invalid_grant" });
+  });
+
+  it("an expired token with a transient failure is temporarily_unavailable", async () => {
+    mockFetch([{ method: "POST", url, respond: () => json({}, 502) }]);
+    await expect(call(expired)).rejects.toMatchObject({ code: "temporarily_unavailable" });
   });
 });

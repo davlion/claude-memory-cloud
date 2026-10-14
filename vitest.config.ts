@@ -16,7 +16,6 @@ export default defineProject({
           }),
           GITHUB_CLIENT_ID: "Iv1.testclient",
           GITHUB_CLIENT_SECRET: "test-secret",
-          COOKIE_ENCRYPTION_KEY: "0".repeat(64),
           GITHUB_TEST_TOKEN: process.env.GITHUB_TEST_TOKEN ?? "",
           GITHUB_TEST_REPO: process.env.GITHUB_TEST_REPO ?? "",
         },

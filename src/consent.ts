@@ -14,7 +14,7 @@ export function consentPage(details: ConsentDescription, handle: string): string
 <h1>Allow ${name} to use your claude-memory?</h1>
 <p>${origin} Access will be sent to <strong>${esc(details.redirectHost)}</strong>.</p>
 ${details.redirectIsLoopback ? "<p><strong>This sends access to an app on your computer.</strong> Continue only if you just started signing in from it.</p>" : ""}
-<p>Next you'll approve on GitHub. The server can only reach repositories where you installed the claude-memory GitHub App.</p>
+<p>Next you'll approve on GitHub. The server can only reach repositories where the claude-memory GitHub App is installed and you have access.</p>
 <form method="post">
   <input type="hidden" name="handle" value="${esc(handle)}">
   <button name="decision" value="approve">Allow</button><button name="decision" value="deny">Deny</button>

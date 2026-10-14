@@ -40,4 +40,27 @@ describe("per-user scopes at /mcp", () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: "access_denied" });
   });
+
+  const call = (githubId?: number) => {
+    const props = { login: "erin", githubToken: "t", githubRefreshToken: "r", githubTokenExpiresAt: Date.now() + 3600_000, ...(githubId === undefined ? {} : { githubId }) };
+    return mcpApi.fetch(new Request("https://memory.test/mcp", { method: "POST", body: "{}" }), env, { props } as never);
+  };
+  it("refuses a grant whose githubId differs from the pinned ID", async () => {
+    await env.OAUTH_KV.put("allowlist:github-id:erin", "100");
+    const res = await call(999);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "access_denied" });
+  });
+  it("accepts a grant whose githubId matches the pin", async () => {
+    await env.OAUTH_KV.put("allowlist:github-id:erin", "100");
+    expect((await call(100)).status).not.toBe(403);
+  });
+  it("accepts when no pin exists", async () => {
+    await env.OAUTH_KV.delete("allowlist:github-id:erin");
+    expect((await call(100)).status).not.toBe(403);
+  });
+  it("accepts a legacy grant without githubId (login check still applies)", async () => {
+    await env.OAUTH_KV.put("allowlist:github-id:erin", "100");
+    expect((await call()).status).not.toBe(403);
+  });
 });

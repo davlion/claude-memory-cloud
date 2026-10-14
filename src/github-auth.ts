@@ -1,4 +1,4 @@
-import { AuthorizationError, authorizationErrorRedirect, CimdFetchError, OAuthError, type AuthRequest } from "@cloudflare/workers-oauth-provider";
+import { AuthorizationError, authorizationErrorRedirect, CimdFetchError, OAuthError, type AuthRequest, type TokenExchangeCallbackResult } from "@cloudflare/workers-oauth-provider";
 import { consentPage, esc } from "./consent";
 import type { Env, Props } from "./env";
 import { parseScopeMap, scopesFor } from "./scopes";
@@ -49,15 +49,43 @@ export async function refreshGitHubToken(env: Env, refreshToken: string) {
   return { ok: false as const, revoked: res.ok && data.error === "bad_refresh_token" };
 }
 
-/** Refresh the upstream GitHub token when our refresh grant runs and GitHub's token is within 2h of expiry. */
-export async function tokenExchangeCallback(o: { grantType: string; props: Props; env: Env }) {
-  if (o.grantType !== "refresh_token") return;
-  if (o.props.githubTokenExpiresAt - Date.now() > 2 * 3600_000) return;
-  if (!o.props.githubRefreshToken) throw new OAuthError("invalid_grant", { description: "GitHub sign-in expired; reconnect" });
+/** Grant lifetime (spec §10b): 30 days sliding idle, 180 days absolute from sign-in. */
+export const GRANT_IDLE_SECONDS = 30 * 86400;
+export const GRANT_MAX_SECONDS = 180 * 86400;
+
+/**
+ * Runs on every MCP token exchange. On a refresh: slides the grant (capped at 180 days from sign-in), and refreshes the
+ * upstream GitHub token when it is within 2 h of expiry. Only a dead GitHub token with a rejected refresh token revokes
+ * the grant (invalid_grant); while the GitHub token still works, a lost refresh race or an outage never does.
+ */
+export async function tokenExchangeCallback(o: { grantType: string; props: Props; env: Env; now?: number }): Promise<TokenExchangeCallbackResult | undefined> {
+  if (o.grantType !== "refresh_token") return undefined;
+  const now = o.now ?? Date.now();
+  const authorizedAt = o.props.authorizedAt ?? now;
+  const left = Math.floor((authorizedAt + GRANT_MAX_SECONDS * 1000 - now) / 1000);
+  if (left < 60) throw new OAuthError("invalid_grant", { description: "This connection is 180 days old; reconnect" });
+  const out: TokenExchangeCallbackResult = { refreshTokenIdleTTL: Math.min(GRANT_IDLE_SECONDS, left) };
+  const props: Props = o.props.authorizedAt === undefined ? { ...o.props, authorizedAt } : o.props;
+  if (props !== o.props) out.newProps = props;
+
+  if (o.props.githubTokenExpiresAt - now > 2 * 3600_000) return out;
+  const stillValid = o.props.githubTokenExpiresAt - now > 60_000;
+  if (!o.props.githubRefreshToken) {
+    if (stillValid) return out;
+    throw new OAuthError("invalid_grant", { description: "GitHub sign-in expired; reconnect" });
+  }
   const r = await refreshGitHubToken(o.env, o.props.githubRefreshToken);
-  if (!r.ok && r.revoked) throw new OAuthError("invalid_grant", { description: "GitHub access was revoked" });
-  if (!r.ok) throw new OAuthError("temporarily_unavailable", { description: "GitHub is unavailable", statusCode: 503 });
-  return { newProps: { ...o.props, githubToken: r.accessToken, githubRefreshToken: r.refreshToken, githubTokenExpiresAt: Date.now() + r.expiresIn * 1000 } };
+  if (r.ok) {
+    out.newProps = { ...props, githubToken: r.accessToken, githubRefreshToken: r.refreshToken, githubTokenExpiresAt: now + r.expiresIn * 1000 };
+    return out;
+  }
+  if (stillValid) {
+    // bad_refresh_token here means another request already rotated the refresh token (or its grant write was lost).
+    if (r.revoked) throw new OAuthError("temporarily_unavailable", { description: "GitHub token refresh raced another request; retry", statusCode: 503 });
+    return out; // GitHub hiccup: keep the grant and the still-valid token; the next refresh retries
+  }
+  if (r.revoked) throw new OAuthError("invalid_grant", { description: "GitHub access was revoked" });
+  throw new OAuthError("temporarily_unavailable", { description: "GitHub is unavailable", statusCode: 503 });
 }
 
 const html = (body: string, status = 400) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } });
@@ -113,12 +141,11 @@ async function handle(req: Request, env: Env): Promise<Response> {
   {
     const url = new URL(req.url);
     const oauth = env.OAUTH_PROVIDER;
-    const remember = { secret: env.COOKIE_ENCRYPTION_KEY, maxAgeSeconds: 30 * 86400 };
 
     if (url.pathname === "/authorize" && req.method === "GET") {
       const request = await oauth.parseAuthRequest(req);
       if (!isAllowedRedirect(request.redirectUri)) return html("<h1>Redirect URI not allowed</h1>");
-      if (await oauth.isConsentRemembered(req, request, { secret: env.COOKIE_ENCRYPTION_KEY })) return startUpstream(env, request);
+      // Consent is asked every time: remembered consent let a link from someone else's flow run through this browser (TM §6).
       const details = await oauth.describeConsent(request);
       const consent = await oauth.beginConsent(request);
       consent.headers.set("Content-Type", "text/html; charset=utf-8");
@@ -133,7 +160,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
         denied.headers.set("Location", denied.redirectTo);
         return new Response(null, { status: 302, headers: denied.headers });
       }
-      const approved = await oauth.approveConsent(req, handle, { remember });
+      const approved = await oauth.approveConsent(req, handle);
       if (!isAllowedRedirect(approved.request.redirectUri)) return html("<h1>Redirect URI not allowed</h1>");
       return startUpstream(env, approved.request, approved.headers);
     }
@@ -161,7 +188,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
       if (!(await isAllowedUser(env, user))) return notAllowed(user.login);
       const props: Props = {
         login: user.login, githubToken: tok.accessToken, githubRefreshToken: tok.refreshToken,
-        githubTokenExpiresAt: Date.now() + tok.expiresIn * 1000,
+        githubTokenExpiresAt: Date.now() + tok.expiresIn * 1000, authorizedAt: Date.now(), githubId: user.id,
       };
       const { redirectTo } = await oauth.completeAuthorization({
         request, userId: String(user.id), metadata: { label: user.login }, scope: request.scope, props,

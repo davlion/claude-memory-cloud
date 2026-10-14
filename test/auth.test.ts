@@ -167,3 +167,19 @@ it("pins the numeric GitHub ID at first sign-in; another account with that login
   expect((await callbackAs({ login: "carol", id: 7 }, await startFlow("s-c1"))).status).toBe(302);
   expect((await callbackAs({ login: "Carol", id: 8 }, await startFlow("s-c2"))).status).toBe(403);
 });
+
+it("asks for consent every time (no remembered consent)", async () => {
+  const reg = await go(`${BASE}/register`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ client_name: "Claude", redirect_uris: [CB], token_endpoint_auth_method: "none" }) });
+  const { client_id } = (await reg.json()) as { client_id: string };
+  const authUrl = async (state: string) => `${BASE}/authorize?` + new URLSearchParams({
+    response_type: "code", client_id, redirect_uri: CB, state, scope: "memory",
+    code_challenge: await s256("r".repeat(50)), code_challenge_method: "S256", resource: `${BASE}/mcp` });
+  const first = await go(await authUrl("r1"));
+  const handle = /name="handle" value="([^"]+)"/.exec(await first.text())![1]!;
+  await go(`${BASE}/authorize`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ handle, decision: "approve" }) });
+  const second = await go(await authUrl("r2"));
+  expect(second.status).toBe(200);
+  expect(await second.text()).toContain('name="handle"');
+});
