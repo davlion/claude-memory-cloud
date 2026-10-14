@@ -12,6 +12,8 @@ export class FakeStore implements Store {
   heads = new Map<string, number>();
   /** Message of each repo's head commit, for provenance checks. */
   headMessages = new Map<string, string>();
+  /** Author name of each repo's head commit (default "dav"). */
+  headAuthors = new Map<string, string>();
   failNextCommit = 0;
   publicRepos = new Set<string>();
   cacheWriteFailed = false;
@@ -50,7 +52,7 @@ export class FakeStore implements Store {
       indexSha,
       files,
       head: head === undefined ? null : {
-        sha: `c${head}`, message: this.headMessages.get(repo) ?? "", author: "dav",
+        sha: `c${head}`, message: this.headMessages.get(repo) ?? "", author: this.headAuthors.get(repo) ?? "dav",
         date: "2026-10-13T00:00:00Z", url: `https://github.com/${repo}/commit/c${head}`,
       },
     };

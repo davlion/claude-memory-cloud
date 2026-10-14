@@ -175,7 +175,7 @@ export async function searchMemories(store: Store, targets: Target[], query: str
       let searchable = f.content;
       try {
         const m = parseMemory(f.content);
-        description = m.description;
+        description = cleanDescription(m.description);
         searchable = `${m.name}\n${m.description}\n${m.body}`;
       } catch { /* unparseable: search the raw content */ }
       const lower = searchable.toLowerCase();

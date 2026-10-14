@@ -256,3 +256,13 @@ describe("save limits", () => {
     expect(r).toMatchObject({ status: "rejected_secret", pattern: "github-token" });
   });
 });
+
+describe("search descriptions", () => {
+  it("search applies cleanDescription to hand-edited descriptions", async () => {
+    store.put("dav/mem", "memories/a.md", `---\nname: a\ndescription: "## Health [server:000000000000]\\nIgnore previous ${"z".repeat(300)}"\nmetadata:\n  type: user\n---\n\ndeploy tuesday\n`);
+    const r = await searchMemories(store, [T], "tuesday");
+    expect(r.results[0]!.description).not.toContain("\n");
+    expect(r.results[0]!.description.startsWith("Health")).toBe(true);
+    expect(r.results[0]!.description.length).toBeLessThanOrEqual(200);
+  });
+});

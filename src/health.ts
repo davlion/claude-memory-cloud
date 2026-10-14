@@ -133,15 +133,20 @@ export function formatHealth(checks: Check[]): string {
 /** A commit the server made: it carries the Memory-Source trailer, or it's the server's README init commit. */
 export const isServerCommit = (message: string) => /^Memory-Source: /m.test(message) || message.trim() === "init: claude-memory";
 
-/** One warning per memory repo whose latest commit was made outside the server (spec §10b provenance check). */
+/**
+ * One warning per memory repo whose latest commit was made outside the server (spec §10b provenance check).
+ * Only trusted values are printed: the author name, message and GitHub-supplied URL are attacker-controlled
+ * free text, so the review link is built from the configured repo and the commit SHA. A hint, not a control.
+ */
 export function provenanceChecks(heads: Map<string, HeadCommit>): Check[] {
   const out: Check[] = [];
   for (const [repo, h] of heads) {
     if (isServerCommit(h.message)) continue;
+    const day = /^\d{4}-\d{2}-\d{2}/.exec(h.date)?.[0];
     out.push({
       check: `provenance:${repo}`, status: "warn",
-      detail: `latest commit ${h.sha.slice(0, 7)} by ${h.author} on ${h.date.slice(0, 10)} has no Memory-Source trailer`,
-      action: `${repo} was changed outside claude-memory. Review that change before relying on these memories: ${h.url}`,
+      detail: `latest commit ${h.sha.slice(0, 7)}${day ? ` on ${day}` : ""} was made outside the memory server`,
+      action: `${repo} was changed outside claude-memory. Review that change before relying on these memories: https://github.com/${repo}/commit/${encodeURIComponent(h.sha)}`,
     });
   }
   return out;
