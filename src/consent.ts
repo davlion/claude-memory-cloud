@@ -1,6 +1,6 @@
 import type { ConsentDescription } from "@cloudflare/workers-oauth-provider";
 
-const esc = (v: string) => v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+export const esc = (v: string) => v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export function consentPage(details: ConsentDescription, handle: string): string {
   const name = esc(details.clientName);

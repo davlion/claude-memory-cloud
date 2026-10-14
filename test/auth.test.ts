@@ -131,3 +131,39 @@ it("/callback with a non-JSON GitHub token response → 502 page without secrets
   expect(body).not.toContain("code=");
   expect(body).not.toMatch(/ghu_|ghr_|GHCODE/);
 });
+
+async function startFlow(state: string): Promise<string> {
+  const reg = await go(`${BASE}/register`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ client_name: "Claude", redirect_uris: [CB], token_endpoint_auth_method: "none" }) });
+  const { client_id } = (await reg.json()) as { client_id: string };
+  const page = await go(`${BASE}/authorize?` + new URLSearchParams({
+    response_type: "code", client_id, redirect_uri: CB, state, scope: "memory",
+    code_challenge: await s256("u".repeat(50)), code_challenge_method: "S256", resource: `${BASE}/mcp` }));
+  const handle = /name="handle" value="([^"]+)"/.exec(await page.text())![1]!;
+  const approve = await go(`${BASE}/authorize`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ handle, decision: "approve" }) });
+  return new URL(approve.headers.get("location")!).searchParams.get("state")!;
+}
+
+async function callbackAs(user: { login: string; id: number }, githubState: string): Promise<Response> {
+  mockFetch([
+    { method: "POST", url: "https://github.com/login/oauth/access_token", respond: () => json({ access_token: "ghu_x", refresh_token: "ghr_x", expires_in: 28800 }) },
+    { url: "https://api.github.com/user", respond: () => json(user) },
+  ]);
+  return go(`${BASE}/callback?code=C&state=${githubState}`);
+}
+
+it("refuses a GitHub user who isn't in SCOPES, with a clear page and no redirect", async () => {
+  const res = await callbackAs({ login: "mallory", id: 666 }, await startFlow("s-m"));
+  expect(res.status).toBe(403);
+  expect(res.headers.get("location")).toBeNull();
+  const body = await res.text();
+  expect(body).toContain("isn't on this memory server");
+  expect(body).toContain("mallory");
+  expect(body).not.toMatch(/ghu_|ghr_/);
+});
+
+it("pins the numeric GitHub ID at first sign-in; another account with that login is refused", async () => {
+  expect((await callbackAs({ login: "carol", id: 7 }, await startFlow("s-c1"))).status).toBe(302);
+  expect((await callbackAs({ login: "Carol", id: 8 }, await startFlow("s-c2"))).status).toBe(403);
+});

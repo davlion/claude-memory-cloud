@@ -8,6 +8,7 @@ export interface Env {
   GITHUB_CLIENT_SECRET: string;
   COOKIE_ENCRYPTION_KEY: string;
   PUBLIC_URL: string;
+  /** Worker secret: JSON {"<github login>": {"<scope>": "<owner>/<repo>"}}. The per-user scope map and the sign-in allowlist. */
   SCOPES: string;
   GITHUB_APP_SLUG: string;
   WORKER_VERSION: string;

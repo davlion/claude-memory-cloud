@@ -8,7 +8,12 @@ export default defineProject({
       miniflare: {
         bindings: {
           PUBLIC_URL: "https://memory.test",
-          SCOPES: JSON.stringify({ general: "davlion/claude-memory-test", acme: "acme-org/claude-memory" }),
+          // Explicit bindings here override anything wrangler loads from .dev.vars (miniflare options are merged on top).
+          SCOPES: JSON.stringify({
+            dav: { general: "davlion/claude-memory-test", acme: "acme-org/claude-memory" },
+            carol: { general: "carol/claude-memory" },
+            erin: { general: "erin/claude-memory" },
+          }),
           GITHUB_CLIENT_ID: "Iv1.testclient",
           GITHUB_CLIENT_SECRET: "test-secret",
           COOKIE_ENCRYPTION_KEY: "0".repeat(64),

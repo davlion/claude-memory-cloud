@@ -1,4 +1,5 @@
-import { exports } from "cloudflare:workers";
+import { env, exports } from "cloudflare:workers";
+import { mcpApi } from "../src/mcp-api";
 import { describe, expect, it } from "vitest";
 
 describe("worker wiring", () => {
@@ -29,5 +30,14 @@ describe("worker wiring", () => {
     expect(md.authorization_endpoint).toBe("https://memory.test/authorize");
     expect(md.token_endpoint).toBe("https://memory.test/oauth/token");
     expect(md.registration_endpoint).toBe("https://memory.test/register");
+  });
+});
+
+describe("per-user scopes at /mcp", () => {
+  it("answers 403 for a signed-in user who is no longer in SCOPES", async () => {
+    const props = { login: "gone", githubToken: "t", githubRefreshToken: "r", githubTokenExpiresAt: Date.now() + 3600_000 };
+    const res = await mcpApi.fetch(new Request("https://memory.test/mcp", { method: "POST", body: "{}" }), env, { props } as never);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "access_denied" });
   });
 });

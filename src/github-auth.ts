@@ -1,6 +1,7 @@
 import { AuthorizationError, authorizationErrorRedirect, CimdFetchError, OAuthError, type AuthRequest } from "@cloudflare/workers-oauth-provider";
-import { consentPage } from "./consent";
+import { consentPage, esc } from "./consent";
 import type { Env, Props } from "./env";
+import { parseScopeMap, scopesFor } from "./scopes";
 
 const ALLOWED = new Set(["https://claude.ai/api/mcp/auth_callback", "https://claude.com/api/mcp/auth_callback"]);
 
@@ -89,6 +90,25 @@ export const authHandler = {
   },
 };
 
+const notAllowed = (login: string) => html(
+  `<h1>This GitHub account isn't on this memory server</h1><p>You signed in to GitHub as <strong>${esc(login)}</strong>. Ask the server's owner to add this account, or sign in to GitHub with the account they added, then connect again.</p>`,
+  403);
+
+/**
+ * Sign-in allowlist (spec §10b): the login must be a key in SCOPES, and its numeric GitHub ID must match the one
+ * recorded at that login's first sign-in, so a renamed and re-registered login is refused.
+ */
+export async function isAllowedUser(env: Env, user: { login: string; id: number }): Promise<boolean> {
+  if (!scopesFor(parseScopeMap(env.SCOPES), user.login)) return false;
+  const key = `allowlist:github-id:${user.login.toLowerCase()}`;
+  const pinned = await env.OAUTH_KV.get(key);
+  if (pinned === null) {
+    try { await env.OAUTH_KV.put(key, String(user.id)); } catch { /* recorded at a later sign-in */ }
+    return true;
+  }
+  return pinned === String(user.id);
+}
+
 async function handle(req: Request, env: Env): Promise<Response> {
   {
     const url = new URL(req.url);
@@ -138,6 +158,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
       } catch {
         return failed();
       }
+      if (!(await isAllowedUser(env, user))) return notAllowed(user.login);
       const props: Props = {
         login: user.login, githubToken: tok.accessToken, githubRefreshToken: tok.refreshToken,
         githubTokenExpiresAt: Date.now() + tok.expiresIn * 1000,

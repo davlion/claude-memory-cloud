@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { AuthorizationError } from "@cloudflare/workers-oauth-provider";
-import { authHandler, exchangeCode, isAllowedRedirect, refreshGitHubToken, s256, tokenExchangeCallback } from "../src/github-auth";
+import { authHandler, exchangeCode, isAllowedRedirect, isAllowedUser, refreshGitHubToken, s256, tokenExchangeCallback } from "../src/github-auth";
 import { json, mockFetch } from "./setup";
 
 describe("isAllowedRedirect", () => {
@@ -108,5 +108,17 @@ describe("authHandler error path", () => {
   it("still redirects to an allowed URI", async () => {
     const res = await authHandler.fetch(new Request("https://memory.test/authorize"), stub("https://claude.ai/api/mcp/auth_callback"));
     expect(res.status).toBe(302);
+  });
+});
+
+describe("isAllowedUser (sign-in allowlist)", () => {
+  it("refuses a login that isn't in SCOPES", async () => {
+    expect(await isAllowedUser(env, { login: "nobody", id: 1 })).toBe(false);
+  });
+  it("pins the numeric ID at first sign-in and refuses a different ID for the same login", async () => {
+    expect(await isAllowedUser(env, { login: "erin", id: 70 })).toBe(true);
+    expect(await env.OAUTH_KV.get("allowlist:github-id:erin")).toBe("70");
+    expect(await isAllowedUser(env, { login: "Erin", id: 70 })).toBe(true);
+    expect(await isAllowedUser(env, { login: "erin", id: 71 })).toBe(false);
   });
 });
