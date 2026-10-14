@@ -49,5 +49,42 @@ class OriginLookup(unittest.TestCase):
                 self.assertEqual(origin_from_git_config(str(d)), git_origin(str(d)))
 
 
+class ConfigReaderRobust(unittest.TestCase):
+    def _repo(self, config_text: bytes):
+        tmp = tempdir(self)
+        (tmp / "r" / ".git").mkdir(parents=True)
+        (tmp / "r" / ".git" / "config").write_bytes(config_text)
+        return tmp / "r"
+
+    def test_non_utf8_byte(self):
+        r = self._repo(b'[user]\n\tname = caf\xe9\n[remote "origin"]\n\turl = git@github.com:a/b.git\n')
+        self.assertEqual(origin_from_git_config(str(r)), "git@github.com:a/b.git")
+
+    def test_inline_comment_and_case(self):
+        r = self._repo(b'[Remote "origin"]\n\turl = git@github.com:a/b.git # primary\n')
+        self.assertEqual(origin_from_git_config(str(r)), "git@github.com:a/b.git")
+        r = self._repo(b'[remote "origin"]\n\turl = git@github.com:a/b.git ; x\n')
+        self.assertEqual(origin_from_git_config(str(r)), "git@github.com:a/b.git")
+
+    def test_multi_url_first_wins(self):
+        r = self._repo(b'[remote "origin"]\n\turl = git@github.com:a/b.git\n\turl = git@github.com:c/d.git\n')
+        self.assertEqual(origin_from_git_config(str(r)), "git@github.com:a/b.git")
+
+    def test_bad_commondir_and_gitfile(self):
+        tmp = tempdir(self)
+        (tmp / "wt").mkdir()
+        (tmp / "gd").mkdir()
+        (tmp / "wt" / ".git").write_text("gitdir: ../gd\n")      # relative gitdir
+        (tmp / "gd" / "config").write_text('[remote "origin"]\n\turl = git@github.com:a/b.git\n')
+        self.assertEqual(origin_from_git_config(str(tmp / "wt")), "git@github.com:a/b.git")
+        (tmp / "gd" / "commondir").write_bytes(b"\xff\xfe")      # undecodable: must not raise
+        self.assertIsNone(origin_from_git_config(str(tmp / "wt")))
+        (tmp / "gd" / "commondir").unlink()
+        (tmp / "gd" / "commondir").mkdir()                         # unreadable (a directory)
+        self.assertIsNone(origin_from_git_config(str(tmp / "wt")))
+        (tmp / "wt" / ".git").write_bytes(b"\xff\xfe")           # undecodable .git file
+        self.assertIsNone(origin_from_git_config(str(tmp / "wt")))
+
+
 if __name__ == "__main__":
     unittest.main()

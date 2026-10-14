@@ -17,6 +17,17 @@ class ScopeMapError(ValueError):
     pass
 
 
+def _check_scopes(scopes: object, where: str) -> None:
+    """The Worker's validateScopes (src/scopes.ts): an object, no reserved "project", every repo owner/repo."""
+    if not isinstance(scopes, dict):
+        raise ScopeMapError(f'{where} must be a JSON object of scope name -> "owner/repo"')
+    for name, repo in scopes.items():
+        if name == "project":   # the Worker's only scope-name rule
+            raise ScopeMapError(f'{where}: scope name "project" is reserved')
+        if not isinstance(repo, str) or not REPO_RE.fullmatch(repo):
+            raise ScopeMapError(f"{where}: invalid repo for scope {name!r}: expected owner/repo")
+
+
 def validate_scope_map(data: object) -> Dict[str, object]:
     if not isinstance(data, dict) or data.get("version") != MAP_VERSION:
         raise ScopeMapError('expected {"version": 1, "login": "<github login>", "scopes": {"<scope>": "<owner>/<repo>"}}')
@@ -24,13 +35,11 @@ def validate_scope_map(data: object) -> Dict[str, object]:
     if not isinstance(login, str) or not LOGIN_RE.fullmatch(login):
         raise ScopeMapError("login missing or not a GitHub login")
     scopes = data.get("scopes")
+    # Deliberate difference from the Worker, which accepts an empty scope object: a local map with no
+    # scopes can't route anything, so it is rejected here.
     if not isinstance(scopes, dict) or not scopes:
         raise ScopeMapError("scopes missing or empty")
-    for name, repo in scopes.items():
-        if name == "project":   # the Worker's only scope-name rule (src/scopes.ts validateScopes)
-            raise ScopeMapError('scope name "project" is reserved')
-        if not isinstance(repo, str) or not REPO_RE.fullmatch(repo):
-            raise ScopeMapError(f"invalid repo for scope {name!r}: expected owner/repo")
+    _check_scopes(scopes, "scopes")
     return {"version": MAP_VERSION, "login": login, "scopes": dict(scopes)}
 
 
@@ -59,12 +68,15 @@ def from_scopes_file(path: PathLike, login: Optional[str]) -> Dict[str, object]:
             raise ScopeMapError(f"{path} lists {len(data)} users; pass --login <your github login>")
         login = next(iter(data))
     seen = set()
-    for k in data:   # the Worker's parseScopeMap rules: valid logins, no case-insensitive duplicates
+    for k, scopes in data.items():   # the Worker's parseScopeMap, over the WHOLE file (any invalid entry rejects it)
         if not LOGIN_RE.fullmatch(k):
             raise ScopeMapError(f"{path}: invalid GitHub login {k}")
+        if not isinstance(scopes, dict):
+            raise ScopeMapError(f"{path}: scopes for {k} must be an object")
         if k.lower() in seen:
             raise ScopeMapError(f"{path}: duplicate login {k} (logins are case-insensitive)")
         seen.add(k.lower())
+        _check_scopes(scopes, f"{path}: {k}")
     matches = [k for k in data if k.lower() == login.lower()]
     if not matches:
         raise ScopeMapError(f"login {login!r} is not in {path}")

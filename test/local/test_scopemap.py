@@ -48,6 +48,17 @@ class ScopeMap(unittest.TestCase):
             from_scopes_file(f, "dav")
         self.assertIn("duplicate login", str(cm.exception))
 
+    def test_other_users_entries_validated(self):
+        d = tempdir(self)
+        f = d / "s.json"
+        for body in [{"dav": {"general": "a/b"}, "other": {"project": "a/b"}},
+                     {"dav": {"general": "a/b"}, "other": {"general": "bad"}},
+                     {"dav": {"general": "a/b"}, "other": []},
+                     {"dav": {"general": "a/b"}, "other": None}]:
+            f.write_text(json.dumps(body))
+            with self.subTest(body=body), self.assertRaises(ScopeMapError):
+                from_scopes_file(f, "dav")
+
     def test_load_missing_and_corrupt(self):
         d = tempdir(self)
         with self.assertRaises(ScopeMapError):

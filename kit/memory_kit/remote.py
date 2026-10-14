@@ -51,6 +51,14 @@ def git_toplevel(cwd: str, timeout: float = 0.5) -> Optional[str]:
     return _git(cwd, ["rev-parse", "--show-toplevel"], timeout)
 
 
+def _read_text(path: str) -> Optional[str]:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except (OSError, ValueError):
+        return None
+
+
 def _git_config_path(cwd: str) -> Optional[str]:
     d = os.path.abspath(cwd)
     while True:
@@ -58,18 +66,17 @@ def _git_config_path(cwd: str) -> Optional[str]:
         if os.path.isdir(g):
             return os.path.join(g, "config")
         if os.path.isfile(g):   # worktree or submodule: "gitdir: <path>"
-            try:
-                with open(g, encoding="utf-8") as f:
-                    line = f.read().strip()
-            except OSError:
-                return None
+            text = _read_text(g)
+            line = text.strip() if text is not None else ""
             if not line.startswith("gitdir:"):
                 return None
             gd = os.path.join(d, line[7:].strip())
             common = os.path.join(gd, "commondir")
-            if os.path.isfile(common):
-                with open(common, encoding="utf-8") as f:
-                    gd = os.path.join(gd, f.read().strip())
+            if os.path.exists(common):
+                ctext = _read_text(common)
+                if ctext is None or not ctext.strip():
+                    return None
+                gd = os.path.join(gd, ctext.strip())
             return os.path.join(gd, "config")
         parent = os.path.dirname(d)
         if parent == d:
@@ -77,26 +84,38 @@ def _git_config_path(cwd: str) -> Optional[str]:
         d = parent
 
 
+def _strip_inline_comment(val: str) -> str:
+    out, quoted = [], False
+    for i, ch in enumerate(val):
+        if ch == '"':
+            quoted = not quoted
+        elif ch in "#;" and not quoted:
+            break
+        out.append(ch)
+    return "".join(out)
+
+
 def origin_from_git_config(cwd: str) -> Optional[str]:
     """`remote.origin.url` read straight from .git/config: no subprocess, for the < 100 ms prompt hook.
-    (Ignores url.insteadOf rewrites, which `git remote get-url` would apply.)"""
-    cfg = _git_config_path(cwd)
-    if cfg is None:
-        return None
+    Never raises; returns None on any failure. The first `url` of the origin remote wins.
+    Not handled (callers must fall back to `git_origin` when this returns None): include/includeIf,
+    url.insteadOf rewrites, bare repositories (no .git entry), and exotic quoting/escapes."""
     try:
-        with open(cfg, encoding="utf-8") as f:
-            text = f.read()
-    except OSError:
+        cfg = _git_config_path(cwd)
+        text = _read_text(cfg) if cfg else None
+        if text is None:
+            return None
+        in_origin = False
+        for raw in text.splitlines():
+            line = raw.strip()
+            if line.startswith("["):
+                in_origin = re.fullmatch(r'\[\s*remote\s+"origin"\s*\]', line, re.IGNORECASE) is not None
+            elif in_origin:
+                key, sep, val = line.partition("=")
+                if sep and key.strip().lower() == "url":
+                    return _strip_inline_comment(val).strip().strip('"') or None
+    except (OSError, ValueError):
         return None
-    in_origin = False
-    for raw in text.splitlines():
-        line = raw.strip()
-        if line.startswith("["):
-            in_origin = re.fullmatch(r'\[\s*remote\s+"origin"\s*\]', line) is not None
-        elif in_origin:
-            key, sep, val = line.partition("=")
-            if sep and key.strip().lower() == "url":
-                return val.strip().strip('"') or None
     return None
 
 
