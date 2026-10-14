@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { scanForSecrets } from "../src/secrets";
 
 const POSITIVE: [string, string][] = [
+  ["credentialed-url", "DATABASE_URL=postgres://admin:S3cr3tPassw0rd!x@db.acme.internal:5432/prod"],
+  ["credentialed-url", "https://deploy:abc123token@github.com/acme/app.git"],
+  ["stripe-key", "sk_live_" + "a1B2c3D4e5F6g7H8i9J0k1L2"],
+  ["stripe-key", "rk_live_" + "Z".repeat(24)],
+  ["npm-token", "npm_" + "a".repeat(36)],
+  ["azure-key", "DefaultEndpointsProtocol=https;AccountName=acme;AccountKey=" + "A".repeat(86) + "=="],
   ["github-token", "token is ghp_" + "a".repeat(36)],
   ["github-token", "ghu_" + "B".repeat(36)],
   ["github-pat", "github_pat_" + "1".repeat(22) + "_" + "x".repeat(59)],
@@ -21,6 +27,12 @@ const POSITIVE: [string, string][] = [
 ];
 
 const NEGATIVE = [
+  "postgres://localhost:5432/app",
+  "ssh://git@github.com/acme/app.git",
+  "https://user@github.com/acme/app",
+  "sk_live_ keys are Stripe's live keys",
+  "npm_config_cache is an npm env var",
+  "AccountKey=<from the vault>",
   "Use the GitHub token from the connector, never paste it",
   "The password policy requires 12 characters",
   "sk-learn is a python library",

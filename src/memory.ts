@@ -53,12 +53,12 @@ export function serializeMemory(mem: Memory): string {
 
 export const memoryPath = (name: string) => `memories/${name}.md`;
 
-export function conflictPath(name: string, now: Date): string {
+export function conflictPath(name: string, now: Date, n = 1): string {
   const ts = now.toISOString().replace(/\.\d{3}Z$/, "Z").replace(/[-:]/g, "");
-  return `memories/${name}.conflict-${ts}.md`;
+  return `memories/${name}.conflict-${ts}${n > 1 ? `-${n}` : ""}.md`;
 }
 
-const PATH_RE = /^memories\/([a-z0-9][a-z0-9-]{0,63})(\.conflict-\d{8}T\d{6}Z)?\.md$/;
+const PATH_RE = /^memories\/([a-z0-9][a-z0-9-]{0,63})(\.conflict-\d{8}T\d{6}Z(?:-\d{1,3})?)?\.md$/;
 export function parseMemoryPath(path: string): { name: string; conflict: boolean } | null {
   const m = PATH_RE.exec(path);
   return m && m[1] ? { name: m[1], conflict: Boolean(m[2]) } : null;

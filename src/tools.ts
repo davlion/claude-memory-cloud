@@ -119,9 +119,9 @@ async function memoryIndex(d: ToolDeps, a: Record<string, unknown>, nonce: strin
 async function memoryRead(d: ToolDeps, a: Record<string, unknown>, nonce: string): Promise<string> {
   const t = resolveTarget(d.cfg, (a.scope as string | undefined) ?? "general", a.project as string | undefined);
   const rows = await readMemories(d.store, t, (a.names as string[]).slice(0, 20));
-  const blocks = rows.map((r) => r.content !== undefined
-    ? dataBlock("memory", { scope: t.scopeLabel, name: r.name, version: r.version }, r.content, nonce)
-    : dataBlock("memory", { scope: t.scopeLabel, name: r.name, error: "not_found" }, "", nonce));
+  const blocks = rows.map((r) => "error" in r
+    ? dataBlock("memory", { scope: t.scopeLabel, name: r.name, error: r.error, message: "message" in r ? r.message : undefined }, "", nonce)
+    : dataBlock("memory", { scope: t.scopeLabel, name: r.name, version: r.version }, r.content, nonce));
   return [preamble(nonce), ...blocks].join("\n\n");
 }
 
@@ -151,7 +151,7 @@ async function memorySearch(d: ToolDeps, a: Record<string, unknown>, nonce: stri
  * Save and delete results: the preamble, then the JSON status object (machine-readable fields unchanged; `similar`
  * lists names only), then each similar memory's description in an escaped data block. Descriptions are memory text.
  */
-function framedResult(res: OpResult, scope: string, project: string | undefined, nonce: string): string {
+function framedResult(res: OpResult, nonce: string): string {
   const { similar, ...status } = res;
   const parts = [preamble(nonce), JSON.stringify(similar ? { ...status, similar: similar.map((x) => ({ name: x.name })) } : status, null, 2)];
   for (const x of similar ?? []) parts.push(dataBlock("memory", { scope: res.scope, name: x.name }, x.description, nonce));
@@ -185,9 +185,9 @@ async function dispatch(d: ToolDeps, name: string, a: Record<string, unknown>, n
         return ok(framedResult(await saveMemory(d.store, resolveTarget(d.cfg, scope, project), {
           name: String(a.name ?? ""), description: String(a.description ?? ""), type: String(a.type ?? ""), body: String(a.body ?? ""),
           version: a.version as string | undefined, force: Boolean(a.force), source: a.source as string | undefined,
-        }, now), scope, project, nonce));
+        }, now), nonce));
       case "memory_delete":
-        return ok(framedResult(await deleteMemory(d.store, resolveTarget(d.cfg, scope, project), String(a.name ?? ""), a.version as string | undefined, a.source as string | undefined, now), scope, project, nonce));
+        return ok(framedResult(await deleteMemory(d.store, resolveTarget(d.cfg, scope, project), String(a.name ?? ""), a.version as string | undefined, a.source as string | undefined, now), nonce));
       default:
         return { text: JSON.stringify({ error: "invalid", message: `unknown tool ${name}` }), isError: true };
     }

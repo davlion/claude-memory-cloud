@@ -8,6 +8,11 @@ const RULES: [string, RegExp][] = [
   ["openai-key", /\bsk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,}\b/],
   ["google-api-key", /\bAIza[0-9A-Za-z_-]{35}\b/],
   ["jwt", /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{16,}\b/],
+  // user:password@ in any URL scheme (postgres://, https://, amqp://…); a bare user@ or host:port isn't flagged.
+  ["credentialed-url", /\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^/\s@]{3,}@/i],
+  ["stripe-key", /\b[sr]k_(?:live|test)_[A-Za-z0-9]{20,}/],
+  ["npm-token", /\bnpm_[A-Za-z0-9]{36}\b/],
+  ["azure-key", /\b(?:AccountKey|SharedAccessKey)=[A-Za-z0-9+/]{30,}={0,2}/],
   [
     "generic-assignment",
     // Values that are code, env refs, templates or URLs are not secrets: $, <, [, process./os./env. prefixes,

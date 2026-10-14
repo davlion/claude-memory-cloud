@@ -9,6 +9,7 @@ import { scanForSecrets } from "./secrets";
 import type { Change, HeadCommit, Snapshot, Store } from "./store";
 
 export const MAX_ATTEMPTS = 3;
+const UNREADABLE_MESSAGE = "This file is binary, truncated or otherwise can't be read as text by the memory server.";
 const TYPES = ["user", "feedback", "project", "reference"];
 
 export interface SaveInput { name: string; description: string; type: string; body: string; version?: string; force?: boolean; source?: string }
@@ -33,6 +34,7 @@ function entries(snap: Snapshot): { list: IndexEntry[]; conflicts: string[] } {
     const p = parseMemoryPath(path);
     if (!p) continue;
     if (p.conflict) { conflicts.push(path); continue; }
+    if (f.unreadable) continue; // binary, truncated or missing text: not indexed, and never overwritten blind
     try {
       const m = parseMemory(f.content);
       list.push({ name: p.name, description: cleanDescription(m.description) });
@@ -67,7 +69,7 @@ async function withRetry(
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const snap = await store.snapshot(t.repo, t.prefix);
     if (!snap.isPrivate) {
-      throw new OpError("repo_public", `${t.repo} is public, so anyone can read these memories. Not saved.`,
+      throw new OpError("repo_public", `${t.repo} is not private (public or internal), so people outside its access list can read these memories. Not saved.`,
         `Make ${t.repo} private: repo Settings → General → Danger Zone → Change visibility. Then save again.`);
     }
     const d = decide(snap);
@@ -99,6 +101,10 @@ export async function saveMemory(store: Store, t: Target, input: SaveInput, now 
 
   return withRetry(store, t, (snap) => {
     const existing = snap.files.get(path);
+    if (existing?.unreadable) {
+      throw new OpError("write_rejected", `${memoryPath(input.name)} is unreadable to the memory server (binary or truncated), so it is not overwritten. Not saved.`,
+        `Edit this file on GitHub: https://github.com/${t.repo}/blob/HEAD/${t.prefix}${memoryPath(input.name)}`);
+    }
     if (input.version === undefined) {
       if (existing) return { result: r("exists", { version: existing.sha, message: "Read it and update with its version instead." }) };
       if (!input.force) {
@@ -109,7 +115,10 @@ export async function saveMemory(store: Store, t: Target, input: SaveInput, now 
     }
     if (!existing) return { result: r("not_found") };
     if (existing.sha === input.version) return { result: r("updated"), changes: [{ path, content }], op: "update", source: input.source };
-    const cpath = conflictPath(input.name, now);
+    // Conflict copies never overwrite each other: add a suffix when two land in the same second.
+    let n = 1;
+    let cpath = conflictPath(input.name, now);
+    while (snap.files.has(cpath)) cpath = conflictPath(input.name, now, ++n);
     return { result: r("conflict", { conflict_file: cpath, message: "The memory changed since you read it; your version was saved as a conflict copy. Reconcile them." }),
       changes: [{ path: cpath, content }], op: "conflict", source: input.source };
   });
@@ -131,7 +140,9 @@ export async function readMemories(store: Store, t: Target, names: string[]) {
   const snap = await store.snapshot(t.repo, t.prefix);
   return names.map((name) => {
     const f = snap.files.get(`memories/${name}.md`);
-    return f ? { name, content: f.content, version: f.sha } : { name, error: "not_found" as const };
+    if (!f) return { name, error: "not_found" as const };
+    if (f.unreadable) return { name, error: "unreadable" as const, message: UNREADABLE_MESSAGE };
+    return { name, content: f.content, version: f.sha };
   });
 }
 
@@ -170,7 +181,7 @@ export async function searchMemories(store: Store, targets: Target[], query: str
     }
     for (const [path, f] of snap.files) {
       const p = parseMemoryPath(path);
-      if (!p || p.conflict) continue;
+      if (!p || p.conflict || f.unreadable) continue;
       let description = "";
       let searchable = f.content;
       try {

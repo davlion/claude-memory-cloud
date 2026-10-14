@@ -15,8 +15,8 @@ function routes(o: { installs?: unknown[]; repos?: Record<number, unknown[]>; us
       { id: 1, account: { login: "dav" } }, { id: 2, account: { login: "acme-org" } } ] }, 200, RL) },
     { url: /\/user\/installations\/(\d+)\/repositories/, respond: (req: Request) => {
       const id = Number(/installations\/(\d+)/.exec(req.url)![1]);
-      const repos = o.repos?.[id] ?? (id === 1 ? [{ full_name: "dav/claude-memory", private: true, permissions: { push: true } }]
-        : [{ full_name: "acme-org/claude-memory", private: true, permissions: { push: true } }]);
+      const repos = o.repos?.[id] ?? (id === 1 ? [{ full_name: "dav/claude-memory", private: true, visibility: "private", permissions: { push: true } }]
+        : [{ full_name: "acme-org/claude-memory", private: true, visibility: "private", permissions: { push: true } }]);
       return json({ repositories: repos }, 200, RL);
     } },
     { url: "https://api.github.com/user", respond: () => o.user === 401 ? json({ message: "Bad credentials" }, 401) : json({ login: "dav" }, 200, RL) },
@@ -32,6 +32,30 @@ describe("runHealth", () => {
     expect(cs.every((c) => c.status === "ok")).toBe(true);
     expect(byCheck(cs, "github_token").detail).toMatch(/expires in 6h/);
     expect(byCheck(cs, "rate_limit").detail).toBe("4870 / 5000 remaining");
+  });
+
+  it("internal visibility → repo_public with an 'internal' action", async () => {
+    mockFetch(routes({ repos: { 2: [{ full_name: "acme-org/claude-memory", private: true, visibility: "internal", permissions: { push: true } }] } }));
+    const cs = await runHealth({ gh: new GitHub("t"), cfg, props, appSlug: "s", now: NOW });
+    expect(byCheck(cs, "scope:acme")).toMatchObject({ status: "fail", detail: "repo_public acme-org/claude-memory",
+      action: expect.stringMatching(/is internal, so every member of its enterprise can read/) });
+  });
+
+  it("an installation with access to all repositories → fail with the restrict action", async () => {
+    mockFetch(routes({ installs: [
+      { id: 1, account: { login: "dav" }, repository_selection: "all" },
+      { id: 2, account: { login: "acme-org" }, repository_selection: "all" }] }));
+    const cs = await runHealth({ gh: new GitHub("t"), cfg, props, appSlug: "dav-claude-memory", now: NOW });
+    expect(byCheck(cs, "installation:dav")).toMatchObject({ status: "fail", detail: "repository_selection: all",
+      action: expect.stringContaining("https://github.com/settings/installations/1") });
+    expect(byCheck(cs, "installation:acme-org").action).toContain("Ask an owner of acme-org");
+    expect(byCheck(cs, "installation:acme-org").action).toContain("https://github.com/organizations/acme-org/settings/installations/2");
+  });
+
+  it("selected repositories → no installation check", async () => {
+    mockFetch(routes({ installs: [{ id: 1, account: { login: "dav" }, repository_selection: "selected" }, { id: 2, account: { login: "acme-org" }, repository_selection: "selected" }] }));
+    const cs = await runHealth({ gh: new GitHub("t"), cfg, props, appSlug: "s", now: NOW });
+    expect(cs.find((c) => c.check.startsWith("installation:"))).toBeUndefined();
   });
 
   it("revoked token → fail with reconnect action, scopes skipped", async () => {
@@ -72,7 +96,7 @@ describe("runHealth", () => {
   });
 
   it("read-only access → warn", async () => {
-    mockFetch(routes({ repos: { 2: [{ full_name: "acme-org/claude-memory", private: true, permissions: { push: false } }] } }));
+    mockFetch(routes({ repos: { 2: [{ full_name: "acme-org/claude-memory", private: true, visibility: "private", permissions: { push: false } }] } }));
     const cs = await runHealth({ gh: new GitHub("t"), cfg, props, appSlug: "s", now: NOW });
     expect(byCheck(cs, "scope:acme")).toMatchObject({ status: "warn", action: expect.stringMatching(/write access/) });
   });

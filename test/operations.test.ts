@@ -122,8 +122,45 @@ describe("saveMemory: update", () => {
     expect(store.repo("dav/mem").get("MEMORY.md")).toContain("## Conflicts");
   });
 
+  it("two stale updates in the same second → two conflict copies, neither overwritten", async () => {
+    await saveMemory(store, T, { name: "a", ...base }, NOW);
+    const [read] = await readMemories(store, T, ["a"]);
+    const v = (read as { version: string }).version;
+    store.put("dav/mem", "memories/a.md", serializeMemory({ name: "a", description: "edited elsewhere", type: "feedback", body: "x\n" }));
+    const one = await saveMemory(store, T, { name: "a", ...base, body: "first\n", version: v }, NOW);
+    const two = await saveMemory(store, T, { name: "a", ...base, body: "second\n", version: v }, NOW);
+    expect(one.conflict_file).toBe("memories/a.conflict-20261013T180405Z.md");
+    expect(two.conflict_file).toBe("memories/a.conflict-20261013T180405Z-2.md");
+    expect(store.repo("dav/mem").get("memories/a.conflict-20261013T180405Z.md")).toContain("first");
+    expect(store.repo("dav/mem").get("memories/a.conflict-20261013T180405Z-2.md")).toContain("second");
+  });
+
   it("missing file → not_found", async () => {
     expect((await saveMemory(store, T, { name: "zzz", ...base, version: "abc" }, NOW)).status).toBe("not_found");
+  });
+});
+
+describe("unreadable memories (binary, truncated or null text)", () => {
+  beforeEach(async () => {
+    await saveMemory(store, T, { name: "good", ...base, description: "readable thing", body: "ok marker\n" }, NOW);
+    store.put("dav/mem", "memories/blob.md", "binary-ish");
+    store.unreadable.add("memories/blob.md");
+  });
+  it("is left out of the index and search, and read reports it as unreadable", async () => {
+    expect(await getIndex(store, T)).toContain("[good]");
+    expect(await getIndex(store, T)).not.toContain("blob");
+    expect((await searchMemories(store, [T], "binary")).results).toEqual([]);
+    expect(await readMemories(store, T, ["blob", "good"])).toMatchObject([
+      { name: "blob", error: "unreadable", message: expect.stringContaining("can't be read as text") }, { name: "good", version: expect.any(String) }]);
+  });
+  it("memory_save (create, update or force) is refused with write_rejected and writes nothing", async () => {
+    const before = store.commits.length;
+    for (const extra of [{}, { version: "x" }, { force: true }, { version: "y" }]) {
+      await expect(saveMemory(store, T, { name: "blob", ...base, ...extra }, NOW)).rejects.toMatchObject({
+        code: "write_rejected", action: expect.stringMatching(/^Edit this file on GitHub/) });
+    }
+    expect(store.commits.length).toBe(before);
+    expect(store.repo("dav/mem").get("memories/blob.md")).toBe("binary-ish");
   });
 });
 

@@ -1,7 +1,11 @@
 import { GitHub, GitHubError } from "./github";
 import { parseMemoryPath } from "./memory";
 
-export interface FileEntry { path: string; sha: string; content: string }
+export interface FileEntry {
+  path: string; sha: string; content: string;
+  /** True when GitHub couldn't give us the blob's full text (binary, truncated, or missing): content is "" and the file must not be overwritten blind. */
+  unreadable?: boolean;
+}
 export interface HeadCommit { sha: string; message: string; author: string; date: string; url: string }
 export interface Snapshot {
   commitSha: string | null;
@@ -58,7 +62,7 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) =>
 
 type TreeEntry = { path: string; type: string; sha: string };
 interface CommitTree { head: HeadCommit; treeSha: string; tree: TreeEntry[] }
-interface CachedSnapshot { indexSha: string | null; head: HeadCommit; files: [string, string, string][] }
+interface CachedSnapshot { indexSha: string | null; head: HeadCommit; files: [string, string, string, boolean?][] }
 
 const isEmptyRepo = (e: unknown) =>
   e instanceof GitHubError && (e.kind === "empty_repo" || (e.kind === "not_found" && /empty/i.test(e.message)));
@@ -75,8 +79,9 @@ export class GitHubStore implements Store {
   private repoMeta(repo: string) {
     let m = this.meta.get(repo);
     if (!m) {
-      m = this.gh.request<{ default_branch: string; private?: boolean }>("GET", `/repos/${repo}`)
-        .then((r) => ({ branch: r.default_branch, isPrivate: r.private === true }));
+      // Only "private" counts: "internal" (GitHub Enterprise) is readable by every enterprise member; missing fails closed.
+      m = this.gh.request<{ default_branch: string; visibility?: string }>("GET", `/repos/${repo}`)
+        .then((r) => ({ branch: r.default_branch, isPrivate: r.visibility === "private" }));
       this.meta.set(repo, m);
       m.catch(() => this.meta.delete(repo));
     }
@@ -140,18 +145,21 @@ export class GitHubStore implements Store {
     }
   }
 
-  /** Text of each blob, fetched with GraphQL in chunks (one request per 100 blobs). Missing or binary blobs read as "". */
-  private async texts(repo: string, shas: string[]): Promise<Map<string, string>> {
+  /** Text of each blob, fetched with GraphQL in chunks (one request per 100 blobs). Missing, binary or truncated blobs map to null. */
+  private async texts(repo: string, shas: string[]): Promise<Map<string, string | null>> {
     const [owner, name] = repo.split("/") as [string, string];
     const valid = [...new Set(shas.filter((s) => OID_RE.test(s)))];
     const chunks: string[][] = [];
     for (let i = 0; i < valid.length; i += GRAPHQL_CHUNK) chunks.push(valid.slice(i, i + GRAPHQL_CHUNK));
-    const out = new Map<string, string>();
+    const out = new Map<string, string | null>();
     await mapLimit(chunks, GRAPHQL_CONCURRENCY, async (chunk) => {
-      const fields = chunk.map((s, i) => `b${i}: object(oid: "${s}") { ... on Blob { text } }`).join(" ");
-      const data = await this.gh.graphql<{ repository: Record<string, { text?: string | null } | null> | null }>(
+      const fields = chunk.map((s, i) => `b${i}: object(oid: "${s}") { ... on Blob { text isBinary isTruncated } }`).join(" ");
+      const data = await this.gh.graphql<{ repository: Record<string, { text?: string | null; isBinary?: boolean; isTruncated?: boolean } | null> | null }>(
         `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { ${fields} } }`, { owner, name });
-      chunk.forEach((s, i) => out.set(s, data.repository?.[`b${i}`]?.text ?? ""));
+      chunk.forEach((s, i) => {
+        const b = data.repository?.[`b${i}`];
+        out.set(s, b && typeof b.text === "string" && !b.isBinary && !b.isTruncated ? b.text : null);
+      });
     });
     return out;
   }
@@ -173,12 +181,16 @@ export class GitHubStore implements Store {
         else if (parseMemoryPath(rel)) wanted.push(t);
       }
       const texts = await this.texts(repo, wanted.map((t) => t.sha));
-      c = { indexSha, head, files: wanted.map((t) => [t.path.slice(prefix.length), t.sha, texts.get(t.sha) ?? ""]) };
+      c = { indexSha, head, files: wanted.map((t): [string, string, string, boolean?] => {
+        const text = texts.get(t.sha) ?? null;
+        const rel = t.path.slice(prefix.length);
+        return text === null ? [rel, t.sha, "", true] : [rel, t.sha, text];
+      }) };
       await this.cachePut(key, c);
     }
     return {
       commitSha, isPrivate, indexSha: c.indexSha, head: c.head,
-      files: new Map(c.files.map(([path, sha, content]) => [path, { path, sha, content }])),
+      files: new Map(c.files.map(([path, sha, content, unreadable]) => [path, unreadable ? { path, sha, content, unreadable } : { path, sha, content }])),
     };
   }
 

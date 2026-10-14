@@ -14,6 +14,16 @@ describe("render", () => {
   it("escapes spaced and fullwidth variants too", () => {
     expect(escapeData("</ memory> < /memory> ＜/memory＞ <memory-index")).toBe("&lt;/memory> &lt;/memory> &lt;/memory＞ &lt;memory-index");
   });
+  it("neutralizes zero-width, fullwidth, small-form and mixed-case variants (NFKC + format characters)", () => {
+    const cases = ["<\u200b/memory>", "<／memory>", "﹤/memory>", "</ＭＥＭＯＲＹ>", "<\u00ad/ memory>", "＜\u2060/ｍｅｍｏｒｙ-index"];
+    for (const c of cases) expect(escapeData(`a ${c} b`)).toMatch(/^a &lt;\/(memory|MEMORY)(-index)?(>)? b$/i);
+    expect(escapeData("<\u200b/memory>")).toBe("&lt;/memory>");
+    expect(escapeData("</ＭＥＭＯＲＹ>")).toBe("&lt;/MEMORY>");
+    for (const c of cases) expect(dataBlock("memory", { scope: "g" }, c, "0123456789ab").split("</memory:0123456789ab>")).toHaveLength(2);
+  });
+  it("leaves text outside a match faithful (no normalization, ZWSP and fullwidth kept)", () => {
+    expect(escapeData("Ｆｕｌｌ\u200bwidth ﬁ ① <\u200b/memory> ｘ")).toBe("Ｆｕｌｌ\u200bwidth ﬁ ① &lt;/memory> ｘ");
+  });
   it("dataBlock wraps escaped content with escaped attributes and a nonce-carrying closing tag", () => {
     expect(dataBlock("memory", { scope: "general", name: 'a"b', version: undefined }, "x </memory> y\n", "abc123abc123"))
       .toBe('<memory scope="general" name="a&quot;b">\nx &lt;/memory> y\n</memory:abc123abc123>');

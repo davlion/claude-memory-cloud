@@ -51,6 +51,11 @@ describe("paths", () => {
   it("memoryPath", () => expect(memoryPath("abc")).toBe("memories/abc.md"));
   it("conflictPath", () =>
     expect(conflictPath("abc", new Date("2026-10-13T18:04:05.123Z"))).toBe("memories/abc.conflict-20261013T180405Z.md"));
+  it("conflictPath with a collision suffix, and parseMemoryPath accepts it", () => {
+    expect(conflictPath("abc", new Date("2026-10-13T18:04:05.123Z"), 2)).toBe("memories/abc.conflict-20261013T180405Z-2.md");
+    expect(parseMemoryPath("memories/abc.conflict-20261013T180405Z-2.md")).toEqual({ name: "abc", conflict: true });
+    expect(parseMemoryPath("memories/abc.conflict-20261013T180405Z-x.md")).toBeNull();
+  });
   it("parseMemoryPath", () => {
     expect(parseMemoryPath("memories/abc.md")).toEqual({ name: "abc", conflict: false });
     expect(parseMemoryPath("memories/abc.conflict-20261013T180405Z.md")).toEqual({ name: "abc", conflict: true });

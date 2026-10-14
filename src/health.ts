@@ -5,10 +5,15 @@ import { resolveTarget, type ScopeConfig } from "./scopes";
 import type { HeadCommit } from "./store";
 
 export interface Check { check: string; status: "ok" | "warn" | "fail"; detail: string; action?: string }
-export interface ScopeReach { scope: string; repo: string; reachable: boolean; writable: boolean; private?: boolean; reason?: "app_not_installed" | "not_reachable" | "repo_public" }
+export interface ScopeReach {
+  scope: string; repo: string; reachable: boolean; writable: boolean; private?: boolean;
+  reason?: "app_not_installed" | "not_reachable" | "repo_public";
+  /** Only on repo_public entries: what GitHub reported ("public", "internal", or "unknown" when missing). */
+  visibility?: string;
+}
 
-type Installation = { id: number; account: { login: string } };
-type InstRepo = { full_name: string; private?: boolean; permissions?: { push?: boolean } };
+type Installation = { id: number; account: { login: string }; repository_selection?: "all" | "selected" };
+type InstRepo = { full_name: string; private?: boolean; visibility?: string; permissions?: { push?: boolean } };
 
 async function listAll<T>(gh: GitHub, path: string, key: string): Promise<T[]> {
   const out: T[] = [];
@@ -22,8 +27,10 @@ async function listAll<T>(gh: GitHub, path: string, key: string): Promise<T[]> {
   return out;
 }
 
+const installations = (gh: GitHub) => listAll<Installation>(gh, "/user/installations", "installations");
+
 export async function scopeReachability(gh: GitHub, cfg: ScopeConfig, _appSlug: string): Promise<ScopeReach[]> {
-  const installs = await listAll<Installation>(gh, "/user/installations", "installations");
+  const installs = await installations(gh);
   const reposByInstall = new Map<number, InstRepo[]>();
   const out: ScopeReach[] = [];
   for (const [scope, repo] of Object.entries(cfg)) {
@@ -35,11 +42,21 @@ export async function scopeReachability(gh: GitHub, cfg: ScopeConfig, _appSlug: 
     }
     const r = reposByInstall.get(inst.id)!.find((x) => x.full_name.toLowerCase() === repo.toLowerCase());
     if (!r) { out.push({ scope, repo, reachable: false, writable: false, reason: "not_reachable" }); continue; }
-    const isPrivate = r.private === true;
-    if (!isPrivate) { out.push({ scope, repo, reachable: true, writable: false, private: false, reason: "repo_public" }); continue; }
+    if (r.visibility !== "private") {
+      out.push({ scope, repo, reachable: true, writable: false, private: false, reason: "repo_public", visibility: r.visibility ?? "unknown" });
+      continue;
+    }
     out.push({ scope, repo, reachable: true, writable: Boolean(r.permissions?.push), private: true });
   }
   return out;
+}
+
+/** Installations covering a memory repo's owner that grant access to all of that account's repositories (spec §10b). */
+export async function allRepoInstallations(gh: GitHub, cfg: ScopeConfig): Promise<{ id: number; account: string }[]> {
+  const owners = new Set(Object.values(cfg).map((r) => r.split("/")[0]!.toLowerCase()));
+  return (await installations(gh))
+    .filter((i) => owners.has(i.account.login.toLowerCase()) && i.repository_selection === "all")
+    .map((i) => ({ id: i.id, account: i.account.login }));
 }
 
 // Classified through toOpError so a server bug or limit is never labelled a GitHub outage.
@@ -85,9 +102,11 @@ export async function runHealth(o: { gh: GitHub; cfg: ScopeConfig; props: Props;
     for (const r of await scopeReachability(o.gh, scopeCfg, o.appSlug)) {
       const [owner] = r.repo.split("/");
       const name = `scope:${r.scope}`;
-      if (r.reason === "repo_public") checks.push({ check: name, status: "fail", detail: `repo_public ${r.repo}`, action:
-        `${r.repo} is public, so anyone can read these memories. Make it private: repo Settings → General → Danger Zone → Change visibility. Saves to this scope are blocked until then.` });
-      else if (r.reachable && r.writable) checks.push({ check: name, status: "ok", detail: `ok ${r.repo}` });
+      if (r.reason === "repo_public") {
+        const who = r.visibility === "internal" ? "internal, so every member of its enterprise" : "public, so anyone";
+        checks.push({ check: name, status: "fail", detail: `repo_public ${r.repo}`, action:
+          `${r.repo} is ${who} can read these memories. Make it private: repo Settings → General → Danger Zone → Change visibility. Saves to this scope are blocked until then.` });
+      } else if (r.reachable && r.writable) checks.push({ check: name, status: "ok", detail: `ok ${r.repo}` });
       else if (r.reachable) checks.push({ check: name, status: "warn", detail: `read-only ${r.repo}`, action: `Ask an owner of ${owner} for write access to ${r.repo}.` });
       else if (r.reason === "app_not_installed") {
         const own = owner!.toLowerCase() === o.props.login.toLowerCase();
@@ -98,6 +117,12 @@ export async function runHealth(o: { gh: GitHub; cfg: ScopeConfig; props: Props;
         checks.push({ check: name, status: "fail", detail: `not_reachable ${r.repo}`, action:
           `The app is installed on ${owner} but can't see ${r.repo}. Likely fixes, in order: add claude-memory to the app's repositories (${owner} → Settings → GitHub Apps → ${o.appSlug} → Configure); create the private repo ${r.repo} if it doesn't exist; ask an owner of ${owner} to add your account (${o.props.login}) to it.` });
       }
+    }
+    for (const inst of await allRepoInstallations(o.gh, scopeCfg)) {
+      const own = inst.account.toLowerCase() === o.props.login.toLowerCase();
+      checks.push({ check: `installation:${inst.account}`, status: "fail", detail: "repository_selection: all", action: own
+        ? `The claude-memory app can read and write every repository in ${inst.account}. Restrict it: https://github.com/settings/installations/${inst.id} → Repository access → Only select repositories → the memory repo.`
+        : `The claude-memory app can read and write every repository in ${inst.account}. Ask an owner of ${inst.account} to restrict it to the memory repo only: https://github.com/organizations/${inst.account}/settings/installations/${inst.id} → Only select repositories.` });
     }
   } catch (e) {
     checks.push(githubApiFail(e));

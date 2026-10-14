@@ -98,9 +98,37 @@ describe("GitHubStore.snapshot", () => {
     expect(calls.filter((c) => c.url === GQL)).toHaveLength(0);
   });
 
-  it("a blob GraphQL can't return as text reads as empty", async () => {
+  it("a blob GraphQL can't return as text is marked unreadable, with empty content", async () => {
     mockFetch(repoRoutes("c1", TREE, { [S4]: "C\n" }));
-    expect((await new GitHubStore(new GitHub("t")).snapshot("dav/mem", "")).files.get("memories/a.md")!.content).toBe("");
+    expect((await new GitHubStore(new GitHub("t")).snapshot("dav/mem", "")).files.get("memories/a.md"))
+      .toEqual({ path: "memories/a.md", sha: S1, content: "", unreadable: true });
+  });
+
+  it("binary, truncated and null-text blobs are unreadable; the query asks for isBinary and isTruncated; the mark survives the KV cache", async () => {
+    const commit = `c-unread-${Date.now()}`;
+    const tree = ["bin", "trunc", "nul", "ok"].map((n, i) => ({ path: `memories/${n}.md`, type: "blob", sha: oid(0x2000 + i) }));
+    const odd: Record<string, unknown> = { [oid(0x2000)]: { text: "x", isBinary: true, isTruncated: false },
+      [oid(0x2001)]: { text: "partial", isBinary: false, isTruncated: true }, [oid(0x2002)]: { text: null, isBinary: false, isTruncated: false },
+      [oid(0x2003)]: { text: "fine\n", isBinary: false, isTruncated: false } };
+    const gql = { method: "POST", url: GQL, respond: async (req: Request) => {
+      const { query } = (await req.json()) as { query: string };
+      expect(query).toContain("isBinary isTruncated");
+      const repository: Record<string, unknown> = {};
+      for (const m of query.matchAll(/(b\d+): object\(oid: "([0-9a-f]{40})"\)/g)) repository[m[1]!] = odd[m[2]!];
+      return json({ data: { repository } });
+    } };
+    mockFetch([...repoRoutes(commit, tree).filter((r) => r.url !== GQL), gql]);
+    const first = await new GitHubStore(new GitHub("t"), env.CACHE_KV).snapshot("dav/mem", "");
+    const flags = (s: typeof first) => [...s.files.values()].map((f) => [f.path, f.unreadable === true, f.content]);
+    expect(flags(first)).toEqual([["memories/bin.md", true, ""], ["memories/trunc.md", true, ""], ["memories/nul.md", true, ""], ["memories/ok.md", false, "fine\n"]]);
+    mockFetch(repoRoutes(commit, tree));
+    expect(flags(await new GitHubStore(new GitHub("t"), env.CACHE_KV).snapshot("dav/mem", ""))).toEqual(flags(first));
+  });
+
+  it("an internal repo is not private (every enterprise member can read it)", async () => {
+    mockFetch([...repoRoutes().filter((r) => r.url !== R),
+      { method: "GET", url: R, respond: () => json({ default_branch: "main", private: true, visibility: "internal" }) }]);
+    expect((await new GitHubStore(new GitHub("t")).snapshot("dav/mem", "")).isPrivate).toBe(false);
   });
 
   it("memoizes the ref and the tree within one store", async () => {

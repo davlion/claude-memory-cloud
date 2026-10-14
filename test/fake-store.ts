@@ -17,6 +17,8 @@ export class FakeStore implements Store {
   failNextCommit = 0;
   publicRepos = new Set<string>();
   cacheWriteFailed = false;
+  /** Full paths (within any repo) whose text the server can't read. */
+  unreadable = new Set<string>();
   /** Called after a snapshot is taken and before the commit is applied: simulates a concurrent writer. */
   beforeCommit?: () => void;
 
@@ -44,7 +46,7 @@ export class FakeStore implements Store {
       const rel = p.slice(prefix.length);
       if (rel === "MEMORY.md") { indexSha = await sha(content); continue; }
       if (!parseMemoryPath(rel)) continue;
-      files.set(rel, { path: rel, sha: await sha(content), content });
+      files.set(rel, this.unreadable.has(p) ? { path: rel, sha: await sha(content), content: "", unreadable: true } : { path: rel, sha: await sha(content), content });
     }
     return {
       commitSha: head === undefined ? null : `c${head}`,
