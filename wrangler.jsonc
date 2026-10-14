@@ -4,9 +4,11 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-01-28",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": true,
+  "preview_urls": false,
   "kv_namespaces": [
-    { "binding": "OAUTH_KV", "id": "REPLACE_IN_TASK_14" },
-    { "binding": "CACHE_KV", "id": "REPLACE_IN_TASK_14" }
+    { "binding": "OAUTH_KV", "id": "<staging OAUTH_KV id>" },
+    { "binding": "CACHE_KV", "id": "<staging CACHE_KV id>" }
   ],
   "vars": {
     "PUBLIC_URL": "https://claude-memory-staging.<subdomain>.workers.dev",
