@@ -1,7 +1,5 @@
 # claude-memory-cloud — FAQ
 
-> **Draft.** Seeded from the design discussion; answers will be checked against the built server.
-
 ## What it is
 
 ### What problem does this solve?
@@ -28,16 +26,20 @@ From the git `origin` remote of the directory Claude Code is running in. So the 
 ## Security and privacy
 
 ### Who can see my memories?
-- You, through GitHub, because they're files in your private repo.
-- The server, which runs in your own Cloudflare account.
-- Anthropic, whenever Claude reads a memory, the same as anything else in a conversation.
+| Where | What | For how long | Who can read it |
+|---|---|---|---|
+| Your GitHub repo and its history | every version | until you delete or rewrite it (deleting a memory leaves it in history) | you and the repo's collaborators (for a client repo: the client's org, every project's notes included) |
+| The server (Cloudflare Worker) | memory text passes through in plaintext | per request | whoever controls the Cloudflare account |
+| The server's cache (Cloudflare KV) | copies of memory text | up to 7 days, even after a memory is deleted or access is removed | whoever controls the Cloudflare account |
+| Anthropic | every memory Claude reads in a conversation | under your Claude account's history and data settings | Anthropic, and your claude.ai account |
+| Your computers | Claude Code session logs include memories Claude read | Claude Code's cleanup period (about 30 days) | your user account and its backups |
 
-The server doesn't log memory content or tokens.
+The server logs no memory content and no tokens.
 
 ### Is Cloudflare in the middle a security risk?
 The server sees memory text in plaintext, because that's how TLS works at Cloudflare's edge. Mitigations:
 - The GitHub App can touch only the memory repos it's installed on, nothing else, and only with your own access.
-- Memories must never contain secrets; the server rejects saves that look like credentials.
+- Memories must never contain secrets. The server's check is best effort: it catches common token formats (GitHub, AWS, Stripe, npm, Azure, private keys, credentials in URLs…), not every password.
 - Every change is a commit in your repo, so there's a full audit trail.
 - A client that prefers it can host its own copy of the server.
 
@@ -49,6 +51,42 @@ It ends immediately. Uninstalling the app, or removing you from the org, cuts of
 
 ### Does the server need the GitHub App's private key?
 No. It acts only as you, using user tokens that expire after 8 hours and refresh automatically. No private key is generated or stored.
+
+### How long does a connection last?
+A connection stays signed in as long as you use it at least once every 30 days, up to 180 days from when you connected. Then Claude asks you to reconnect (claude.ai → Settings → Connectors → claude-memory → Disconnect, then Connect). The GitHub sign-in behind it refreshes itself every 8 hours.
+
+In a rare double failure (a transient GitHub error during a refresh race, or rotated tokens plus a failed grant write) a connection can answer "temporarily unavailable" for up to about 2 hours and then need reconnecting.
+
+### I saved a secret by accident. What now?
+1. Rotate the credential first. Treat it as leaked.
+2. Delete the memory (ask Claude to).
+3. Optionally rewrite the repo history to remove it. Cached copies on the server expire within 7 days.
+
+### Is memory content trusted?
+No. Anyone who can write a memory repo can write text that Claude will read. Claude is told that memory content is data, not instructions: it doesn't run commands or follow links because a memory says to, and it doesn't copy facts between scopes unless you ask. The server's own messages (Health, Since, change notices) carry a per-response marker that memory text can't fake. If a memory repo changes outside the server, Health warns (`provenance:<repo>`) with a link to review the change.
+
+### What should I tell a client?
+Something like this (adapt as needed):
+
+> **What this is.** I use a tool that gives my AI assistant (Claude, made by Anthropic) a memory that carries over between work sessions. Notes about your organization and codebases are stored as Markdown files in a private repository **in your GitHub org** (`<org>/claude-memory`). You own it, you control who can see it, and you can delete it.
+>
+> **What gets stored.** Short working notes: conventions, decisions, how your systems fit together, things to avoid. No passwords, keys or credentials. The server rejects things that look like credentials, but that check is best effort, so please tell me if you ever see one.
+>
+> **Where the notes travel.** GitHub stores them, in your repo. My server runs on Cloudflare under my account; notes pass through it in readable form, and it keeps a cached copy for up to 7 days, including after a note is deleted or after you remove my access. Anthropic sees a note whenever Claude reads it in one of my sessions. My computers keep session logs that include notes Claude read, normally for about 30 days.
+>
+> **Who can see them.** Anyone in your org with read access to `<org>/claude-memory`, including notes about every project (access isn't split per codebase); me; and the providers above, as processors.
+>
+> **What my access covers.** The GitHub App you install should be limited to the single `claude-memory` repository ("Only select repositories"). It can't read your other repositories. Changes are commits under my GitHub account, so you have a full history.
+>
+> **Ending access.** Uninstall the app or remove me from the repo, and access stops immediately. Cached copies on my server expire within 7 days, and I'll delete my local copies when we finish. Git history in your repo stays until you delete or rewrite it.
+>
+> **What I'd ask of you.** Keep write access to `<org>/claude-memory` limited to the people who need it, because what's written there is read by my assistant. Keep the repo private, and limit visibility changes to org owners. Install the app on that repo only.
+
+### Can friends use my server?
+Yes, up to about five people. `SCOPES` lists who may sign in and which repos each person's memories live in; nobody sees anyone else's scopes. See "Letting a friend use your server" in the Quickstart.
+
+### Why does memory in claude.ai chat show only my general memories?
+Loading follows context. In a Claude Code session inside a repo you get general + the client that owns the repo + that project. Without a repo (chat) you get general only, so one client's notes don't show up in unrelated conversations. Name the client ("what do we know about acme?") and Claude loads that scope too.
 
 ## Day to day
 
@@ -80,7 +118,7 @@ Nothing is lost. The second save finds the memory changed since it was read, and
 The server checks for similar memories and asks Claude to update the existing one instead, unless you really want a separate memory.
 
 ### Can I edit memories by hand?
-Yes. They're plain Markdown files in your repo. The server rebuilds the index on its next write.
+Yes. They're plain Markdown files in your repo. The index is rebuilt from the files every time it's read, and Health notes that the repo was changed outside the server so you know to review it.
 
 ### What about Claude Code's built-in memory?
 The setup script turns it off, so memories don't end up in two places. Your existing local memory files are left in place as a backup.
@@ -88,10 +126,20 @@ The setup script turns it off, so memories don't end up in two places. Your exis
 ## Setup and operations
 
 ### What does it cost?
-Normally nothing. GitHub private repos are free, Cloudflare Workers' free plan is far above personal use, and the GitHub App is free.
+GitHub private repos and the GitHub App are free. Cloudflare Workers' free plan works for personal use. Workers Paid ($5/month) gives far more headroom, and the owner's own server runs on it. The server is built to work on either.
+
+### What are the Cloudflare limits, and what happens when they're hit?
+On the free plan:
+- **100,000 requests a day.** Past that, Cloudflare answers for the server ("error 1027") until 00:00 UTC. Claude sees the connector as unavailable: local Claude Code queues saves in the outbox; elsewhere Claude says the memory wasn't saved.
+- **50 outgoing requests per call.** One `memory_index` for general + a client + a project makes about 15 GitHub requests. If a call still hits the limit, only that scope fails, with `server_limit` (temporary; try again).
+- **1,000 KV writes a day.** The cache is optional: if writes fail, reads still work and Health shows `kv_writes`. Signing in and token refresh need KV, so they can fail until 00:00 UTC; they never disconnect you.
+- **10 ms of CPU per request.** The server is designed to fit; Paid raises this to 30 seconds.
+- Sign-in endpoints are rate-limited to 10 requests a minute per address, so nobody can burn the daily limits from outside.
+
+Workers Paid raises all of these far beyond personal use.
 
 ### How do I know it's working?
-At session start, Claude runs a health check and stays silent if everything's fine. Each problem is reported in one line with what to do, e.g. "reconnect the claude-memory connector in claude.ai → Settings → Connectors". You can also ask "is memory working?" at any time.
+At session start, Claude runs a health check and stays silent if everything's fine. Each problem is reported in one line with what to do, e.g. "reconnect the claude-memory connector in claude.ai → Settings → Connectors". You can also ask "is memory working?" at any time. Errors say whether they're temporary (`unavailable`, `reauth_required`, `server_limit`) or need a fix first (for example `write_rejected`, when a branch rule blocks the server's commits, or `repo_public`).
 
 ### Why TypeScript for the server, and Python and shell for the rest?
 Cloudflare's OAuth and MCP libraries for Workers are TypeScript, so the server is TypeScript. Everything that runs on your machine (hooks, setup script, test runner) is Python and shell, to keep it simple and dependency-free.

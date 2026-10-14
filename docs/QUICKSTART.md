@@ -1,6 +1,6 @@
 # claude-memory-cloud — Quickstart
 
-> **Draft.** A bootstrap script is planned that will automate most of Parts 1 and 3–5 (Part 2 stays manual). Until then, Parts 1–4 can be done by hand now. Parts 5–8 describe steps that depend on the server, which isn't built yet; they'll be checked when it is.
+> A bootstrap script is planned that will automate most of Parts 1 and 3–5 (Part 2 stays manual). Until then, every part below is done by hand. Parts 7–8 need the local setup script, which isn't built yet.
 
 claude-memory-cloud gives Claude one set of memories everywhere: Claude Code on any machine, Claude Code cloud sessions, and claude.ai chat on web, Desktop, and mobile. The memories are Markdown files in a private GitHub repo that you own. A small server, which you deploy to your own Cloudflare account, connects that repo to Claude as a custom connector.
 
@@ -9,9 +9,9 @@ You'll set up four things:
 | What | Where | Cost | Time |
 |---|---|---|---|
 | A private memory repo | your GitHub account | free | 1 min |
-| A Cloudflare account | cloudflare.com | free plan | 10 min |
+| A Cloudflare account | cloudflare.com | free plan works; Workers Paid ($5/month) gives more headroom | 10 min |
 | A GitHub App (lets the server use your memory repo, and nothing else) | your GitHub account | free | 10 min |
-| The server, deployed as a Cloudflare Worker | your Cloudflare account | free plan | 10 min |
+| The server, deployed as a Cloudflare Worker | your Cloudflare account | free plan works; Workers Paid ($5/month) gives more headroom | 10 min |
 
 Then you connect it to Claude and run a setup script on each machine.
 
@@ -24,7 +24,7 @@ Then you connect it to Claude and run a setup script on each machine.
 - A GitHub account.
 - A claude.ai account (Pro, Max, Team, or Enterprise; custom connectors are needed).
 - Node.js 20 or later on your Mac, for `npx`. Check with `node --version`.
-- A password manager or other safe place for two secrets (a client secret and an encryption key). You'll paste them into a terminal once; they're never stored in a repo.
+- A password manager or other safe place for one secret (the GitHub App's client secret). You'll paste it into a terminal once; it's never stored in a repo.
 
 ---
 
@@ -38,7 +38,7 @@ Then you connect it to Claude and run a setup script on each machine.
 
 ✔ You now have `https://github.com/<you>/claude-memory`.
 
-> Never put secrets in this repo. The server rejects saves that look like credentials, but don't rely on that alone.
+> Never put secrets in this repo. The server's secret check is best effort: it catches common token formats, not every password.
 
 ---
 
@@ -113,14 +113,14 @@ The GitHub App is how the server gets access to your memory repo, **and only tha
 
 ---
 
-## Part 5 — Deploy the server *(not yet available)*
+## Part 5 — Deploy the server
 
-1. Get the code and install dependencies:
+1. Get the code and install exactly the locked dependencies:
 
    ```bash
    git clone https://github.com/<owner>/claude-memory-cloud
    cd claude-memory-cloud
-   npm install
+   npm ci
    ```
 
 2. Create the two storage namespaces, and paste each printed `id` into the `env.production` section of `wrangler.jsonc`:
@@ -133,34 +133,42 @@ The GitHub App is how the server gets access to your memory repo, **and only tha
 3. In the `env.production` section of `wrangler.jsonc`, set:
    - `PUBLIC_URL` → `https://claude-memory.<sub>.workers.dev`
    - `GITHUB_APP_SLUG` → `<slug>`
-   - `SCOPES` → `{"general": "<you>/claude-memory"}`
-4. Set the secrets. Each command prompts for a value; paste it there, not on the command line:
+
+4. Write your scope map to `scopes.production.json`. The file is gitignored; keep a copy in your password manager. It lists who may sign in and which repos each person's memories live in:
+
+   ```json
+   {"<you>": {"general": "<you>/claude-memory"}}
+   ```
+
+5. Set the secrets. Each `secret put` prompts for a value (paste it there, not on the command line), except `SCOPES`, which is read from the file:
 
    ```bash
    npx wrangler secret put GITHUB_CLIENT_ID --env production        # the Client ID from Part 3
    npx wrangler secret put GITHUB_CLIENT_SECRET --env production    # the client secret from Part 3
-   openssl rand -hex 32                                             # generates an encryption key...
-   npx wrangler secret put COOKIE_ENCRYPTION_KEY --env production   # ...paste it here
+   npx wrangler secret put SCOPES --env production < scopes.production.json
    ```
 
-5. Deploy and check:
+6. Deploy and check:
 
    ```bash
-   npm run deploy:production
+   npm test && npm run deploy:production
    curl -sS https://claude-memory.<sub>.workers.dev/health
    ```
 
    Expected: `{"ok":true,...}`.
 
+**Which Cloudflare plan?** The server runs on Workers Free. Workers Paid ($5/month) raises the limits that matter here (subrequests, KV writes, CPU time). See "What are the Cloudflare limits?" in the FAQ.
+
 ---
 
-## Part 6 — Connect it to Claude *(not yet available)*
+## Part 6 — Connect it to Claude
 
 1. On claude.ai: **Settings** → **Connectors** → **Add custom connector**.
    - **Name:** `claude-memory`
    - **URL:** `https://claude-memory.<sub>.workers.dev/mcp`
-2. Click **Connect**. Your browser shows your server's consent page ("Allow Claude to use your claude-memory?"). Click **Allow**. You're then sent to GitHub to approve the app; if your browser is already signed in to GitHub (and Cloudflare), these pages recognize it and go quickly. Make sure the browser is signed in to the GitHub account that owns your memory repo.
+2. Click **Connect**. Your browser shows your server's consent page ("Allow Claude to use your claude-memory?"). Click **Allow**. You're then sent to GitHub to approve the app; if your browser is already signed in to GitHub (and Cloudflare), these pages recognize it and go quickly. Make sure the browser is signed in to the GitHub account that owns your memory repo. You'll see this consent page every time you connect a new client; there's no "remember me".
 3. Test it: in a new chat, ask *"What's in my memory index?"* You should see a health line and your index. A better test once you have a memory: ask about it in plain words (e.g. *"What kind of soup do I like?"*) and check that Claude finds it without being told to look.
+4. If you see **"This GitHub account isn't on this memory server"**, the GitHub account you approved with isn't in `SCOPES`. Sign in to GitHub with the right account, or add yours to `scopes.production.json` and rerun `npx wrangler secret put SCOPES --env production < scopes.production.json`.
 
 The connector now works in claude.ai chat (web, Desktop, mobile), in Claude Code cloud sessions, and in local Claude Code when you're logged in with your claude.ai account.
 
@@ -202,10 +210,34 @@ To keep a client's memories in the client's own GitHub org:
 1. **The client** (an org owner) creates a private, empty repo `<client-org>/claude-memory`. They add you to it if you don't already have access.
 2. Make sure your app is public, so other accounts can install it: open `https://github.com/settings/apps/<slug>/advanced`. If the Danger zone offers **Make public**, click it (this doesn't list the app anywhere; it only allows other accounts to install it). If the client's org doesn't appear in the install page's account picker, this is the usual cause.
 3. **The client** installs your app: `https://github.com/apps/<slug>/installations/select_target` → their org → **Only select repositories** → `claude-memory`. No secrets change hands.
-4. **You** add the scope to `SCOPES` in `wrangler.jsonc`, e.g. `{"general": "<you>/claude-memory", "acme": "acme-org/claude-memory"}`, then run `npm run deploy:production`.
+4. **You** add the scope under your login in `scopes.production.json`, e.g. `{"<you>": {"general": "<you>/claude-memory", "acme": "acme-org/claude-memory"}}`, then run `npx wrangler secret put SCOPES --env production < scopes.production.json`. No redeploy is needed: the secret takes effect immediately.
 5. **You** add the scope to the local scope map by rerunning `./setup.sh` on each machine.
 
+**Before you start writing client memories,** agree these with the client (whatever is written there loads into your Claude sessions, so write access matters):
+- Only named people can write `<client-org>/claude-memory`. Org-wide apps and Actions shouldn't be able to write it: exclude the repo from "All repositories" app installs, and set Actions permissions for the repo to read-only.
+- A ruleset on the default branch that blocks force pushes and deletion (repo Settings → Rules → Rulesets → New branch ruleset → target the default branch → Restrict deletions, Block force pushes). Don't require pull requests or signed commits: the server pushes directly, and such rules make saves fail with `write_rejected`.
+- Visibility changes limited to org owners (org Settings → Member privileges → "Allow members to change repository visibilities": off).
+- The app installed on that one repo only. Health fails with `installation:<org>` if it can reach all repositories.
+
+Then give them the disclosure in the FAQ ("What should I tell a client?").
+
+Memory loading follows context: in a Claude Code session inside one of the client's repos you get general + the client + that project. In claude.ai chat you get general only, unless you name the client.
+
 Memories about the client's codebases go to `<client-org>/claude-memory` under `projects/<repo>/`. If the client removes you from the org or uninstalls the app, access ends immediately.
+
+---
+
+## Letting a friend use your server
+
+Up to about five people can share one server, each with their own repos. Nobody sees anyone else's scopes.
+
+1. Your friend creates their own private `<friend>/claude-memory` and installs **your** GitHub App on it (Part 4, using your app's link).
+2. You add them to `scopes.production.json`: `{"<you>": {…}, "<friend>": {"general": "<friend>/claude-memory"}}`, then rerun `npx wrangler secret put SCOPES --env production < scopes.production.json`.
+3. They add the connector in claude.ai with your server's URL (Part 6).
+
+The server pins each login to its numeric GitHub ID at first sign-in. If someone deletes and recreates their GitHub account under the same name, sign-in is refused until you delete the pin: `npx wrangler kv key delete --binding OAUTH_KV --env production "allowlist:github-id:<login, lower-case>"`.
+
+To remove someone, delete their entry from `SCOPES` and rerun `secret put`: their next request gets "access denied".
 
 ---
 
@@ -213,13 +245,13 @@ Memories about the client's codebases go to `<client-org>/claude-memory` under `
 
 Only needed if you're working on claude-memory-cloud itself.
 
-1. **Staging server:** also add the callback URL `https://claude-memory-staging.<sub>.workers.dev/callback` to the GitHub App (a GitHub App allows up to 10). Staging is the top-level config in `wrangler.jsonc`, deployed with `npm run deploy:staging`; its secrets are set without `--env`.
+1. **Staging server and app:** create a **separate** GitHub App for staging (same settings as Part 3, named `<you>-claude-memory-staging`, with only the callback `https://claude-memory-staging.<sub>.workers.dev/callback`). Install it only on the test repos below. Staging tokens then can't reach production or client repos. Staging is the top-level config in `wrangler.jsonc`, deployed with `npm run deploy:staging`; its secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `SCOPES` from `scopes.staging.json`) are set without `--env`.
 2. **Test memory repo:** create a private, empty repo `<you>/claude-memory-test`, and add it to the app installation on your account.
 3. **Test client org:** create a free organization (github.com → **+** → **New organization** → **Free**), e.g. `<you>-test-client`. In it, create private repos `claude-memory` (empty) and `sample-app` (with a README). Install the app on that org, selecting only `claude-memory` (never `sample-app`: the app needs only the memory repo, and project memories for `sample-app` live in `claude-memory` under `projects/sample-app/`). If the org isn't offered on the install page, make the app public first (see "Adding a client organization", step 2).
 4. **Local secrets:** in the repo, create `.dev.vars` (it's gitignored):
 
    ```
-   GITHUB_CLIENT_ID=<client id>
-   GITHUB_CLIENT_SECRET=<client secret>
-   COOKIE_ENCRYPTION_KEY=<output of: openssl rand -hex 32>
+   GITHUB_CLIENT_ID=<staging app client id>
+   GITHUB_CLIENT_SECRET=<staging app client secret>
+   SCOPES={"<you>":{"general":"<you>/claude-memory-test"}}
    ```

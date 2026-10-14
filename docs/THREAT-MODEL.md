@@ -3,6 +3,7 @@
 **Date:** 2026-10-14
 **Scope:** the design spec (`claude-memory-mcp/docs/superpowers/specs/2026-10-13-cloud-memory-design.md`) and the Worker as implemented at `cd2a431` (`src/*.ts`, `wrangler.jsonc`, `package.json`), plus the library behavior it depends on (`@cloudflare/workers-oauth-provider` 1.2.3, `agents` 0.28.1). The local side (hooks, outbox, snapshot, `setup.sh`), `npm run doctor` and `bootstrap.py` are still plans, so they are reviewed as designs.
 **Method:** I read the code and the library source. I checked the secret-scanner regexes against bypass strings in a scratch script. Nothing was run against GitHub or Cloudflare.
+**Status (2026-10-14):** the [P] items and most [C] items are implemented by Plan 1b (claude-memory-mcp/docs/superpowers/plans/2026-10-14-cloud-memory-hardening.md); the text below describes the code as it was at cd2a431.
 
 Each recommendation has a tag: **[P]** = before production, **[C]** = before client onboarding, **[L]** = later.
 
@@ -331,7 +332,7 @@ Plain-language disclosure. Adapt it as needed.
 >
 > **Where the notes travel.**
 > - **GitHub** stores them, in your repo.
-> - **My server** runs on Cloudflare under my account. Notes pass through it in readable form, and it keeps a temporary cached copy for up to [30/7] days, including after a note is deleted or after you remove my access.
+> - **My server** runs on Cloudflare under my account. Notes pass through it in readable form, and it keeps a temporary cached copy for up to 7 days, including after a note is deleted or after you remove my access.
 > - **Anthropic** sees a note whenever Claude reads it in one of my sessions, just like anything else I discuss with Claude. Conversation history is kept under my Claude account's settings. [Model training on my conversations is turned off.]
 > - **My computers** keep session logs that include notes Claude read, normally for about 30 days.
 >
@@ -342,7 +343,7 @@ Plain-language disclosure. Adapt it as needed.
 >
 > **What my access covers.** The GitHub App you install should be limited to the single `claude-memory` repository ("Only select repositories"). It can't read your other repositories. Changes are commits under my GitHub account, so you have a full history.
 >
-> **Ending access.** Uninstall the app or remove me from the repo, and access stops immediately. Cached copies on my server expire within [30/7] days, and I'll delete my local copies when we finish (I can confirm when that's done). Git history in your repo stays until you delete or rewrite it.
+> **Ending access.** Uninstall the app or remove me from the repo, and access stops immediately. Cached copies on my server expire within 7 days, and I'll delete my local copies when we finish (I can confirm when that's done). Git history in your repo stays until you delete or rewrite it.
 >
 > **What I'd ask of you.**
 > - Keep write access to `<org>/claude-memory` limited to the people who need it, because what's written there is read by my assistant.
