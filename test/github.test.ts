@@ -120,3 +120,31 @@ describe("toOpError: final vs retryable", () => {
   it("RETRYABLE is exactly reauth_required, unavailable, server_limit", () =>
     expect([...RETRYABLE].sort()).toEqual(["reauth_required", "server_limit", "unavailable"]));
 });
+
+describe("cachedGet and graphql", () => {
+  it("cachedGet fetches a path once per client", async () => {
+    const { calls } = mockFetch([{ url: "https://api.github.com/user/installations", respond: () => json({ installations: [] }) }]);
+    const gh = new GitHub("t");
+    await gh.cachedGet("/user/installations?per_page=100&page=1");
+    await gh.cachedGet("/user/installations?per_page=100&page=1");
+    expect(calls).toHaveLength(1);
+  });
+  it("cachedGet does not memoize a failure", async () => {
+    let n = 0;
+    mockFetch([{ url: "https://api.github.com/x", respond: () => (++n === 1 ? json({}, 502) : json({ ok: 1 })) }]);
+    const gh = new GitHub("t");
+    await expect(gh.cachedGet("/x")).rejects.toBeInstanceOf(GitHubError);
+    expect(await gh.cachedGet("/x")).toEqual({ ok: 1 });
+  });
+  it("graphql posts the query and returns data", async () => {
+    const { calls } = mockFetch([{ method: "POST", url: "https://api.github.com/graphql", respond: () => json({ data: { viewer: { login: "dav" } } }) }]);
+    expect(await new GitHub("t").graphql("query { viewer { login } }", {})).toEqual({ viewer: { login: "dav" } });
+    expect(await calls[0]!.json()).toEqual({ query: "query { viewer { login } }", variables: {} });
+  });
+  it.each([["RATE_LIMITED", "rate_limited"], ["NOT_FOUND", "not_found"], ["FORBIDDEN", "forbidden"], ["SOMETHING", "unavailable"]])(
+    "graphql error %s → %s", async (type, kind) => {
+      mockFetch([{ method: "POST", url: "https://api.github.com/graphql", respond: () => json({ errors: [{ type, message: "m" }] }) }]);
+      const err = await new GitHub("t").graphql("q", {}).catch((e) => e);
+      expect((err as GitHubError).kind).toBe(kind);
+    });
+});

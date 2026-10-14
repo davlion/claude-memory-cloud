@@ -25,6 +25,7 @@ export const INTERNAL_ACTION =
 
 export class GitHub {
   lastRateLimit: RateLimit | null = null;
+  private memo = new Map<string, Promise<unknown>>();
   constructor(private token: string) {}
 
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -71,6 +72,29 @@ export class GitHub {
     }
     if (res.ok) return data as T;
     throw classify(res, String((data as { message?: unknown } | null)?.message ?? res.statusText));
+  }
+
+  /** GET memoized for the life of this client, i.e. one MCP request (installation lists, repo metadata). Failures aren't kept. */
+  cachedGet<T>(path: string): Promise<T> {
+    let p = this.memo.get(path) as Promise<T> | undefined;
+    if (!p) {
+      p = this.request<T>("GET", path);
+      this.memo.set(path, p);
+      p.catch(() => this.memo.delete(path));
+    }
+    return p;
+  }
+
+  async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+    const res = await this.request<{ data?: T; errors?: { type?: string; message?: string }[] }>("POST", "/graphql", { query, variables });
+    if (res.errors?.length) {
+      const err = res.errors[0]!;
+      const kind: GitHubErrorKind = err.type === "RATE_LIMITED" ? "rate_limited"
+        : err.type === "NOT_FOUND" ? "not_found" : err.type === "FORBIDDEN" ? "forbidden" : "unavailable";
+      throw new GitHubError(`GraphQL: ${err.message ?? err.type ?? "error"}`, 200, kind);
+    }
+    if (!res.data) throw new GitHubError("GraphQL: empty response", 200, "unavailable");
+    return res.data;
   }
 }
 

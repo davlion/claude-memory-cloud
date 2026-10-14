@@ -13,7 +13,7 @@ async function listAll<T>(gh: GitHub, path: string, key: string): Promise<T[]> {
   const out: T[] = [];
   for (let page = 1; page <= 10; page++) {
     const sep = path.includes("?") ? "&" : "?";
-    const res = await gh.request<Record<string, T[]>>("GET", `${path}${sep}per_page=100&page=${page}`);
+    const res = await gh.cachedGet<Record<string, T[]>>(`${path}${sep}per_page=100&page=${page}`);
     const items = res[key] ?? [];
     out.push(...items);
     if (items.length < 100) break;
