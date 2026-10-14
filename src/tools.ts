@@ -3,20 +3,30 @@ import { z } from "zod";
 import type { Props } from "./env";
 import { errorPayload } from "./errors";
 import { GitHub, toOpError } from "./github";
-import { formatHealth, runHealth, scopeReachability } from "./health";
+import { formatHealth, runHealth, scopeReachability, type Check } from "./health";
 import { INSTRUCTIONS } from "./instructions";
-import { deleteMemory, getIndex, getIndexVersioned, readMemories, saveMemory, searchMemories } from "./operations";
+import {
+  deleteMemory, getIndex, getIndexVersioned, readMemories, saveMemory, scopeFailure, searchMemories, type ScopeFailure,
+} from "./operations";
 import { resolveTarget, type ScopeConfig, type Target } from "./scopes";
 import type { Store } from "./store";
 
 export interface ToolDeps { store: Store; gh: GitHub; cfg: ScopeConfig; props: Props; appSlug: string; now?: () => Date }
+export interface ToolResult { text: string; isError: boolean; notes?: string }
 
-const ok = (v: unknown) => ({ text: typeof v === "string" ? v : JSON.stringify(v, null, 2), isError: false });
+/** At most this many `since` keys are checked per call (each costs a snapshot). */
+export const MAX_SINCE_KEYS = 10;
 
-async function reachableTargets(d: ToolDeps, scopes?: string[]): Promise<{ targets: Target[] }> {
-  const reach = await scopeReachability(d.gh, d.cfg, d.appSlug);
-  const wanted = scopes ?? Object.keys(d.cfg);
-  return { targets: reach.filter((r) => r.reachable && wanted.includes(r.scope)).map((r) => resolveTarget(d.cfg, r.scope)) };
+const ok = (v: unknown): ToolResult => ({ text: typeof v === "string" ? v : JSON.stringify(v, null, 2), isError: false });
+
+async function reachableTargets(d: ToolDeps, scopes?: string[]): Promise<Target[]> {
+  try {
+    const reach = await scopeReachability(d.gh, d.cfg, d.appSlug);
+    const wanted = scopes ?? Object.keys(d.cfg);
+    return reach.filter((r) => r.reachable && wanted.includes(r.scope)).map((r) => resolveTarget(d.cfg, r.scope));
+  } catch {
+    return []; // runHealth already reported this as a github_api check
+  }
 }
 
 const sinceBlock = (m: Record<string, string>) =>
@@ -26,16 +36,24 @@ function targetForKey(cfg: ScopeConfig, key: string): Target {
   return key.startsWith("project:") ? resolveTarget(cfg, "project", key.slice("project:".length)) : resolveTarget(cfg, key);
 }
 
-// Best effort: returns undefined when nothing changed or the check itself fails.
+function indexFailCheck(t: Target, e: unknown): Check {
+  const err = toOpError(e);
+  return { check: `index:${t.scopeLabel}`, status: "fail", detail: `${err.code}: ${err.message}`,
+    action: err.action ?? "Check memory_health for this scope; if it keeps failing, tell the server's owner." };
+}
+
+// Best effort, per key: a key whose check fails keeps its old version and never hides another key's change.
 async function changesSince(d: ToolDeps, since: Record<string, string>): Promise<string | undefined> {
   try {
     const next = { ...since };
     const parts: string[] = [];
-    for (const [key, version] of Object.entries(since)) {
+    for (const [key, version] of Object.entries(since).slice(0, MAX_SINCE_KEYS)) {
       let t: Target;
       try { t = targetForKey(d.cfg, key); } catch { delete next[key]; continue; }
-      const cur = await getIndexVersioned(d.store, t);
-      if (cur.version !== version) { parts.push(cur.text); next[key] = cur.version; }
+      try {
+        const cur = await getIndexVersioned(d.store, t);
+        if (cur.version !== version) { parts.push(cur.text); next[key] = cur.version; }
+      } catch { /* keep this key's old version */ }
     }
     if (!parts.length) return undefined;
     return [`## Memory changed since your index\nThese indexes replace your copies:`, ...parts, sinceBlock(next)].join("\n\n");
@@ -44,7 +62,7 @@ async function changesSince(d: ToolDeps, since: Record<string, string>): Promise
   }
 }
 
-export async function callTool(d: ToolDeps, name: string, a: Record<string, unknown>): Promise<{ text: string; isError: boolean; notes?: string }> {
+export async function callTool(d: ToolDeps, name: string, a: Record<string, unknown>): Promise<ToolResult> {
   const r = await dispatch(d, name, a);
   const since = a.since as Record<string, string> | undefined;
   if (name === "memory_index" || !since || typeof since !== "object") return r;
@@ -52,7 +70,39 @@ export async function callTool(d: ToolDeps, name: string, a: Record<string, unkn
   return notes ? { ...r, notes } : r;
 }
 
-async function dispatch(d: ToolDeps, name: string, a: Record<string, unknown>): Promise<{ text: string; isError: boolean }> {
+async function memoryIndex(d: ToolDeps, a: Record<string, unknown>): Promise<string> {
+  const project = a.project as string | undefined;
+  const health = await runHealth({ gh: d.gh, cfg: d.cfg, props: d.props, appSlug: d.appSlug, project });
+  const tokenBad = health.some((c) => (c.check === "github_token" && c.status === "fail") || c.check === "github_api");
+  if (tokenBad) return `## Health\n${formatHealth(health)}`;
+  const targets = await reachableTargets(d, a.scopes as string[] | undefined);
+  if (project && health.some((c) => c.check === "project" && c.status === "ok")) targets.push(resolveTarget(d.cfg, "project", project));
+  const sections: string[] = [];
+  const since: Record<string, string> = {};
+  for (const t of targets) {
+    try {
+      const idx = await getIndexVersioned(d.store, t);
+      sections.push(idx.text);
+      since[t.scopeLabel] = idx.version;
+    } catch (e) {
+      health.push(indexFailCheck(t, e));
+    }
+  }
+  return [`## Health\n${formatHealth(health)}`, ...sections, sinceBlock(since)].join("\n\n");
+}
+
+async function memorySearch(d: ToolDeps, a: Record<string, unknown>) {
+  const targets = await reachableTargets(d, a.scopes as string[] | undefined);
+  const failures: ScopeFailure[] = [];
+  const project = a.project as string | undefined;
+  if (project) {
+    try { targets.push(resolveTarget(d.cfg, "project", project)); } catch (e) { failures.push(scopeFailure("project", e)); }
+  }
+  const r = await searchMemories(d.store, targets, String(a.query ?? ""));
+  return { results: r.results, failed_scopes: [...failures, ...r.failures] };
+}
+
+async function dispatch(d: ToolDeps, name: string, a: Record<string, unknown>): Promise<ToolResult> {
   const now = d.now?.() ?? new Date();
   const scope = (a.scope as string | undefined) ?? "general";
   const project = a.project as string | undefined;
@@ -62,32 +112,12 @@ async function dispatch(d: ToolDeps, name: string, a: Record<string, unknown>): 
         return ok(await scopeReachability(d.gh, d.cfg, d.appSlug));
       case "memory_health":
         return ok(formatHealth(await runHealth({ gh: d.gh, cfg: d.cfg, props: d.props, appSlug: d.appSlug, project })));
-      case "memory_index": {
-        const health = await runHealth({ gh: d.gh, cfg: d.cfg, props: d.props, appSlug: d.appSlug, project });
-        const parts = [`## Health\n${formatHealth(health)}`];
-        const since: Record<string, string> = {};
-        const tokenBad = health.some((c) => c.check === "github_token" && c.status === "fail") || health.some((c) => c.check === "github_api");
-        if (!tokenBad) {
-          const { targets } = await reachableTargets(d, a.scopes as string[] | undefined);
-          if (project && health.some((c) => c.check === "project" && c.status === "ok")) {
-            targets.push(resolveTarget(d.cfg, "project", project));
-          }
-          for (const t of targets) {
-            const idx = await getIndexVersioned(d.store, t);
-            parts.push(idx.text);
-            since[t.scopeLabel] = idx.version;
-          }
-          parts.push(sinceBlock(since));
-        }
-        return ok(parts.join("\n\n"));
-      }
+      case "memory_index":
+        return ok(await memoryIndex(d, a));
       case "memory_read":
         return ok(await readMemories(d.store, resolveTarget(d.cfg, scope, project), (a.names as string[]).slice(0, 20)));
-      case "memory_search": {
-        const { targets } = await reachableTargets(d, a.scopes as string[] | undefined);
-        if (project) targets.push(resolveTarget(d.cfg, "project", project));
-        return ok(await searchMemories(d.store, targets, String(a.query ?? "")));
-      }
+      case "memory_search":
+        return ok(await memorySearch(d, a));
       case "memory_save":
         return ok(await saveMemory(d.store, resolveTarget(d.cfg, scope, project), {
           name: String(a.name ?? ""), description: String(a.description ?? ""), type: String(a.type ?? ""), body: String(a.body ?? ""),

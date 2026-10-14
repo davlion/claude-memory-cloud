@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { GitHubError } from "../src/github";
 import { serializeMemory } from "../src/memory";
 import { deleteMemory, getIndex, getIndexVersioned, readMemories, saveMemory, searchMemories } from "../src/operations";
 import type { Target } from "../src/scopes";
@@ -197,10 +198,21 @@ describe("read / index / search", () => {
   });
   it("search matches all terms across body, case-insensitive, with snippet", async () => {
     const r = await searchMemories(store, [T, P], "GENERATED hand");
-    expect(r).toEqual([{ scope: "project app", name: "b", description: "project thing", snippet: expect.stringContaining("generated/") }]);
+    expect(r.results).toEqual([{ scope: "project app", name: "b", description: "project thing", snippet: expect.stringContaining("generated/") }]);
+    expect(r.failures).toEqual([]);
   });
   it("search does not match YAML keys, only name, description and body", async () => {
-    expect(await searchMemories(store, [T, P], "metadata")).toEqual([]);
-    expect((await searchMemories(store, [T], "tuesday")).map((x) => x.name)).toEqual(["a"]);
+    expect((await searchMemories(store, [T, P], "metadata")).results).toEqual([]);
+    expect((await searchMemories(store, [T], "tuesday")).results.map((x) => x.name)).toEqual(["a"]);
+  });
+  it("a scope that fails is reported; the others still return results", async () => {
+    const real = store.snapshot.bind(store);
+    store.snapshot = async (repo, prefix) => {
+      if (prefix === P.prefix) throw new GitHubError("boom", 502, "unavailable");
+      return real(repo, prefix);
+    };
+    const r = await searchMemories(store, [T, P], "tuesday");
+    expect(r.results.map((x) => x.name)).toEqual(["a"]);
+    expect(r.failures).toEqual([{ scope: "project app", error: "unavailable", message: expect.stringContaining("boom"), action: expect.stringContaining("githubstatus.com") }]);
   });
 });

@@ -1,4 +1,5 @@
-import { OpError } from "./errors";
+import { OpError, type ErrorCode } from "./errors";
+import { toOpError } from "./github";
 import {
   buildIndex, conflictPath, findSimilar, isValidName, memoryPath, MemoryFormatError,
   parseMemory, parseMemoryPath, serializeMemory, type IndexEntry, type Memory,
@@ -14,6 +15,14 @@ export interface SaveInput { name: string; description: string; type: string; bo
 export interface OpResult {
   status: "created" | "updated" | "conflict" | "exists" | "similar_found" | "rejected_secret" | "invalid" | "not_found" | "deleted";
   name: string; scope: string; commit_url?: string; similar?: IndexEntry[]; conflict_file?: string; pattern?: string; version?: string; message?: string;
+}
+
+export interface SearchHit { scope: string; name: string; description: string; snippet: string }
+export interface ScopeFailure { scope: string; error: ErrorCode; message: string; action?: string }
+
+export function scopeFailure(scope: string, e: unknown): ScopeFailure {
+  const err = toOpError(e);
+  return { scope, error: err.code, message: err.message, action: err.action };
 }
 
 function entries(snap: Snapshot): { list: IndexEntry[]; conflicts: string[] } {
@@ -134,11 +143,18 @@ export async function getIndex(store: Store, t: Target): Promise<string> {
   return (await getIndexVersioned(store, t)).text;
 }
 
-export async function searchMemories(store: Store, targets: Target[], query: string) {
+export async function searchMemories(store: Store, targets: Target[], query: string): Promise<{ results: SearchHit[]; failures: ScopeFailure[] }> {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const out: { scope: string; name: string; description: string; snippet: string }[] = [];
+  const results: SearchHit[] = [];
+  const failures: ScopeFailure[] = [];
   for (const t of targets) {
-    const snap = await store.snapshot(t.repo, t.prefix);
+    let snap: Snapshot;
+    try {
+      snap = await store.snapshot(t.repo, t.prefix);
+    } catch (e) {
+      failures.push(scopeFailure(t.displayLabel, e));
+      continue;
+    }
     for (const [path, f] of snap.files) {
       const p = parseMemoryPath(path);
       if (!p || p.conflict) continue;
@@ -152,9 +168,9 @@ export async function searchMemories(store: Store, targets: Target[], query: str
       const lower = searchable.toLowerCase();
       if (!terms.every((term) => lower.includes(term))) continue;
       const at = Math.max(0, f.content.toLowerCase().indexOf(terms[0] ?? "") - 40);
-      out.push({ scope: t.displayLabel, name: p.name, description, snippet: f.content.slice(at, at + 120).replace(/\s+/g, " ").trim() });
-      if (out.length >= 20) return out;
+      results.push({ scope: t.displayLabel, name: p.name, description, snippet: f.content.slice(at, at + 120).replace(/\s+/g, " ").trim() });
+      if (results.length >= 20) return { results, failures };
     }
   }
-  return out;
+  return { results, failures };
 }

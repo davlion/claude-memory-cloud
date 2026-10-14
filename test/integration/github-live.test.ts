@@ -53,7 +53,7 @@ run("live GitHub", () => {
     const idx = await getIndex(store(), P);
     expect(idx).toContain(`[${a}]`);
     expect(idx).toContain(`[${b}]`);
-    expect((await searchMemories(store(), [P], "beta unique")).map((x) => x.name)).toEqual([b]);
+    expect((await searchMemories(store(), [P], "beta unique")).results.map((x) => x.name)).toEqual([b]);
   });
 
   it("commits carry trailers", { timeout: 30_000 }, async () => {

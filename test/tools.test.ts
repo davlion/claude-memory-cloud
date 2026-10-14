@@ -73,7 +73,7 @@ describe("callTool", () => {
     expect(read[0].version).toMatch(/^[0-9a-f]{40}$/);
     healthyGitHub(); // memory_search checks scope reachability
     const found = JSON.parse((await callTool(deps, "memory_search", { query: "tuesday" })).text);
-    expect(found.map((x: { name: string }) => x.name)).toEqual(["a"]);
+    expect(found.results.map((x: { name: string }) => x.name)).toEqual(["a"]);
     const del = JSON.parse((await callTool(deps, "memory_delete", { scope: "general", name: "a", version: read[0].version, source: "test" })).text);
     expect(del.status).toBe("deleted");
   });
@@ -187,5 +187,59 @@ describe("error taxonomy at the tool boundary", () => {
     const { GitHubError } = await import("../src/github");
     store.snapshot = async () => { throw new GitHubError("server limit", 0, "server_limit"); };
     expect(JSON.parse((await save({ name: "a" })).text)).toMatchObject({ error: "server_limit", retryable: true });
+  });
+});
+
+describe("per-scope resilience", () => {
+  it("memory_index: a failing scope becomes a failing check; the others still load; Health always returns", async () => {
+    const { GitHubError } = await import("../src/github");
+    await save({ name: "a" });
+    const real = store.snapshot.bind(store);
+    store.snapshot = async (repo, prefix) => {
+      if (repo === "acme-org/claude-memory") throw new GitHubError("boom", 502, "unavailable");
+      return real(repo, prefix);
+    };
+    healthyGitHub();
+    const r = await callTool(deps, "memory_index", { project: "acme-org/billing" });
+    expect(r.isError).toBe(false);
+    expect(r.text).toContain("✗ index:acme — unavailable");
+    expect(r.text).toContain("✗ index:project:acme-org/billing — unavailable");
+    expect(r.text).toContain("# Memory index — general");
+    const since = sinceOf(r.text);
+    expect(Object.keys(since)).toEqual(["general"]);
+  });
+
+  it("memory_search: an unresolvable project is reported, not fatal", async () => {
+    await save({ name: "a", body: "Deploy on Tuesday.\n" });
+    healthyGitHub();
+    const r = await callTool(deps, "memory_search", { query: "tuesday", project: "someone/x" });
+    expect(r.isError).toBe(false);
+    const out = JSON.parse(r.text);
+    expect(out.results.map((x: { name: string }) => x.name)).toEqual(["a"]);
+    expect(out.failed_scopes).toEqual([expect.objectContaining({ scope: "project", error: "no_memory_repo_for_owner" })]);
+  });
+
+  it("since: one failing key doesn't hide another key's change", async () => {
+    const { GitHubError } = await import("../src/github");
+    await saveMemory(store, resolveTarget(cfg, "general"), { name: "fresh", description: "brand new fact", type: "user", body: "b\n", source: "o" });
+    const real = store.snapshot.bind(store);
+    store.snapshot = async (repo, prefix) => {
+      if (repo === "acme-org/claude-memory") throw new GitHubError("boom", 502, "unavailable");
+      return real(repo, prefix);
+    };
+    const r = await callTool(deps, "memory_read", { scope: "general", names: ["x"], since: { general: "stale", acme: "old" } });
+    expect(r.notes).toContain("[fresh]");
+    const next = sinceOf(r.notes!);
+    expect(next.acme).toBe("old");
+    expect(next.general).not.toBe("stale");
+  });
+
+  it("since: checks at most 10 keys", async () => {
+    const real = store.snapshot.bind(store);
+    let n = 0;
+    store.snapshot = async (repo, prefix) => { n++; return real(repo, prefix); };
+    const since = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`project:dav/p${i}`, "none"]));
+    await callTool(deps, "memory_read", { scope: "general", names: ["x"], since });
+    expect(n).toBe(1 + 10); // the read itself + 10 checks
   });
 });
