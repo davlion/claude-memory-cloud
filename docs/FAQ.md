@@ -134,7 +134,7 @@ On the free plan:
 - **50 outgoing requests per call.** One `memory_index` for general + a client + a project makes about 15 GitHub requests. If a call still hits the limit, only that scope fails, with `server_limit` (temporary; try again).
 - **1,000 KV writes a day.** The cache is optional: if writes fail, reads still work and Health shows `kv_writes`. Signing in and token refresh need KV, so they can fail until 00:00 UTC; they never disconnect you.
 - **10 ms of CPU per request.** The server is designed to fit; Paid raises this to 30 seconds.
-- Sign-in endpoints are rate-limited to 10 requests a minute per address, so nobody can burn the daily limits from outside.
+- Sign-in endpoints are rate-limited to about 10 requests a minute per address. Cloudflare's rate limiter is approximate (it counts per data center and errs on the permissive side), so expect occasional 429s after a burst of a few dozen requests rather than a hard cutoff at 10. It slows abuse down; it isn't an exact quota.
 
 Workers Paid raises all of these far beyond personal use.
 

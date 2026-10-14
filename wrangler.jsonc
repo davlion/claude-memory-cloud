@@ -17,7 +17,7 @@
   // SCOPES is a secret (it names clients): npx wrangler secret put SCOPES [--env production] < scopes.<env>.json
   "vars": {
     "PUBLIC_URL": "https://claude-memory-staging.<subdomain>.workers.dev",
-    "GITHUB_APP_SLUG": "davlion-claude-memory",
+    "GITHUB_APP_SLUG": "davlion-claude-memory-staging",
     "WORKER_VERSION": "0.1.0",
     "MIN_HOOK_VERSION": "0.1.0"
   },
