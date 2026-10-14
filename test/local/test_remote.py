@@ -28,6 +28,17 @@ class NormalizeRemote(unittest.TestCase):
     def test_redact(self):
         self.assertEqual(redact_remote("https://u:ghp_x@git.example.com/a/b"), "https://git.example.com/a/b")
         self.assertEqual(redact_remote("git@github.com:a/b.git"), "git@github.com:a/b.git")
+        self.assertEqual(redact_remote("https://github.com/a/b.git"), "https://github.com/a/b.git")
+        self.assertEqual(redact_remote("ssh://git@host/a/b"), "ssh://host/a/b")
+
+    def test_redact_password_containing_at(self):
+        out = redact_remote("https://user:p@ss@host/x")
+        self.assertEqual(out, "https://host/x")
+        self.assertNotIn("ss@", out)
+
+    def test_redact_scp_style_credentials(self):
+        self.assertEqual(redact_remote("user:token@host.example:a/b"), "host.example:a/b")
+        self.assertNotIn("token", redact_remote("user:tok@en@host.example:a/b"))
 
 
 class OriginLookup(unittest.TestCase):

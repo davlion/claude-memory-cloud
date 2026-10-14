@@ -27,7 +27,10 @@ def normalize_remote(url: str) -> Optional[Tuple[str, str]]:
 
 def redact_remote(url: str) -> str:
     """Drops credentials from a URL remote (`https://user:token@host/…` → `https://host/…`)."""
-    return re.sub(r"://[^@/]+@", "://", url.strip())
+    u = url.strip()
+    if "://" in u:
+        return re.sub(r"://[^/]*@", "://", u, count=1)   # greedy: a password may itself contain "@"
+    return re.sub(r"^[^/@:]+:[^/]*@", "", u)   # scp-style `user:token@host:path`; plain `git@host:path` stays
 
 
 def _git(cwd: str, args: List[str], timeout: float) -> Optional[str]:

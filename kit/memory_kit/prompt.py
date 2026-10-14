@@ -11,7 +11,8 @@ from .scopemap import ScopeMapError, client_scopes_for_owner, is_general_owner, 
 
 TRIGGERS = re.compile(
     r"\bsave (a |this )?memory"
-    r"|\bremember (this|that)\b"
+    r"|(?<!don't )(?<!don’t )(?<!dont )(?<!can't )(?<!can’t )(?<!cant )(?<!do not )(?<!cannot )"
+    r"\bremember (this|that)\b"
     r"|\bdon['’]?t (do|let) .* again"
     r"|\bnote for (the )?future"
     r"|\badd (this )?to (your )?memory",
@@ -21,8 +22,8 @@ TRIGGERS = re.compile(
 REMINDER = (
     "claude-memory: this looks like a request to save a memory. Save it with the claude-memory connector's "
     "memory_save (load the tool first if it is deferred), never a local file; auto-memory is off.\n"
-    "Scope: general (about the user), a client scope (the client org as a whole), or project (this codebase, "
-    "project = the origin remote); if unclear, ask in one line. End with \"saved to <scope>\", "
+    "`scope` is required on memory_save: pass general (about the user), a client scope name (the client org as "
+    "a whole), or project (this codebase, with project = the origin remote); if unclear, ask in one line. End with \"saved to <scope>\", "
     "\"queued in outbox for <scope>\", or \"not saved: <reason>\"."
 )
 
@@ -33,6 +34,15 @@ def default_scopes_path() -> str:
 
 def is_memory_intent(prompt: str) -> bool:
     return bool(TRIGGERS.search(prompt))
+
+
+def _safe_host(remote: str) -> str:
+    """Only a sanitized host is ever echoed for a non-GitHub remote: .git/config of an untrusted checkout is not trusted."""
+    rest = remote.strip().split("://", 1)[1] if "://" in remote else remote.strip()
+    auth = re.split(r"[/\s]", rest, 1)[0] if "://" in remote else rest.split("/", 1)[0]
+    host = auth.rsplit("@", 1)[-1].split(":", 1)[0]
+    host = re.sub(r"[^A-Za-z0-9.-]", "", host)[:64]
+    return host
 
 
 def prompt_context(prompt: str, cwd: str, scopes_path: str) -> Optional[str]:
@@ -50,9 +60,14 @@ def prompt_context(prompt: str, cwd: str, scopes_path: str) -> Optional[str]:
         return "\n".join(lines)
     n = normalize_remote(remote)
     if n is None:
-        lines.append(f"Origin remote: {redact_remote(remote)} (not on GitHub: no project scope here).")
+        host = _safe_host(remote)
+        what = f"a non-GitHub remote on host {host}" if host else "a non-GitHub remote"
+        lines.append(f"Origin remote: {what} (not on GitHub: no project scope here).")
         return "\n".join(lines)
-    lines.append(f"Origin remote: {redact_remote(remote)} (project = {n[0]}/{n[1]}).")
+    shown = redact_remote(remote)
+    if re.search(r"[^\x21-\x7e]", shown):   # whitespace/control characters: never echo them
+        shown = f"github.com/{n[0]}/{n[1]}"
+    lines.append(f"Origin remote: {shown} (project = {n[0]}/{n[1]}).")
     try:
         sm = load_scope_map(scopes_path)
     except ScopeMapError:
