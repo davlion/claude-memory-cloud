@@ -1,4 +1,4 @@
-import { OpError, type ErrorCode } from "./errors";
+import { OpError, RETRYABLE, type ErrorCode } from "./errors";
 import { toOpError } from "./github";
 import {
   buildIndex, conflictPath, findSimilar, isValidName, memoryPath, MemoryFormatError,
@@ -18,11 +18,11 @@ export interface OpResult {
 }
 
 export interface SearchHit { scope: string; name: string; description: string; snippet: string }
-export interface ScopeFailure { scope: string; error: ErrorCode; message: string; action?: string }
+export interface ScopeFailure { scope: string; error: ErrorCode; message: string; action?: string; retryable: boolean }
 
 export function scopeFailure(scope: string, e: unknown): ScopeFailure {
   const err = toOpError(e);
-  return { scope, error: err.code, message: err.message, action: err.action };
+  return { scope, error: err.code, message: err.message, action: err.action, retryable: RETRYABLE.has(err.code) };
 }
 
 function entries(snap: Snapshot): { list: IndexEntry[]; conflicts: string[] } {

@@ -108,7 +108,8 @@ export function toOpError(e: unknown): OpError {
     case "forbidden":
       return new OpError("not_reachable", e.message);
     case "unavailable":
-      return new OpError("unavailable", `GitHub error: ${e.message}`, GITHUB_DOWN_ACTION);
+      // Status-only: the raw message can carry request details from a failed fetch.
+      return new OpError("unavailable", e.status > 0 ? `GitHub unavailable (HTTP ${e.status})` : "GitHub unreachable (network error)", GITHUB_DOWN_ACTION);
     case "server_limit":
       return new OpError("server_limit", "Cloudflare per-request limit reached", SERVER_LIMIT_ACTION);
     case "unprocessable":

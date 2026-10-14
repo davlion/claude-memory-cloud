@@ -19,13 +19,13 @@ export const MAX_SINCE_KEYS = 10;
 
 const ok = (v: unknown): ToolResult => ({ text: typeof v === "string" ? v : JSON.stringify(v, null, 2), isError: false });
 
-async function reachableTargets(d: ToolDeps, scopes?: string[]): Promise<Target[]> {
+async function reachableTargets(d: ToolDeps, scopes?: string[]): Promise<{ targets: Target[]; failure?: unknown }> {
   try {
     const reach = await scopeReachability(d.gh, d.cfg, d.appSlug);
     const wanted = scopes ?? Object.keys(d.cfg);
-    return reach.filter((r) => r.reachable && wanted.includes(r.scope)).map((r) => resolveTarget(d.cfg, r.scope));
-  } catch {
-    return []; // runHealth already reported this as a github_api check
+    return { targets: reach.filter((r) => r.reachable && wanted.includes(r.scope)).map((r) => resolveTarget(d.cfg, r.scope)) };
+  } catch (e) {
+    return { targets: [], failure: e };
   }
 }
 
@@ -75,7 +75,12 @@ async function memoryIndex(d: ToolDeps, a: Record<string, unknown>): Promise<str
   const health = await runHealth({ gh: d.gh, cfg: d.cfg, props: d.props, appSlug: d.appSlug, project });
   const tokenBad = health.some((c) => (c.check === "github_token" && c.status === "fail") || c.check === "github_api");
   if (tokenBad) return `## Health\n${formatHealth(health)}`;
-  const targets = await reachableTargets(d, a.scopes as string[] | undefined);
+  const { targets, failure } = await reachableTargets(d, a.scopes as string[] | undefined);
+  if (failure) {
+    // Health passed a moment ago but this second look failed: say so rather than return an index with scopes missing.
+    const err = toOpError(failure);
+    health.push({ check: "github_api", status: "fail", detail: `${err.code}: ${err.message}`, action: err.action });
+  }
   if (project && health.some((c) => c.check === "project" && c.status === "ok")) targets.push(resolveTarget(d.cfg, "project", project));
   const sections: string[] = [];
   const since: Record<string, string> = {};
@@ -92,8 +97,8 @@ async function memoryIndex(d: ToolDeps, a: Record<string, unknown>): Promise<str
 }
 
 async function memorySearch(d: ToolDeps, a: Record<string, unknown>) {
-  const targets = await reachableTargets(d, a.scopes as string[] | undefined);
-  const failures: ScopeFailure[] = [];
+  const { targets, failure } = await reachableTargets(d, a.scopes as string[] | undefined);
+  const failures: ScopeFailure[] = failure ? [scopeFailure("all", failure)] : [];
   const project = a.project as string | undefined;
   if (project) {
     try { targets.push(resolveTarget(d.cfg, "project", project)); } catch (e) { failures.push(scopeFailure("project", e)); }

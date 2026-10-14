@@ -203,6 +203,7 @@ describe("per-scope resilience", () => {
     const r = await callTool(deps, "memory_index", { project: "acme-org/billing" });
     expect(r.isError).toBe(false);
     expect(r.text).toContain("✗ index:acme — unavailable");
+    expect(r.text).toMatch(/✗ index:acme — .* → .*githubstatus\.com/);
     expect(r.text).toContain("✗ index:project:acme-org/billing — unavailable");
     expect(r.text).toContain("# Memory index — general");
     const since = sinceOf(r.text);
@@ -241,5 +242,33 @@ describe("per-scope resilience", () => {
     const since = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`project:dav/p${i}`, "none"]));
     await callTool(deps, "memory_read", { scope: "general", names: ["x"], since });
     expect(n).toBe(1 + 10); // the read itself + 10 checks
+  });
+
+  it("raw network text never leaks into index checks or failed_scopes", async () => {
+    const { GitHubError } = await import("../src/github");
+    await save({ name: "a", body: "Deploy on Tuesday.\n" });
+    const real = store.snapshot.bind(store);
+    store.snapshot = async (repo, prefix) => {
+      if (repo === "acme-org/claude-memory") throw new GitHubError("network error: ghu_secret", 0, "unavailable");
+      return real(repo, prefix);
+    };
+    healthyGitHub();
+    const idx = await callTool(deps, "memory_index", {});
+    expect(idx.text).toContain("✗ index:acme");
+    expect(idx.text).not.toContain("ghu_secret");
+    healthyGitHub();
+    const s = await callTool(deps, "memory_search", { query: "tuesday" });
+    expect(s.text).toContain("acme");
+    expect(s.text).not.toContain("ghu_secret");
+  });
+
+  it("memory_search: a reachability outage is reported, not an empty result", async () => {
+    mockFetch([{ url: "https://api.github.com/", respond: () => json({}, 503) }]);
+    const r = await callTool(deps, "memory_search", { query: "tuesday" });
+    expect(r.isError).toBe(false);
+    const out = JSON.parse(r.text);
+    expect(out.results).toEqual([]);
+    expect(out.failed_scopes).toEqual([expect.objectContaining({
+      scope: "all", error: "unavailable", retryable: true, action: expect.stringContaining("githubstatus.com") })]);
   });
 });

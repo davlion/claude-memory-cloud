@@ -213,6 +213,6 @@ describe("read / index / search", () => {
     };
     const r = await searchMemories(store, [T, P], "tuesday");
     expect(r.results.map((x) => x.name)).toEqual(["a"]);
-    expect(r.failures).toEqual([{ scope: "project app", error: "unavailable", message: expect.stringContaining("boom"), action: expect.stringContaining("githubstatus.com") }]);
+    expect(r.failures).toEqual([{ scope: "project app", error: "unavailable", message: expect.stringContaining("HTTP 502"), action: expect.stringContaining("githubstatus.com"), retryable: true }]);
   });
 });
