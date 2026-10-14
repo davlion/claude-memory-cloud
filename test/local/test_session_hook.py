@@ -2,9 +2,10 @@
 import json
 import os
 import shutil
+import subprocess
 import unittest
 
-from helpers import FIXTURES, FakeWorker, clean_env, healthy_home, make_git_dir, run_hook, tempdir
+from helpers import FIXTURES, KIT, PY, FakeWorker, clean_env, healthy_home, make_git_dir, run_hook, tempdir
 from memory_kit.session import COMPACT_LINE
 
 
@@ -93,6 +94,22 @@ class SessionHook(unittest.TestCase):
         (self.repo / ".claude").mkdir()
         (self.repo / ".claude" / "settings.json").write_text('{"autoMemoryEnabled": true}')
         self.assert_one_problem("Built-in auto-memory is on")
+
+    def test_managed_setting_overrides_user(self):
+        managed = self.tmp / "managed-settings.json"
+        managed.write_text('{"autoMemoryEnabled": true}')
+        self.env["MEMKIT_MANAGED_SETTINGS"] = str(managed)   # user settings say false; managed wins
+        self.assert_one_problem("Built-in auto-memory is on")
+
+    def raw(self, stdin):
+        return subprocess.run([PY, "-I", "-S", str(KIT / "hooks" / "session_start.py")], input=stdin,
+                              capture_output=True, text=True, env=self.env, timeout=10)
+
+    def test_bad_stdin_is_treated_as_empty(self):
+        for stdin in ("", "not json", "[]", "null", '"x"', "{}", '{"source": 5, "cwd": null}', '{"cwd": "a\\u0000b"}'):
+            with self.subTest(stdin=stdin):
+                r = self.raw(stdin)
+                self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))   # healthy: silent, no "hook failed"
 
     def test_routing_marker_missing(self):
         (self.home / ".claude" / "CLAUDE.md").write_text("# nothing\n")
