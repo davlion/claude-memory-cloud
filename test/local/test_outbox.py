@@ -67,6 +67,22 @@ class Scan(unittest.TestCase):
         self.assertEqual(s.malformed, ["20261014T100000Z-broken.md"])
         self.assertGreater(s.oldest_days, 8.9)
 
+    def test_hostile_entries_flagged_not_fatal(self):
+        (self.d / "20261014T100001Z-binary.md").write_bytes(b"\xff\xfe\x00bad")
+        (self.d / "20261014T100002Z-big.md").write_text("---\n" + "x" * 70000)
+        (self.d / "outside.txt").write_text("secret")
+        os.symlink(self.d / "outside.txt", self.d / "20261014T100003Z-link.md")
+        os.symlink(self.d / "nope", self.d / "20261014T100004Z-dangling.md")
+        locked = self.d / "20261014T100005Z-locked.md"
+        locked.write_text("x")
+        os.chmod(locked, 0)
+        self.addCleanup(os.chmod, locked, 0o600)
+        s = scan_outbox(self.d, ("acme-org", "billing"), NOW)
+        self.assertEqual(s.total, 7)
+        self.assertEqual(s.for_project, 1)
+        for n in ("binary", "big", "link", "dangling", "locked"):
+            self.assertIn(next(m for m in s.malformed if m.endswith(f"-{n}.md")), s.malformed)
+
     def test_missing_dir(self):
         self.assertEqual(scan_outbox(self.d / "none", None, NOW).total, 0)
 

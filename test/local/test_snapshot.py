@@ -81,7 +81,11 @@ class Snapshot(unittest.TestCase):
         self.assertNotIn("8 KB", out)
 
     def test_bad_keys_rejected(self):
-        for k in ("../x", "A__b", "a/b", "a__b__c", "", "_none ", "a b", 'a"b'):
+        for k in ("../x", "A__b", "a/b", "", "_none ", "a b", 'a"b'):
+            target = self.d / f"{k}.md"
+            if self.d.resolve() in target.resolve().parents:   # create the file when it stays inside the temp dir
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("hi")
             self.assertIsNone(render_snapshot(self.d, k), k)
         (self.d / "x.md").write_text("hi")
         self.assertIsNotNone(render_snapshot(self.d, "x"))

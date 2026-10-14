@@ -6,7 +6,9 @@ one level of indented blocks (`metadata:`, `outbox:`). Values may be plain or do
 from __future__ import annotations
 
 import json
+import os
 import re
+import stat
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -161,12 +163,42 @@ class OutboxSummary:
     oldest_days: Optional[float] = None
 
 
+MAX_ENTRY_BYTES = 64 * 1024
+
+
 def list_entries(d: Path) -> List[Path]:
-    """Oldest first (the filename starts with the UTC timestamp)."""
+    """Oldest first (the filename starts with the UTC timestamp). Symlinks and other non-directories are
+    listed too, so the scan can flag them; one unreadable entry never hides the rest."""
+    out: List[Path] = []
     try:
-        return sorted(p for p in Path(d).iterdir() if p.is_file() and p.suffix == ".md" and not p.name.startswith("."))
+        names = sorted(Path(d).iterdir())
     except OSError:
         return []
+    for p in names:
+        try:
+            if p.suffix != ".md" or p.name.startswith(".") or stat.S_ISDIR(p.lstat().st_mode):
+                continue
+        except OSError:
+            continue
+        out.append(p)
+    return out
+
+
+def read_entry_text(p: Path) -> str:
+    """Reads one regular, non-symlink entry of at most MAX_ENTRY_BYTES; raises OSError/UnicodeDecodeError otherwise."""
+    st = p.lstat()
+    if not stat.S_ISREG(st.st_mode):
+        raise OSError("not a regular file")
+    if st.st_size > MAX_ENTRY_BYTES:
+        raise OSError("entry too large")
+    fd = os.open(str(p), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    try:
+        data = os.read(fd, MAX_ENTRY_BYTES + 1)
+    finally:
+        os.close(fd)
+    if len(data) > MAX_ENTRY_BYTES:
+        raise OSError("entry too large")
+    return data.decode("utf-8")
 
 
 def scan_outbox(d: Path, project: Optional[Tuple[str, str]], now: datetime) -> OutboxSummary:
@@ -174,15 +206,15 @@ def scan_outbox(d: Path, project: Optional[Tuple[str, str]], now: datetime) -> O
     for p in list_entries(d):
         s.total += 1
         try:
-            e = parse_entry(p.read_text(encoding="utf-8"))
+            e = parse_entry(read_entry_text(p))
             since = parse_ts(e.queued_at)
             if project and e.scope == "project" and normalize_remote(e.project) == project:
                 s.for_project += 1
         except (OutboxFormatError, OSError, UnicodeDecodeError):
             s.malformed.append(p.name)
             try:
-                since = datetime.fromtimestamp(p.stat().st_mtime, timezone.utc)
-            except OSError:
+                since = datetime.fromtimestamp(p.lstat().st_mtime, timezone.utc)
+            except (OSError, OverflowError, ValueError):
                 continue
         days = (now - since).total_seconds() / 86400
         s.oldest_days = days if s.oldest_days is None else max(s.oldest_days, days)
