@@ -111,4 +111,13 @@ describe("GitHubStore.commit", () => {
     expect(put.message).toBe("init: claude-memory");
     expect(atob(put.content)).toMatch(/^# claude-memory/);
   });
+
+  it("empty repo: README init 422 (concurrent first save) → ref_moved, not a throw", async () => {
+    mockFetch([
+      { method: "GET", url: R, respond: () => json({ default_branch: "main", private: true }) },
+      { method: "PUT", url: `${R}/contents/README.md`, respond: () => json({ message: "Invalid request.\n\n\"sha\" wasn't supplied." }, 422) },
+    ]);
+    expect(await new GitHubStore(new GitHub("t")).commit("dav/mem", "", null, [{ path: "MEMORY.md", content: "i" }], "m"))
+      .toEqual({ ok: false, reason: "ref_moved" });
+  });
 });

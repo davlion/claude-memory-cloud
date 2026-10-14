@@ -42,7 +42,7 @@ export class GitHubStore implements Store {
     if (cached !== null && cached !== undefined) return cached;
     const b = await this.gh.request<{ content: string }>("GET", `/repos/${repo}/git/blobs/${sha}`);
     const text = decode(b.content);
-    await this.cache?.put(`blob:${sha}`, text);
+    await this.cache?.put(`blob:${sha}`, text, { expirationTtl: 30 * 24 * 3600 });
     return text;
   }
 
@@ -79,7 +79,13 @@ export class GitHubStore implements Store {
     const { branch } = await this.repoMeta(repo);
     if (base === null) {
       // Git Data API can't write to an empty repo: create README via the contents API, then let the caller retry.
-      await this.gh.request("PUT", `/repos/${repo}/contents/README.md`, { message: "init: claude-memory", content: encode(README), branch });
+      try {
+        await this.gh.request("PUT", `/repos/${repo}/contents/README.md`, { message: "init: claude-memory", content: encode(README), branch });
+      } catch (e) {
+        // A concurrent first save already created README.md.
+        if (e instanceof GitHubError && e.status === 422) return { ok: false, reason: "ref_moved" };
+        throw e;
+      }
       return { ok: false, reason: "ref_moved" };
     }
     const baseTree = (await this.gh.request<{ tree: { sha: string } }>("GET", `/repos/${repo}/git/commits/${base}`)).tree.sha;

@@ -34,7 +34,7 @@ export class FakeStore implements Store {
     for (const [p, content] of m) {
       if (!p.startsWith(prefix)) continue;
       const rel = p.slice(prefix.length);
-      if (prefix === "" && rel.startsWith("projects/")) continue;
+      if (!(rel === "MEMORY.md" || (rel.startsWith("memories/") && !rel.slice(9).includes("/")))) continue;
       files.set(rel, { path: rel, sha: await sha(content), content });
     }
     return { commitSha: head === undefined ? null : `c${head}`, isPrivate: !this.publicRepos.has(repo), files };
