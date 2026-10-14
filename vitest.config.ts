@@ -1,0 +1,27 @@
+import { cloudflareTest } from "@cloudflare/vitest-plugin";
+import { defineProject } from "vitest/config";
+
+export default defineProject({
+  plugins: [
+    cloudflareTest({
+      wrangler: { configPath: "./wrangler.jsonc" },
+      miniflare: {
+        bindings: {
+          PUBLIC_URL: "https://memory.test",
+          SCOPES: JSON.stringify({ general: "davlion/claude-memory-test", acme: "acme-org/claude-memory" }),
+          GITHUB_CLIENT_ID: "Iv1.testclient",
+          GITHUB_CLIENT_SECRET: "test-secret",
+          COOKIE_ENCRYPTION_KEY: "0".repeat(64),
+          GITHUB_TEST_TOKEN: process.env.GITHUB_TEST_TOKEN ?? "",
+          GITHUB_TEST_REPO: process.env.GITHUB_TEST_REPO ?? "",
+        },
+      },
+    }),
+  ],
+  test: {
+    setupFiles: ["test/setup.ts"],
+    // vitest 5's on-disk module cache can't be read back from inside workerd
+    // ("no such file or directory, readAll ...node_modules/.vitest-cache/..."), so turn it off.
+    fsModuleCache: false,
+  },
+});

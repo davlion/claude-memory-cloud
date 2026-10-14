@@ -1,0 +1,34 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "claude-memory-staging",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-01-28",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "kv_namespaces": [
+    { "binding": "OAUTH_KV", "id": "REPLACE_IN_TASK_14" },
+    { "binding": "CACHE_KV", "id": "REPLACE_IN_TASK_14" }
+  ],
+  "vars": {
+    "PUBLIC_URL": "https://claude-memory-staging.<subdomain>.workers.dev",
+    "SCOPES": "{\"general\":\"davlion/claude-memory-test\",\"davlion-test-client\":\"davlion-test-client/claude-memory\"}",
+    "GITHUB_APP_SLUG": "davlion-claude-memory",
+    "WORKER_VERSION": "0.1.0",
+    "MIN_HOOK_VERSION": "0.1.0"
+  },
+  "env": {
+    "production": {
+      "name": "claude-memory",
+      "kv_namespaces": [
+        { "binding": "OAUTH_KV", "id": "REPLACE_IN_PLAN_4" },
+        { "binding": "CACHE_KV", "id": "REPLACE_IN_PLAN_4" }
+      ],
+      "vars": {
+        "PUBLIC_URL": "https://claude-memory.<subdomain>.workers.dev",
+        "SCOPES": "{\"general\":\"davlion/claude-memory\"}",
+        "GITHUB_APP_SLUG": "davlion-claude-memory",
+        "WORKER_VERSION": "0.1.0",
+        "MIN_HOOK_VERSION": "0.1.0"
+      }
+    }
+  }
+}
