@@ -7,6 +7,7 @@
     "dev": "wrangler dev",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:local": "python3 -m unittest discover -s test/local",
     "typecheck": "tsc --noEmit",
     "types": "wrangler types",
     "deploy:staging": "wrangler deploy",
