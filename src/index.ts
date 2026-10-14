@@ -39,7 +39,7 @@ function getProvider(env: Env) {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    if (url.host !== new URL(env.PUBLIC_URL).host) return new Response("misdirected request", { status: 421 });
+    if (url.origin !== new URL(env.PUBLIC_URL).origin) return new Response("misdirected request", { status: 421 });
     if (url.pathname === "/health") {
       return Response.json({ ok: true, version: env.WORKER_VERSION, min_hook_version: env.MIN_HOOK_VERSION });
     }

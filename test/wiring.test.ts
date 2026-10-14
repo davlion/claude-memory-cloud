@@ -12,6 +12,11 @@ describe("worker wiring", () => {
     expect(res.status).toBe(421);
   });
 
+  it("rejects http:// on the public host (full-origin pin)", async () => {
+    const res = await exports.default.fetch("http://memory.test/health");
+    expect(res.status).toBe(421);
+  });
+
   it("/mcp without a token → 401 with resource metadata pointer", async () => {
     const res = await exports.default.fetch("https://memory.test/mcp", { method: "POST", body: "{}" });
     expect(res.status).toBe(401);

@@ -108,7 +108,8 @@ it("never redirects to a non-allowlisted URI on an invalid authorize request", a
   const { client_id } = (await reg.json()) as { client_id: string };
   const res = await go(`${BASE}/authorize?` + new URLSearchParams({ response_type: "bogus", client_id, redirect_uri: "https://evil.example/cb",
     state: "s", code_challenge: await s256("x".repeat(50)), code_challenge_method: "S256", resource: `${BASE}/mcp` }));
-  expect(res.headers.get("location") ?? "").not.toMatch(/^https:\/\/evil\.example/);
+  expect(res.status).toBe(400);
+  expect(res.headers.get("location")).toBeNull();
 });
 
 it("/callback with a non-JSON GitHub token response → 502 page without secrets", async () => {
