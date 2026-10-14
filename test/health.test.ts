@@ -102,10 +102,18 @@ describe("runHealth", () => {
   });
 
   it("public repo → fail repo_public with the visibility action", async () => {
-    mockFetch(routes({ repos: { 2: [{ full_name: "acme-org/claude-memory", private: false, permissions: { push: true } }] } }));
+    mockFetch(routes({ repos: { 2: [{ full_name: "acme-org/claude-memory", private: false, visibility: "public", permissions: { push: true } }] } }));
     const cs = await runHealth({ gh: new GitHub("t"), cfg, props, appSlug: "s", now: NOW });
     expect(byCheck(cs, "scope:acme")).toMatchObject({ status: "fail", detail: "repo_public acme-org/claude-memory",
       action: expect.stringMatching(/is public.*Change visibility.*Saves to this scope are blocked/) });
+  });
+
+  it("missing visibility → repo_public worded as 'couldn't confirm private'", async () => {
+    mockFetch(routes({ repos: { 2: [{ full_name: "acme-org/claude-memory", private: false, permissions: { push: true } }] } }));
+    const cs = await runHealth({ gh: new GitHub("t"), cfg, props, appSlug: "s", now: NOW });
+    const a = byCheck(cs, "scope:acme")!.action!;
+    expect(a).toMatch(/Couldn't confirm acme-org\/claude-memory is private.*make sure it is private \(Settings → General/);
+    expect(a).not.toMatch(/anyone/);
   });
 
   it("project checks: ok, unconfigured owner, non-GitHub", async () => {

@@ -166,7 +166,7 @@ describe("GitHubStore.snapshot", () => {
     const kv = { get: async () => null, put: async (key: string, _v: string, opts: unknown) => { puts.push({ key, opts }); } } as unknown as KVNamespace;
     await new GitHubStore(new GitHub("t"), kv).snapshot("dav/mem", "");
     expect(CACHE_TTL_SECONDS).toBe(604800);
-    expect(puts).toEqual([{ key: "snap:v1:dav/mem:c1:", opts: { expirationTtl: 604800 } }]);
+    expect(puts).toEqual([{ key: "snap:v2:dav/mem:c1:", opts: { expirationTtl: 604800 } }]);
   });
 
   it("skips the cache for an oversized snapshot without flagging a write failure", async () => {

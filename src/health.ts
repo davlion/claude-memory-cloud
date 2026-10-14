@@ -103,9 +103,14 @@ export async function runHealth(o: { gh: GitHub; cfg: ScopeConfig; props: Props;
       const [owner] = r.repo.split("/");
       const name = `scope:${r.scope}`;
       if (r.reason === "repo_public") {
-        const who = r.visibility === "internal" ? "internal, so every member of its enterprise" : "public, so anyone";
-        checks.push({ check: name, status: "fail", detail: `repo_public ${r.repo}`, action:
-          `${r.repo} is ${who} can read these memories. Make it private: repo Settings → General → Danger Zone → Change visibility. Saves to this scope are blocked until then.` });
+        const tail = "Saves to this scope are blocked until then.";
+        const fix = "repo Settings → General → Danger Zone → Change visibility";
+        const action = r.visibility === "internal"
+          ? `${r.repo} is internal, so every member of its enterprise can read these memories. Make it private: ${fix}. ${tail}`
+          : r.visibility === "public"
+            ? `${r.repo} is public, so anyone can read these memories. Make it private: ${fix}. ${tail}`
+            : `Couldn't confirm ${r.repo} is private (GitHub didn't report its visibility); make sure it is private (Settings → General → Danger Zone → Change visibility). ${tail}`;
+        checks.push({ check: name, status: "fail", detail: `repo_public ${r.repo}`, action });
       } else if (r.reachable && r.writable) checks.push({ check: name, status: "ok", detail: `ok ${r.repo}` });
       else if (r.reachable) checks.push({ check: name, status: "warn", detail: `read-only ${r.repo}`, action: `Ask an owner of ${owner} for write access to ${r.repo}.` });
       else if (r.reason === "app_not_installed") {

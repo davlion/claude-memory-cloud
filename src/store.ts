@@ -168,7 +168,7 @@ export class GitHubStore implements Store {
     const { branch, isPrivate } = await this.repoMeta(repo);
     const commitSha = await this.headSha(repo, branch);
     if (commitSha === null) return { commitSha: null, isPrivate, indexSha: null, files: new Map(), head: null };
-    const key = `snap:v1:${repo}:${commitSha}:${prefix}`;
+    const key = `snap:v2:${repo}:${commitSha}:${prefix}`;
     let c = await this.cacheGet(key);
     if (!c) {
       const { head, tree } = await this.commitTree(repo, commitSha);
