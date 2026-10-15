@@ -1,0 +1,28 @@
+{
+  "enabledPlugins" : {
+    "superpowers@claude-plugins-official" : true
+  },
+  "hooks" : {
+    "SessionStart" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\/Users\/someone\/.config\/iterm2\/cc-status",
+            "type" : "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\/Users\/someone\/.config\/iterm2\/cc-status",
+            "type" : "command"
+          }
+        ]
+      }
+    ]
+  },
+  "theme" : "dark"
+}

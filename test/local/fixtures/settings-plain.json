@@ -1,0 +1,9 @@
+{
+  "theme": "dark",
+  "autoMemoryEnabled": true,
+  "permissions": {
+    "allow": [
+      "Bash(npm test *)"
+    ]
+  }
+}
