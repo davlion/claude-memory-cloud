@@ -66,60 +66,156 @@ def dumps(data: Any, style: JsonStyle) -> str:
     return s + ("\n" if style.trailing_newline else "")
 
 
-def _is_ours(group: Any) -> bool:
-    return isinstance(group, dict) and any(
-        isinstance(h, dict) and HOOK_MARKER in str(h.get("command", "")) for h in group.get("hooks", []) or [])
+class SettingsError(Exception):
+    """settings.json can't be edited safely (invalid JSON, unexpected shape). Nothing was changed."""
 
 
-def install_settings(data: Dict[str, Any], *, session_cmd: str, prompt_cmd: str, allow: List[str]) -> Dict[str, Any]:
-    """Returns a copy with auto-memory off, the kit's hooks (replacing older kit hooks) and allow rules."""
-    out = json.loads(json.dumps(data))
-    out[AUTO_MEMORY_KEY] = False
-    hooks = out.setdefault("hooks", {})
-    for event, cmd, timeout in (("SessionStart", session_cmd, 5), ("UserPromptSubmit", prompt_cmd, 2)):
-        groups = [g for g in hooks.get(event, []) if not _is_ours(g)]
-        groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": timeout}]})
-        hooks[event] = groups
-    perms = out.setdefault("permissions", {})
-    rules = perms.setdefault("allow", [])
-    for r in list(allow) + [DATE_ALLOW_RULE]:
-        if r not in rules:
-            rules.append(r)
+# Fixed kit rule strings, used to remove rules when the exact list added at install time is unknown.
+KNOWN_KIT_RULES = [
+    "Edit(~/.claude-memory-cloud/outbox/**)",
+    "Edit(~/.claude-memory-cloud/cache/**)",
+    "Edit(~/.claude-memory-cloud/export/**)",
+    "Read(~/.claude-memory-cloud/**)",
+    DATE_ALLOW_RULE,
+]
+_CONTAINERS = ("hooks", "hooks.SessionStart", "hooks.UserPromptSubmit", "permissions", "permissions.allow")
+
+
+def _is_kit_entry(h: Any) -> bool:
+    return isinstance(h, dict) and HOOK_MARKER in str(h.get("command", ""))
+
+
+def _strip_kit(groups: List[Any]) -> List[Any]:
+    """Removes kit hook entries only; a group is dropped only if it became empty because of that."""
+    out = []
+    for g in groups:
+        if isinstance(g, dict) and isinstance(g.get("hooks"), list) and any(_is_kit_entry(h) for h in g["hooks"]):
+            rest = [h for h in g["hooks"] if not _is_kit_entry(h)]
+            if not rest:
+                continue
+            g = dict(g, hooks=rest)
+        out.append(g)
     return out
 
 
-def uninstall_settings(data: Dict[str, Any], auto_memory_previous: Optional[Union[bool, str]]) -> Dict[str, Any]:
-    """Removes the kit's hooks and allow rules and restores autoMemoryEnabled (bool → set, ABSENT → removed)."""
+def _check_shapes(data: Dict[str, Any]) -> None:
+    hooks = data.get("hooks")
+    if hooks is not None:
+        if not isinstance(hooks, dict):
+            raise SettingsError('"hooks" must be an object; refusing to edit')
+        for ev, v in hooks.items():
+            if not isinstance(v, list):
+                raise SettingsError(f'"hooks.{ev}" must be a list; refusing to edit')
+    perms = data.get("permissions")
+    if perms is not None:
+        if not isinstance(perms, dict):
+            raise SettingsError('"permissions" must be an object; refusing to edit')
+        if "allow" in perms and not isinstance(perms["allow"], list):
+            raise SettingsError('"permissions.allow" must be a list; refusing to edit')
+
+
+def _has_kit_hooks(data: Dict[str, Any]) -> bool:
+    return any(_is_kit_entry(h) for gs in (data.get("hooks") or {}).values() for g in gs if isinstance(g, dict)
+               for h in (g.get("hooks") if isinstance(g.get("hooks"), list) else []))
+
+
+def install_with_info(data: Dict[str, Any], *, session_cmd: str, prompt_cmd: str, allow: List[str]):
+    """Returns (new_data, info). info (store it; on re-install merge with the stored one):
+      auto_memory_previous: ABSENT | bool | {"value": raw} | None (None = kit already installed, keep stored value)
+      added_rules: allow rules appended by this call (not already present)
+      created: containers this call created (subset of hooks, hooks.<Event>, permissions, permissions.allow)"""
+    if not isinstance(data, dict):
+        raise SettingsError("settings must be a JSON object")
+    _check_shapes(data)
+    reinstall = _has_kit_hooks(data)
     out = json.loads(json.dumps(data))
+    created: List[str] = []
+    if AUTO_MEMORY_KEY not in data:
+        prev: Any = ABSENT
+    elif isinstance(data[AUTO_MEMORY_KEY], bool):
+        prev = data[AUTO_MEMORY_KEY]
+    else:
+        prev = {"value": data[AUTO_MEMORY_KEY]}
+    out[AUTO_MEMORY_KEY] = False
+    if "hooks" not in out:
+        created.append("hooks")
+    hooks = out.setdefault("hooks", {})
+    for event, cmd, timeout in (("SessionStart", session_cmd, 5), ("UserPromptSubmit", prompt_cmd, 2)):
+        if event not in hooks:
+            created.append("hooks." + event)
+        groups = _strip_kit(hooks.get(event, []))
+        groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": timeout}]})
+        hooks[event] = groups
+    if "permissions" not in out:
+        created.append("permissions")
+    perms = out.setdefault("permissions", {})
+    if "allow" not in perms:
+        created.append("permissions.allow")
+    rules = perms.setdefault("allow", [])
+    added: List[str] = []
+    for r in list(allow) + [DATE_ALLOW_RULE]:
+        if r not in rules:
+            rules.append(r)
+            added.append(r)
+    return out, {"auto_memory_previous": None if reinstall else prev, "added_rules": added, "created": created}
+
+
+def install_settings(data: Dict[str, Any], *, session_cmd: str, prompt_cmd: str, allow: List[str]) -> Dict[str, Any]:
+    """Returns a copy with auto-memory off, the kit's hooks (replacing older kit hook entries) and allow rules."""
+    return install_with_info(data, session_cmd=session_cmd, prompt_cmd=prompt_cmd, allow=allow)[0]
+
+
+def uninstall_settings(data: Dict[str, Any], auto_memory_previous: Any, *,
+                       added_rules: Optional[List[str]] = None, created: Optional[List[str]] = None,
+                       fallback_rules: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Removes the kit's hook entries and allow rules and restores autoMemoryEnabled.
+
+    auto_memory_previous: bool -> set, ABSENT -> remove, {"value": raw} -> set raw, None -> leave alone.
+    added_rules: exactly the rules install appended; only those strings are removed. None (unknown) -> only rules
+      exactly equal to KNOWN_KIT_RULES (+ fallback_rules, e.g. the Bash rule) are removed. Never substring matches.
+    created: containers install created; only those are deleted when empty. None (unknown) -> containers that
+      became empty through our removal are deleted."""
+    if not isinstance(data, dict):
+        raise SettingsError("settings must be a JSON object")
+    _check_shapes(data)
+    out = json.loads(json.dumps(data))
+
+    def droppable(name: str, touched: bool) -> bool:
+        return touched if created is None else name in created
+
     hooks = out.get("hooks")
     if isinstance(hooks, dict):
-        removed = False
+        touched = False
         for event in list(hooks):
-            if isinstance(hooks[event], list):
-                kept = [g for g in hooks[event] if not _is_ours(g)]
-                if len(kept) != len(hooks[event]):
-                    removed = True
-                    if kept:
-                        hooks[event] = kept
-                    else:
-                        del hooks[event]
-        if removed and not hooks:
+            kept = _strip_kit(hooks[event])
+            if kept != hooks[event]:
+                touched = True
+                hooks[event] = kept
+                if not kept and droppable("hooks." + event, True):
+                    del hooks[event]
+        if not hooks and droppable("hooks", touched):
             del out["hooks"]
     perms = out.get("permissions")
-    if isinstance(perms, dict) and isinstance(perms.get("allow"), list):
-        kept_rules = [r for r in perms["allow"] if PERMISSION_MARKER not in str(r) and r != DATE_ALLOW_RULE]
-        if len(kept_rules) != len(perms["allow"]):
-            if kept_rules:
-                perms["allow"] = kept_rules
-            else:
+    if isinstance(perms, dict):
+        touched = False
+        if isinstance(perms.get("allow"), list):
+            victims = set(added_rules) if added_rules is not None else set(KNOWN_KIT_RULES) | set(fallback_rules or [])
+            kept_rules = [r for r in perms["allow"] if not (isinstance(r, str) and r in victims)]
+            touched = len(kept_rules) != len(perms["allow"])
+            perms["allow"] = kept_rules
+            if not kept_rules and droppable("permissions.allow", touched):
                 del perms["allow"]
-                if not perms:
-                    del out["permissions"]
-    if isinstance(auto_memory_previous, bool):
+        if not perms and droppable("permissions", touched):
+            del out["permissions"]
+    if auto_memory_previous is None:
+        pass   # install state unknown, leave the user's setting alone
+    elif isinstance(auto_memory_previous, bool):
         out[AUTO_MEMORY_KEY] = auto_memory_previous
     elif auto_memory_previous == ABSENT:
         out.pop(AUTO_MEMORY_KEY, None)
-    return out   # None: install state unknown, leave the user's setting alone
+    elif isinstance(auto_memory_previous, dict) and "value" in auto_memory_previous:
+        out[AUTO_MEMORY_KEY] = auto_memory_previous["value"]
+    return out
 
 
 def write_atomic(path: Path, text: str, mode: int = 0o644) -> None:
@@ -143,10 +239,6 @@ def write_atomic(path: Path, text: str, mode: int = 0o644) -> None:
         except OSError:
             pass
         raise
-
-
-class SettingsError(Exception):
-    """settings.json can't be edited safely (invalid JSON, not an object). Nothing was changed."""
 
 
 def _load(real: Path):
@@ -181,9 +273,9 @@ def _apply(path, transform) -> Dict[str, Any]:
     """Loads (following a symlink, reported in `wrote`), transforms, backs up once, writes atomically if changed."""
     real = Path(os.path.realpath(str(path)))
     text, data = _load(real)
-    new = transform(data)
-    out = {"changed": False, "backup": None, "wrote": str(real), "symlink": real != Path(os.path.abspath(str(path))),
-           "previous_data": data}
+    new, info = transform(data)
+    out = {"changed": False, "backup": None, "wrote": str(real), "symlink": os.path.islink(str(path))}
+    out.update(info)
     new_text = dumps(new, detect_style(text, data))
     if new_text != text and not (not text.strip() and new == {} and not real.exists()):
         out["backup"] = _backup(real)
@@ -193,15 +285,12 @@ def _apply(path, transform) -> Dict[str, Any]:
 
 
 def install_file(path, *, session_cmd: str, prompt_cmd: str, allow: List[str]) -> Dict[str, Any]:
-    """Merges into the file. Returns changed/backup/wrote/symlink and auto_memory_previous (bool or ABSENT).
-    Note: on a re-run the previous value is already False (the kit set it); callers must keep the first answer."""
-    r = _apply(path, lambda d: install_settings(d, session_cmd=session_cmd, prompt_cmd=prompt_cmd, allow=allow))
-    prev = r.pop("previous_data").get(AUTO_MEMORY_KEY, ABSENT)
-    r["auto_memory_previous"] = prev if isinstance(prev, bool) else ABSENT
-    return r
+    """Merges into the file. Result: changed, backup, wrote, symlink, plus the install info to store
+    (auto_memory_previous, added_rules, created; see install_with_info)."""
+    return _apply(path, lambda d: install_with_info(d, session_cmd=session_cmd, prompt_cmd=prompt_cmd, allow=allow))
 
 
-def uninstall_file(path, auto_memory_previous: Optional[Union[bool, str]]) -> Dict[str, Any]:
-    r = _apply(path, lambda d: uninstall_settings(d, auto_memory_previous))
-    r.pop("previous_data")
-    return r
+def uninstall_file(path, auto_memory_previous: Any, *, added_rules: Optional[List[str]] = None,
+                   created: Optional[List[str]] = None, fallback_rules: Optional[List[str]] = None) -> Dict[str, Any]:
+    return _apply(path, lambda d: (uninstall_settings(d, auto_memory_previous, added_rules=added_rules, created=created,
+                                                      fallback_rules=fallback_rules), {}))

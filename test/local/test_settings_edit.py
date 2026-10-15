@@ -5,7 +5,8 @@ import unittest
 
 from helpers import FIXTURES, tempdir
 from memory_kit.settings_edit import (ABSENT, DATE_ALLOW_RULE, SettingsError, detect_style, dumps,
-                                      install_settings, install_file, uninstall_file, uninstall_settings)
+                                      install_settings, install_file, install_with_info, uninstall_file,
+                                      uninstall_settings)
 
 SESSION = "/usr/bin/python3 -I -S /h/.claude-memory-cloud/kit/hooks/session_start.py"
 PROMPT = "/usr/bin/python3 -I -S /h/.claude-memory-cloud/kit/hooks/user_prompt_submit.py"
@@ -144,6 +145,101 @@ class Files(unittest.TestCase):
         self.assertEqual(r["wrote"], str(target.resolve()))
         self.assertTrue(self.p.is_symlink())               # link itself preserved
         self.assertIn("autoMemoryEnabled", json.loads(target.read_text()))
+
+
+class FixRound1(unittest.TestCase):
+    def inst(self, data):
+        return install_with_info(data, **KW)
+
+    def test_user_rules_survive_uninstall(self):
+        user = ["Bash(ls ~/.claude-memory-cloud/)", DATE_ALLOW_RULE, ALLOW[1], "Bash(npm test *)"]
+        data = {"permissions": {"allow": list(user)}}
+        new, info = self.inst(data)
+        self.assertEqual(info["added_rules"], [ALLOW[0]])          # only what was really appended
+        self.assertEqual(uninstall_settings(new, ABSENT, added_rules=info["added_rules"], created=info["created"]), data)
+        # unknown list: exact kit strings only, never substring (user's `ls` rule survives)
+        out = uninstall_settings(new, ABSENT)
+        self.assertIn("Bash(ls ~/.claude-memory-cloud/)", out["permissions"]["allow"])
+        self.assertIn("Bash(npm test *)", out["permissions"]["allow"])
+
+    def test_fallback_never_substring(self):
+        d = {"permissions": {"allow": ["Bash(rm ~/.claude-memory-cloud/x)", "Read(~/.claude-memory-cloud/**)"]}}
+        self.assertEqual(uninstall_settings(d, None), {"permissions": {"allow": ["Bash(rm ~/.claude-memory-cloud/x)"]}})
+
+    def test_mixed_group_keeps_user_hook(self):
+        mixed = {"matcher": "startup", "hooks": [{"type": "command", "command": "mine"},
+                                                  {"type": "command", "command": SESSION}]}
+        data = {"hooks": {"SessionStart": [mixed]}}
+        new, info = self.inst(data)
+        self.assertEqual(new["hooks"]["SessionStart"][0],
+                         {"matcher": "startup", "hooks": [{"type": "command", "command": "mine"}]})
+        back = uninstall_settings(new, ABSENT, added_rules=info["added_rules"], created=info["created"])
+        self.assertEqual(back["hooks"]["SessionStart"], [{"matcher": "startup", "hooks": [{"type": "command", "command": "mine"}]}])
+        self.assertNotIn("UserPromptSubmit", back["hooks"])
+        # uninstall alone: group with only kit entries dropped, user group untouched
+        self.assertEqual(uninstall_settings(data, None)["hooks"]["SessionStart"][0]["hooks"], [{"type": "command", "command": "mine"}])
+
+    def test_reinstall_reports_unknown_previous(self):
+        new, first = self.inst({"autoMemoryEnabled": True})
+        self.assertIs(first["auto_memory_previous"], True)
+        _, second = self.inst(new)
+        self.assertIsNone(second["auto_memory_previous"])
+        self.assertEqual(second["added_rules"], [])
+        self.assertEqual(second["created"], [])
+
+    def test_non_bool_auto_memory_round_trips(self):
+        for raw in ("maybe", 0, None, {"a": 1}, "absent"):
+            with self.subTest(raw=raw):
+                data = {"autoMemoryEnabled": raw}
+                new, info = self.inst(data)
+                self.assertEqual(uninstall_settings(new, info["auto_memory_previous"], added_rules=info["added_rules"],
+                                                    created=info["created"]), data)
+
+    def test_preexisting_empty_containers_kept(self):
+        data = {"hooks": {"SessionStart": [], "Stop": []}, "permissions": {"allow": []}}
+        new, info = self.inst(data)
+        self.assertEqual(info["created"], ["hooks.UserPromptSubmit"])
+        back = uninstall_settings(new, ABSENT, added_rules=info["added_rules"], created=info["created"])
+        self.assertEqual(back, data)
+        data2 = {"hooks": {}, "permissions": {}}
+        new, info = self.inst(data2)
+        self.assertEqual(uninstall_settings(new, ABSENT, added_rules=info["added_rules"], created=info["created"]), data2)
+        new, info = self.inst({})
+        self.assertEqual(uninstall_settings(new, ABSENT, added_rules=info["added_rules"], created=info["created"]), {})
+
+    def test_bad_shapes_refused(self):
+        bad = [{"hooks": []}, {"hooks": {"SessionStart": {"hooks": []}}}, {"hooks": {"Stop": "x"}},
+               {"permissions": []}, {"permissions": {"allow": "x"}}]
+        for b in bad:
+            with self.subTest(b=b):
+                with self.assertRaises(SettingsError):
+                    install_settings(b, **KW)
+                with self.assertRaises(SettingsError):
+                    uninstall_settings(b, None)
+
+    def test_bad_shape_in_file_changes_nothing(self):
+        d = tempdir(self)
+        p = d / "s.json"
+        p.write_text('{"hooks": {"SessionStart": {"x": 1}}}')
+        with self.assertRaises(SettingsError):
+            install_file(p, **KW)
+        self.assertEqual(p.read_text(), '{"hooks": {"SessionStart": {"x": 1}}}')
+        self.assertEqual(os.listdir(d), ["s.json"])
+
+    def test_file_info_and_symlink_flag(self):
+        d = tempdir(self)
+        p = d / "s.json"
+        p.write_text("{}")
+        r = install_file(p, **KW)
+        self.assertFalse(r["symlink"])
+        self.assertEqual(set(r) >= {"auto_memory_previous", "added_rules", "created"}, True)
+        link = d / "l.json"
+        link.symlink_to(p)
+        self.assertTrue(install_file(link, **KW)["symlink"])
+        self.assertIsNone(install_file(link, **KW)["auto_memory_previous"])
+        # file-level uninstall with stored info restores exactly
+        uninstall_file(p, ABSENT, added_rules=r["added_rules"], created=r["created"])
+        self.assertEqual(json.loads(p.read_text()), {})
 
 
 if __name__ == "__main__":
