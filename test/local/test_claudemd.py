@@ -69,6 +69,16 @@ class Block(unittest.TestCase):
                         fn(text)
                     self.assertIn("CLAUDE.md", str(cm.exception))
 
+    def test_rule_uses_write_tool_for_snapshot_and_outbox(self):
+        tpl = (KIT / "templates" / "routing-rule.md").read_text()
+        out = render_rule(tpl, outbox_dir="/h/.claude-memory-cloud/outbox", cache_dir="/h/.claude-memory-cloud/cache",
+                          memkit_cmd="/usr/bin/python3 -I -S /h/.claude-memory-cloud/kit/bin/memkit.py")
+        snap = next(l for l in out.splitlines() if l.startswith("- **Snapshot:**"))
+        box = next(l for l in out.splitlines() if l.startswith("- **Outbox:**"))
+        for line in (snap, box):
+            self.assertIn("with the Write tool (never shell redirection, heredocs or `mkdir`", line)
+        self.assertIn("date -u +%Y%m%dT%H%M%SZ", box)
+
     def test_rule_wording(self):
         tpl = (KIT / "templates" / "routing-rule.md").read_text()
         self.assertIn("run `/mcp` to see if it's enabled in this session. Saves will be queued.", tpl)
