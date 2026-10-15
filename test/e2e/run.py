@@ -72,12 +72,12 @@ def save(meta, host, verdicts) -> bool:
     return ok
 
 
-def guarded(fn, *args) -> scenarios.Verdicts:
-    """A crash in one scenario becomes an ERROR row instead of stopping the run."""
+def guarded(sid, fn, *args) -> scenarios.Verdicts:
+    """A crash in one scenario becomes an ERROR row under its id instead of stopping the run."""
     try:
         return fn(*args)
     except Exception as e:  # noqa: BLE001
-        return {"ERROR": C.Verdict(C.ERROR, [f"{type(e).__name__}: {e}"[:300]])}
+        return {sid: C.Verdict(C.ERROR, [f"{type(e).__name__}: {e}"[:300]])}
 
 
 def cmd_hosts(cfg, args) -> int:
@@ -103,7 +103,7 @@ def cmd_run(cfg, args) -> int:
         for sid in args.scenarios.split(","):
             fn = scenarios.SINGLE[sid]
             for i in range(cfg.repeats if sid in scenarios.REPEATED else 1):
-                ok = save(meta, hid, guarded(fn, ctx, host, i)) and ok
+                ok = save(meta, hid, guarded(sid, fn, ctx, host, i)) and ok
                 if not args.keep:
                     cleanup_or_warn(ctx, meta["started"], [host])
     return 0 if ok else 1
@@ -114,7 +114,7 @@ def cmd_pair(cfg, args) -> int:
     ctx, a, b, ok = make_ctx(cfg, meta), cfg.hosts[args.a], cfg.hosts[args.b], True
     print(f"run {meta['run_id']} ({meta['layers']}) pair {a.id}+{b.id}")
     for sid in args.scenarios.split(","):
-        ok = save(meta, f"{a.id}+{b.id}", guarded(scenarios.PAIR[sid], ctx, a, b)) and ok
+        ok = save(meta, f"{a.id}+{b.id}", guarded(sid, scenarios.PAIR[sid], ctx, a, b)) and ok
         if not args.keep:
             cleanup_or_warn(ctx, meta["started"], [a, b])
     return 0 if ok else 1
