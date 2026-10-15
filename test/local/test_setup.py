@@ -471,6 +471,12 @@ class SetupSafety(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertTrue(secret.exists())
 
+    def test_managed_settings_path_by_platform(self):
+        from memory_kit.preflight import managed_settings_path
+        self.assertEqual(str(managed_settings_path("linux")), "/etc/claude-code/managed-settings.json")
+        self.assertEqual(str(managed_settings_path("darwin")),
+                         "/Library/Application Support/ClaudeCode/managed-settings.json")
+
     def test_preflight_honors_managed_settings_override(self):
         self.install()
         managed = self.tmp / "managed.json"

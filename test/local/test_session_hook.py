@@ -5,7 +5,8 @@ import shutil
 import subprocess
 import unittest
 
-from helpers import FIXTURES, KIT, PY, FakeWorker, clean_env, healthy_home, make_git_dir, run_hook, tempdir
+from helpers import (FIXTURES, KIT, PY, FakeWorker, clean_env, git_env, healthy_home, make_git_dir, run_hook,
+                     tempdir)
 from memory_kit.session import COMPACT_LINE
 
 
@@ -26,6 +27,26 @@ class SessionHook(unittest.TestCase):
     def run_ss(self, source="startup", cwd=None):
         return run_hook("session_start.py", {"hook_event_name": "SessionStart", "source": source,
                                              "cwd": str(cwd or self.repo), "session_id": "t"}, self.env)
+
+    def test_insteadof_origin_resolves_to_github_project(self):
+        d = make_git_dir(self.tmp, "alias", "gh:Acme/Billing")
+        subprocess.run(["git", "-C", str(d), "config", "url.git@github.com:.insteadOf", "gh:"], check=True,
+                       env=git_env(self.tmp))
+        self.assertEqual(self.run_ss(cwd=d)[0], "Memory project for this session: acme/billing")
+
+    def test_git_failure_says_unknown_and_no_origin_says_none(self):
+        d = make_git_dir(self.tmp, "noorigin", None)
+        nogit = self.tmp / "emptybin"
+        nogit.mkdir()
+        self.env["PATH"] = str(nogit)   # git cannot run: origin can't be determined
+        self.assertEqual(self.run_ss(cwd=d)[0],
+                         "Memory project for this session: unknown (run `git remote get-url origin`)")
+        self.env["PATH"] = os.environ.get("PATH", "/usr/bin:/bin")   # git works, no origin: genuinely none
+        self.assertEqual(self.run_ss(cwd=d)[0], NONE_LINE)
+
+    def test_routing_rule_tells_claude_to_run_git_when_unknown(self):
+        rule = (KIT / "templates" / "routing-rule.md").read_text()
+        self.assertIn("says unknown, or the hook gave no such line at all, run `git remote get-url origin`", rule)
 
     def queue_fixtures(self):
         for f in (FIXTURES / "outbox").iterdir():

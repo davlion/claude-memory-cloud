@@ -33,7 +33,8 @@ def redact_remote(url: str) -> str:
     return re.sub(r"^[^/@:]+:[^/]*@", "", u)   # scp-style `user:token@host:path`; plain `git@host:path` stays
 
 
-def _git(cwd: str, args: List[str], timeout: float) -> Optional[str]:
+def _git_checked(cwd: str, args: List[str], timeout: float) -> Tuple[Optional[str], bool]:
+    """(stdout or None, failed). `failed` is True only when git could not run or timed out (not for a clean non-zero exit)."""
     import subprocess  # lazy: costs ~40 ms on the Command Line Tools' Python, and the prompt hook never needs it
     try:
         r = subprocess.run(
@@ -41,13 +42,33 @@ def _git(cwd: str, args: List[str], timeout: float) -> Optional[str]:
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
     except (OSError, subprocess.SubprocessError):
-        return None
+        return None, True
     out = r.stdout.strip()
-    return out if r.returncode == 0 and out else None
+    return (out if r.returncode == 0 and out else None), False
+
+
+def _git(cwd: str, args: List[str], timeout: float) -> Optional[str]:
+    return _git_checked(cwd, args, timeout)[0]
 
 
 def git_origin(cwd: str, timeout: float = 0.5) -> Optional[str]:
     return _git(cwd, ["remote", "get-url", "origin"], timeout)
+
+
+def git_origin_checked(cwd: str, timeout: float = 0.5) -> Tuple[Optional[str], bool]:
+    return _git_checked(cwd, ["remote", "get-url", "origin"], timeout)
+
+
+def resolve_origin(cwd: str) -> Tuple[Optional[str], bool]:
+    """(origin, git_failed). The .git/config value is used when it is a GitHub address; otherwise (or when absent)
+    git itself is asked, which applies url.<base>.insteadOf. An unrecognised config value is kept if git adds nothing."""
+    raw = origin_from_git_config(cwd)
+    if raw is not None and normalize_remote(raw) is not None:
+        return raw, False
+    g, failed = git_origin_checked(cwd)
+    if g is not None and (raw is None or normalize_remote(g) is not None):
+        return g, False
+    return raw, (failed and raw is None)
 
 
 def git_toplevel(cwd: str, timeout: float = 0.5) -> Optional[str]:

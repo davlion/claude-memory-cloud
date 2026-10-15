@@ -6,7 +6,7 @@ import re
 from typing import Optional
 
 from . import KIT_DIRNAME
-from .remote import git_origin, normalize_remote, origin_from_git_config, redact_remote
+from .remote import normalize_remote, redact_remote, resolve_origin
 from .scopemap import ScopeMapError, client_scopes_for_owner, is_general_owner, load_scope_map
 
 TRIGGERS = re.compile(
@@ -51,9 +51,9 @@ def prompt_context(prompt: str, cwd: str, scopes_path: str) -> Optional[str]:
     lines = [REMINDER]
     remote = None
     if cwd:
-        remote = origin_from_git_config(cwd)
-        if remote is None:   # unusual layouts (includes, reftable, ...): ask git itself
-            remote = git_origin(cwd)
+        # .git/config first (fast); git itself only when it is missing (includes, reftable, ...) or not a
+        # GitHub address (url.<base>.insteadOf aliases)
+        remote = resolve_origin(cwd)[0]
     if remote is None:
         lines.append("No git origin remote here: project memories can't be saved from this directory; "
                      "say so if the fact is project-specific.")

@@ -4,10 +4,17 @@ from __future__ import annotations
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 from typing import List, Mapping, Optional
 
-MANAGED_SETTINGS = Path("/Library/Application Support/ClaudeCode/managed-settings.json")
+def managed_settings_path(platform: str) -> Path:
+    if platform.startswith("linux"):
+        return Path("/etc/claude-code/managed-settings.json")
+    return Path("/Library/Application Support/ClaudeCode/managed-settings.json")
+
+
+MANAGED_SETTINGS = managed_settings_path(sys.platform)
 
 AUTO_MEMORY_LINE = ('Built-in auto-memory is on, so memories may go to the local folder. '
                     'Add `"autoMemoryEnabled": false` to `~/.claude/settings.json` (or rerun the setup script).')

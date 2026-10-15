@@ -3,7 +3,7 @@ import json
 import subprocess
 import unittest
 
-from helpers import KIT, PY, SCOPES, clean_env, make_git_dir, run_hook, tempdir
+from helpers import KIT, PY, SCOPES, clean_env, git_env, make_git_dir, run_hook, tempdir
 
 TRIGGERS = ["Save a memory: we deploy on Fridays", "please save this memory", "save memory about X",
             "Remember this for next time", "remember that I use zsh", "Don't do that again",
@@ -88,6 +88,13 @@ class PromptHook(unittest.TestCase):
     def test_hint_says_scope_is_required(self):
         d = make_git_dir(self.tmp, "r2", None)
         self.assertIn("`scope` is required on memory_save", self.ctx("remember this", d)[0])
+
+    def test_insteadof_origin_resolves_to_github_project(self):
+        d = make_git_dir(self.tmp, "alias", "gh:Acme/Billing")
+        subprocess.run(["git", "-C", str(d), "config", "url.git@github.com:.insteadOf", "gh:"], check=True,
+                       env=git_env(self.tmp))
+        out = self.ctx("save a memory: x", d)[0]
+        self.assertIn("(project = acme/billing)", out)
 
     def test_under_100_ms(self):
         d = make_git_dir(self.tmp, "billing", "git@github.com:acme-org/billing.git")

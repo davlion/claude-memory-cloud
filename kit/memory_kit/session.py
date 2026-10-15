@@ -14,7 +14,7 @@ from .outbox import OutboxSummary, scan_outbox
 from .paths import KitPaths
 from .preflight import (AUTO_MEMORY_LINE, CONFIG_LINE, MANAGED_SETTINGS, ROUTING_LINE, SCOPE_MAP_LINE,
                         auto_memory_off, ensure_private_dirs, settings_chain)
-from .remote import cache_key, git_origin, normalize_remote, origin_from_git_config
+from .remote import cache_key, normalize_remote, resolve_origin
 from .scopemap import ScopeMapError, load_scope_map
 from .snapshot import render_snapshot
 
@@ -54,7 +54,9 @@ def health_line(url: str, h: HealthResult) -> Optional[str]:
     return None
 
 
-def project_line(project: Optional[Tuple[str, str]]) -> str:
+def project_line(project: Optional[Tuple[str, str]], unknown: bool = False) -> str:
+    if unknown and not project:
+        return "Memory project for this session: unknown (run `git remote get-url origin`)"
     if project:
         return f"Memory project for this session: {project[0]}/{project[1]}"
     return "Memory project for this session: none (no GitHub origin; omit project)"
@@ -74,6 +76,7 @@ class SessionReport:
     outbox: OutboxSummary
     remote: Optional[str]
     project: Optional[Tuple[str, str]]
+    origin_unknown: bool = False
 
 
 def session_report(*, cwd: str, paths: KitPaths, env: Mapping[str, str], now: datetime,
@@ -95,7 +98,7 @@ def session_report(*, cwd: str, paths: KitPaths, env: Mapping[str, str], now: da
         load_scope_map(paths.scopes)
     except ScopeMapError:
         problems.append(SCOPE_MAP_LINE)
-    remote = (origin_from_git_config(cwd) or git_origin(cwd)) if cwd else None
+    remote, git_failed = resolve_origin(cwd) if cwd else (None, False)
     project = normalize_remote(remote) if remote else None
     ob = scan_outbox(paths.outbox, project, now)
     if ob.malformed:
@@ -108,7 +111,7 @@ def session_report(*, cwd: str, paths: KitPaths, env: Mapping[str, str], now: da
         line = health_line(cfg["worker_url"], probe.result())
         if line:
             problems.append(line)
-    return SessionReport(problems, ob, remote, project)
+    return SessionReport(problems, ob, remote, project, git_failed)
 
 
 def session_start_context(*, source: str, cwd: str, paths: KitPaths, env: Mapping[str, str], now: datetime,
@@ -118,7 +121,7 @@ def session_start_context(*, source: str, cwd: str, paths: KitPaths, env: Mappin
     sections: List[str] = []
     if source == "compact":
         sections.append(COMPACT_LINE)
-    sections.append(project_line(r.project))
+    sections.append(project_line(r.project, r.origin_unknown))
     if r.outbox.total:
         sections.append(outbox_text(r.outbox.total, r.outbox.for_project if r.project else None, paths.outbox))
     if r.problems:
