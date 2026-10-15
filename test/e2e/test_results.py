@@ -37,6 +37,22 @@ class Cells(unittest.TestCase):
         self.assertLess(md.index("| S1 |"), md.index("| S2 |"))
 
 
+class CleanupOrWarn(unittest.TestCase):
+    def test_a_failing_cleanup_warns_instead_of_raising(self):
+        from e2elib.cleanup import cleanup_or_warn
+        from e2elib.gh import GhError
+
+        class Gh:
+            def commits_since(self, repo, since):
+                raise GhError(None, "error connecting to api.github.com")
+
+        class Ctx:
+            run_id, cfg, gh = "r1", CFG, Gh()
+        said = []
+        self.assertEqual(cleanup_or_warn(Ctx(), "2026-10-15T12:00:00Z", [HOST], out=said.append), [])
+        self.assertEqual(said, ["  cleanup failed (error connecting to api.github.com); run `run.py cleanup` later"])
+
+
 class Cleanup(unittest.TestCase):
     def test_deletes_only_this_runs_files_and_outbox_entries(self):
         class Gh:

@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from e2elib import checks as C                         # noqa: E402
 from e2elib import config, results, scenarios          # noqa: E402
-from e2elib.cleanup import cleanup                     # noqa: E402
+from e2elib.cleanup import cleanup, cleanup_or_warn    # noqa: E402
 from e2elib.gh import GitHub                           # noqa: E402
 from e2elib.launch import Invocation, shell            # noqa: E402
 
@@ -105,7 +105,7 @@ def cmd_run(cfg, args) -> int:
             for i in range(cfg.repeats if sid in scenarios.REPEATED else 1):
                 ok = save(meta, hid, guarded(fn, ctx, host, i)) and ok
                 if not args.keep:
-                    cleanup(ctx, meta["started"], [host])
+                    cleanup_or_warn(ctx, meta["started"], [host])
     return 0 if ok else 1
 
 
@@ -116,7 +116,7 @@ def cmd_pair(cfg, args) -> int:
     for sid in args.scenarios.split(","):
         ok = save(meta, f"{a.id}+{b.id}", guarded(scenarios.PAIR[sid], ctx, a, b)) and ok
         if not args.keep:
-            cleanup(ctx, meta["started"], [a, b])
+            cleanup_or_warn(ctx, meta["started"], [a, b])
     return 0 if ok else 1
 
 

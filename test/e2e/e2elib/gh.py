@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote
@@ -22,12 +23,18 @@ class GhError(RuntimeError):
 Api = Callable[[List[str]], str]   # args after `gh api` -> stdout; raises GhError
 
 
-def gh_api(args: List[str]) -> str:
-    r = subprocess.run(["gh", "api", *args], capture_output=True, text=True, timeout=60)
-    if r.returncode != 0:
+def gh_api(args: List[str], run=subprocess.run, sleep=time.sleep, attempts: int = 3) -> str:
+    """`gh api <args>`. A failure without an HTTP status (connection error) is retried with backoff."""
+    for n in range(attempts):
+        r = run(["gh", "api", *args], capture_output=True, text=True, timeout=60)
+        if r.returncode == 0:
+            return r.stdout
         m = re.search(r"HTTP (\d{3})", r.stderr)
-        raise GhError(int(m.group(1)) if m else None, r.stderr.strip()[:300])
-    return r.stdout
+        err = GhError(int(m.group(1)) if m else None, r.stderr.strip()[:300])
+        if err.status is not None or n == attempts - 1:
+            raise err
+        sleep(2 ** (n + 1))
+    raise AssertionError("unreachable")
 
 
 @dataclass
@@ -63,6 +70,8 @@ class Found:
 class GitHub:
     def __init__(self, api: Api = gh_api) -> None:
         self.api = api
+        self._commits: Dict[Tuple[str, str], Commit] = {}      # commits are immutable: fetch each once
+        self._texts: Dict[Tuple[str, str, str], Optional[str]] = {}   # file text at a commit sha
 
     def commits_since(self, repo: str, since: str) -> List[Commit]:
         """Commits on the default branch since `since` (ISO 8601 Z), oldest first, with their files."""
@@ -74,9 +83,12 @@ class GitHub:
             raise
         out = []
         for c in reversed(listing):
-            d = json.loads(self.api([f"repos/{repo}/commits/{c['sha']}"]))
-            out.append(Commit(c["sha"], d["commit"]["message"],
-                              [(f["filename"], f["status"]) for f in d.get("files", [])]))
+            key = (repo, c["sha"])
+            if key not in self._commits:
+                d = json.loads(self.api([f"repos/{repo}/commits/{c['sha']}"]))
+                self._commits[key] = Commit(c["sha"], d["commit"]["message"],
+                                            [(f["filename"], f["status"]) for f in d.get("files", [])])
+            out.append(self._commits[key])
         return out
 
     def file_text(self, repo: str, path: str, ref: str = "HEAD") -> Optional[str]:
@@ -98,7 +110,10 @@ class GitHub:
                     continue
                 for path, status in c.files:
                     if status in ("added", "modified") and MEMORY_PATH.match(path):
-                        text = self.file_text(repo, path, c.sha)
+                        key = (repo, path, c.sha)
+                        if key not in self._texts:
+                            self._texts[key] = self.file_text(repo, path, c.sha)
+                        text = self._texts[key]
                         if text and token in text:
                             found.append(Found(repo, path, c.sha, t.get("Memory-Scope", ""), t["Memory-Source"]))
         return found

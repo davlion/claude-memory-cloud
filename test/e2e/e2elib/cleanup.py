@@ -25,3 +25,12 @@ def cleanup(ctx, since: str, hosts: List[Host]) -> List[str]:
             ctx.sh(h, f"{h.python} -I -S ~/.claude-memory-cloud/kit/bin/memkit.py outbox-done {shlex.quote(name)}")
             removed.append(f"{h.id}:outbox/{name}")
     return removed
+
+
+def cleanup_or_warn(ctx, since: str, hosts: List[Host], out=print) -> List[str]:
+    """cleanup() between scenarios: a failure (e.g. GitHub unreachable) is reported, not fatal to the run."""
+    try:
+        return cleanup(ctx, since, hosts)
+    except Exception as e:  # noqa: BLE001
+        out(f"  cleanup failed ({e}); run `run.py cleanup` later")
+        return []
