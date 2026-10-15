@@ -54,6 +54,12 @@ def health_line(url: str, h: HealthResult) -> Optional[str]:
     return None
 
 
+def project_line(project: Optional[Tuple[str, str]]) -> str:
+    if project:
+        return f"Memory project for this session: {project[0]}/{project[1]}"
+    return "Memory project for this session: none (no GitHub origin; omit project)"
+
+
 def outbox_text(total: int, for_project: Optional[int], outbox_dir: Path) -> str:
     noun = "memory" if total == 1 else "memories"
     where = f" ({for_project} for this project)" if for_project is not None else ""
@@ -107,11 +113,12 @@ def session_report(*, cwd: str, paths: KitPaths, env: Mapping[str, str], now: da
 
 def session_start_context(*, source: str, cwd: str, paths: KitPaths, env: Mapping[str, str], now: datetime,
                           managed: Path = MANAGED_SETTINGS, health_timeout: float = 1.0) -> str:
-    """The SessionStart additionalContext, or "" when there is nothing to say (healthy → silent)."""
+    """The SessionStart additionalContext: always the memory-project line, plus anything else worth saying."""
     r = session_report(cwd=cwd, paths=paths, env=env, now=now, managed=managed, health_timeout=health_timeout)
     sections: List[str] = []
     if source == "compact":
         sections.append(COMPACT_LINE)
+    sections.append(project_line(r.project))
     if r.outbox.total:
         sections.append(outbox_text(r.outbox.total, r.outbox.for_project if r.project else None, paths.outbox))
     if r.problems:

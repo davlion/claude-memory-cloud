@@ -9,6 +9,10 @@ from helpers import FIXTURES, KIT, PY, FakeWorker, clean_env, healthy_home, make
 from memory_kit.session import COMPACT_LINE
 
 
+PROJECT_LINE = "Memory project for this session: acme-org/billing"
+NONE_LINE = "Memory project for this session: none (no GitHub origin; omit project)"
+
+
 class SessionHook(unittest.TestCase):
     def setUp(self):
         self.tmp = tempdir(self)
@@ -32,11 +36,11 @@ class SessionHook(unittest.TestCase):
 
     # healthy / outbox ------------------------------------------------------------------------------
     def test_all_healthy_is_silent(self):
-        self.assertEqual(self.run_ss()[0], "")
+        self.assertEqual(self.run_ss()[0], PROJECT_LINE)
 
     def test_missing_outbox_dir_is_silent_and_recreated(self):
         shutil.rmtree(self.root / "outbox")
-        self.assertEqual(self.run_ss()[0], "")
+        self.assertEqual(self.run_ss()[0], PROJECT_LINE)
         self.assertEqual(os.stat(self.root / "outbox").st_mode & 0o777, 0o700)
 
     def test_outbox_counts_total_and_project(self):
@@ -88,7 +92,7 @@ class SessionHook(unittest.TestCase):
     def test_auto_memory_env_var_counts_as_off(self):
         (self.home / ".claude" / "settings.json").write_text("{}")
         self.env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
-        self.assertEqual(self.run_ss()[0], "")
+        self.assertEqual(self.run_ss()[0], PROJECT_LINE)
 
     def test_project_setting_overrides_user(self):
         (self.repo / ".claude").mkdir()
@@ -109,7 +113,9 @@ class SessionHook(unittest.TestCase):
         for stdin in ("", "not json", "[]", "null", '"x"', "{}", '{"source": 5, "cwd": null}', '{"cwd": "a\\u0000b"}'):
             with self.subTest(stdin=stdin):
                 r = self.raw(stdin)
-                self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))   # healthy: silent, no "hook failed"
+                self.assertEqual((r.returncode, r.stderr), (0, ""))   # healthy: no "hook failed"
+                self.assertIn("Memory project for this session:", json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"])
+                self.assertNotIn("preflight", r.stdout)
 
     def test_routing_marker_missing(self):
         (self.home / ".claude" / "CLAUDE.md").write_text("# nothing\n")
@@ -154,14 +160,14 @@ class SessionHook(unittest.TestCase):
     # snapshot ---------------------------------------------------------------------------------------
     def test_no_snapshot_no_output(self):
         (self.root / "cache" / "dav__other.md").write_text("other repo")
-        self.assertEqual(self.run_ss()[0], "")
+        self.assertEqual(self.run_ss()[0], PROJECT_LINE)
 
     def test_snapshot_for_current_key(self):
         p = self.root / "cache" / "acme-org__billing.md"
         p.write_text("[server:aaaaaaaaaaaa]\n<memory-index scope=\"project\">\n- deploy-friday\n")
         os.utime(p, (1_791_972_000, 1_791_972_000))
         out = self.run_ss()[0]
-        self.assertTrue(out.startswith("Memory snapshot from 2026-10-14T10:00:00Z (stale; read-only)."))
+        self.assertTrue(out.startswith(PROJECT_LINE + "\n\nMemory snapshot from 2026-10-14T10:00:00Z (stale; read-only)."))
         self.assertIn("- deploy-friday", out)
 
     def test_snapshot_non_git_uses_none_key(self):
@@ -174,6 +180,26 @@ class SessionHook(unittest.TestCase):
         out = self.run_ss("compact")[0]
         self.assertIn("[snapshot truncated at 8 KB", out)
         self.assertLess(len(out), 10000)
+
+    def test_project_line_normalized_for_github_origin(self):
+        for origin in ("https://github.com/Acme-Org/Billing.git", "git@github.com:Acme-Org/Billing"):
+            with self.subTest(origin=origin):
+                repo = make_git_dir(self.tmp, "r" + str(abs(hash(origin))), origin)
+                self.assertEqual(self.run_ss(cwd=repo)[0], PROJECT_LINE)
+
+    def test_project_line_none_without_github_origin(self):
+        self.assertEqual(self.run_ss(cwd=self.tmp)[0], NONE_LINE)
+        other = make_git_dir(self.tmp, "gl", "git@gitlab.com:acme/billing.git")
+        self.assertEqual(self.run_ss(cwd=other)[0], NONE_LINE)
+        norem = make_git_dir(self.tmp, "norem", None)
+        self.assertEqual(self.run_ss(cwd=norem)[0], NONE_LINE)
+
+    def test_project_line_counts_against_the_budget(self):
+        self.queue_fixtures()
+        (self.root / "cache" / "acme-org__billing.md").write_text("- line of index text here\n" * 1000)
+        out = self.run_ss("compact")[0]
+        self.assertIn(PROJECT_LINE, out)
+        self.assertLessEqual(len(out), 9500)
 
     def test_cloud_session_is_silent(self):
         (self.home / ".claude" / "CLAUDE.md").unlink()
