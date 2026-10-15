@@ -97,7 +97,7 @@ Say it naturally: "save a memory that we deploy on Tuesdays", "remember that…"
 - **"not saved: <reason>"**
 
 ### What happens if I save while the server is unreachable?
-In local Claude Code, the memory goes into an outbox (`~/.claude/memory-outbox/`). Claude flushes it at the next session start where the server works, through the normal checks. In cloud sessions and chat there's no local disk, so Claude tells you it wasn't saved.
+In local Claude Code, the memory goes into an outbox (`~/.claude-memory-cloud/outbox/`). Claude flushes it at the next session start where the server works, through the normal checks. In cloud sessions and chat there's no local disk, so Claude tells you it wasn't saved.
 
 ### Can I still read memories offline?
 In local Claude Code, yes, but read-only and possibly out of date. After each successful load, Claude keeps a snapshot of your memory index, and the session-start hook loads it, labeled with its date. Full memory text and search need the server.
@@ -122,6 +122,10 @@ Yes. They're plain Markdown files in your repo. The index is rebuilt from the fi
 
 ### What about Claude Code's built-in memory?
 The setup script turns it off, so memories don't end up in two places. Your existing local memory files are left in place as a backup.
+
+### Why does the kit live in `~/.claude-memory-cloud` and not `~/.claude`?
+
+Claude writes two kinds of local files: a stale snapshot of your memory index (so a session still has something when the server is unreachable) and outbox entries (saves queued while the server is down). Claude Code treats everything under `~/.claude` as protected: every write there asks for permission, and allow rules can't change that. Under `~/.claude-memory-cloud` the setup script's allow rules apply, so these writes happen silently. Only `~/.claude/settings.json` (hooks, auto-memory off) and `~/.claude/CLAUDE.md` (the routing rule) are changed inside `~/.claude`.
 
 ## Setup and operations
 

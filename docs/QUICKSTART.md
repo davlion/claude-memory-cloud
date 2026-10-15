@@ -1,6 +1,6 @@
 # claude-memory-cloud — Quickstart
 
-> A bootstrap script is planned that will automate most of Parts 1 and 3–5 (Part 2 stays manual). Until then, every part below is done by hand. Parts 7–8 need the local setup script, which isn't built yet.
+> A bootstrap script is planned that will automate most of Parts 1 and 3–5 (Part 2 stays manual). Until then, every part below is done by hand.
 
 claude-memory-cloud gives Claude one set of memories everywhere: Claude Code on any machine, Claude Code cloud sessions, and claude.ai chat on web, Desktop, and mobile. The memories are Markdown files in a private GitHub repo that you own. A small server, which you deploy to your own Cloudflare account, connects that repo to Claude as a custom connector.
 
@@ -174,32 +174,55 @@ The connector now works in claude.ai chat (web, Desktop, mobile), in Claude Code
 
 ---
 
-## Part 7 — Set up each machine *(not yet available)*
+## Part 7 — Set up each machine
 
-On every Mac or VM where you use Claude Code:
+Do this on every Mac or VM where you use Claude Code. It needs Python 3.9 or later; macOS has it once the Command Line Tools are installed (`xcode-select --install`).
 
-```bash
-cd claude-memory-cloud && ./setup.sh
-```
+1. Get this repo onto the machine (clone it, or copy it from your Mac: `rsync -a --exclude node_modules --exclude '.dev.vars*' --exclude 'scopes.*.json' --exclude .wrangler ~/src/claude-memory-cloud/ <vm>:src/claude-memory-cloud/`).
+2. Run the setup script with your server's URL and your scopes.
+   - **On the machine that has `scopes.production.json`:**
+     ```bash
+     cd ~/src/claude-memory-cloud
+     ./setup.sh --worker-url https://claude-memory.<sub>.workers.dev --scopes-file scopes.production.json --login <you> --dry-run
+     ./setup.sh --worker-url https://claude-memory.<sub>.workers.dev --scopes-file scopes.production.json --login <you>
+     ```
+   - **Anywhere else** (a VM, or a friend using your server): pass your scopes directly, the same values as your entry in `SCOPES`:
+     ```bash
+     ./setup.sh --worker-url https://claude-memory.<sub>.workers.dev --login <you> \
+       --scope general=<you>/claude-memory --scope <client>=<client-org>/claude-memory
+     ```
+   `--dry-run` shows the exact changes to `~/.claude/settings.json` and `~/.claude/CLAUDE.md` without making them.
+3. Restart any running Claude Code sessions.
 
 The script:
-- turns off Claude Code's built-in local memory, so every memory goes to the cloud
-- adds the memory routing rule to `~/.claude/CLAUDE.md`
-- installs the hooks that queue saves while offline, check health at session start, and keep a stale read-only copy of your memory index
-- prints a health report, each problem listed with what to do about it
+- turns off Claude Code's built-in local memory (`"autoMemoryEnabled": false`), remembering your previous setting for uninstall
+- adds the memory routing rule to `~/.claude/CLAUDE.md`, between `<!-- claude-memory-cloud:routing-rule:begin -->` and `…:end -->` marker lines
+- adds two hooks to `~/.claude/settings.json` next to any hooks you already have: one on each prompt (a reminder when you ask Claude to remember something) and one at session start, including after compaction (queued saves, a health check, and a stale read-only copy of your memory index)
+- allows Claude to write its outbox and snapshot files in `~/.claude-memory-cloud/` without asking
+- keeps a timestamped backup of each file it changes (`settings.json.bak-<time>`, `CLAUDE.md.memkit-backup-<time>`)
+- prints a health report: one line per problem, with what to do about it
 
-It's safe to run again.
+It's safe to run again; rerunning without `--scopes-file`/`--scope` keeps your current scopes. Rerun it after pulling a new version of this repo (the session-start check says "Memory hooks are out of date" when the server needs a newer kit).
 
-**For cloud sessions:** in your Claude Code cloud environment settings, add the environment variable `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`.
+**Which Python:** the hooks run with one fixed interpreter, recorded at setup. The script uses `/usr/bin/python3` when the Command Line Tools are installed (the path survives upgrades). Otherwise it uses the `python3` on your `PATH`, recorded as its real path; if that is a Homebrew path with a version in it, rerun `./setup.sh` after `brew upgrade` moves it. To choose one yourself, run `MEMKIT_PYTHON=/path/to/python3 ./setup.sh …`.
+
+**Exit codes:** 0 done; 1 installed, but the health report found problems; 2 bad arguments, no usable Python, or a settings file the script refused to edit (nothing is changed).
+
+**What lives where:** `~/.claude-memory-cloud/` holds the installed hooks, your scope map, the outbox (`outbox/`: saves queued while the server was unreachable) and the snapshot cache (`cache/`). It is outside `~/.claude` on purpose: Claude Code asks before every write under `~/.claude`, and allow rules can't change that.
+
+**For cloud sessions:** hooks and `~/.claude` settings don't run there. In your Claude Code cloud environment's settings, add the environment variable `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. The server's own instructions cover the rest. There is no outbox in the cloud: a save that fails is reported as "not saved".
 
 ---
 
-## Part 8 — Check it works *(not yet available)*
+## Part 8 — Check it works
 
-1. Start `claude` in any git repo and say: *"Save a memory that I prefer small commits."*
-   Claude should answer with **"saved to general"**.
-2. Open `https://github.com/<you>/claude-memory` and confirm a new commit.
-3. On your phone, in the Claude app, ask: *"What do you remember about how I like commits?"*
+1. In a terminal, in any repo, check the local half: `python3 ~/.claude-memory-cloud/kit/bin/memkit.py preflight`. It should print `preflight: all local checks passed (memory server reachable, hooks current).`
+2. Start `claude` in any git repo. Claude should load your memory index without being asked. Run `/context`: there should be no auto-memory entry.
+3. Say: *"Save a memory that I prefer small commits."* Claude should answer with **"saved to general"**. Check `https://github.com/<you>/claude-memory` for the new commit.
+4. Check that `~/.claude-memory-cloud/cache/` now holds a snapshot named after the repo (`<owner>__<repo>.md`).
+5. On your phone, in the Claude app, ask: *"What do you remember about how I like commits?"*
+
+To remove everything, see [UNINSTALL.md](UNINSTALL.md).
 
 ---
 
@@ -211,7 +234,7 @@ To keep a client's memories in the client's own GitHub org:
 2. Make sure your app is public, so other accounts can install it: open `https://github.com/settings/apps/<slug>/advanced`. If the Danger zone offers **Make public**, click it (this doesn't list the app anywhere; it only allows other accounts to install it). If the client's org doesn't appear in the install page's account picker, this is the usual cause.
 3. **The client** installs your app: `https://github.com/apps/<slug>/installations/select_target` → their org → **Only select repositories** → `claude-memory`. No secrets change hands.
 4. **You** add the scope under your login in `scopes.production.json`, e.g. `{"<you>": {"general": "<you>/claude-memory", "acme": "acme-org/claude-memory"}}`, then run `node scripts/check-scopes.mjs scopes.production.json && npx wrangler secret put SCOPES --env production < scopes.production.json`. No redeploy is needed: the secret takes effect immediately.
-5. **You** add the scope to the local scope map by rerunning `./setup.sh` on each machine.
+5. **You** add the scope to each machine's local scope map: rerun `./setup.sh --scopes-file scopes.production.json --login <you>` where that file is, or `./setup.sh --login <you> --scope general=<you>/claude-memory --scope <client>=<client-org>/claude-memory` elsewhere.
 
 **Before you start writing client memories,** agree these with the client (whatever is written there loads into your Claude sessions, so write access matters):
 - Only named people can write `<client-org>/claude-memory`. Org-wide apps and Actions shouldn't be able to write it: exclude the repo from "All repositories" app installs, and set Actions permissions for the repo to read-only.
