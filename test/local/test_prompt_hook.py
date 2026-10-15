@@ -40,6 +40,13 @@ class PromptHook(unittest.TestCase):
             with self.subTest(p=p):
                 self.assertEqual(self.ctx(p, d)[0], "")
 
+    def test_prompt_hint_switch_off_outputs_nothing(self):
+        d = make_git_dir(self.tmp, "r", "git@github.com:acme-org/billing.git")
+        self.env["CLAUDE_MEMORY_KIT_PROMPT_HINT"] = "off"
+        self.assertEqual(self.ctx("save a memory: x", d)[0], "")
+        self.env["CLAUDE_MEMORY_KIT_PROMPT_HINT"] = "on"
+        self.assertIn("claude-memory: this looks like a request", self.ctx("save a memory: x", d)[0])
+
     def test_client_org_repo(self):
         d = make_git_dir(self.tmp, "billing", "git@github.com:Acme-Org/Billing.git")
         out = self.ctx("save a memory: x", d)[0]

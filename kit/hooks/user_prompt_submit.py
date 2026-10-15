@@ -15,6 +15,8 @@ def emit(ctx):
 def main() -> int:
     if os.environ.get("CLAUDE_CODE_REMOTE") == "true":
         return 0
+    if os.environ.get("CLAUDE_MEMORY_KIT_PROMPT_HINT") == "off":   # Level 4's layers A + C run (spec §9)
+        return 0
     try:
         payload = json.load(sys.stdin)
     except ValueError:
