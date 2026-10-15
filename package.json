@@ -8,6 +8,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:local": "python3 -m unittest discover -s test/local",
+    "test:e2e": "python3 -m unittest discover -s test/e2e",
     "typecheck": "tsc --noEmit",
     "types": "wrangler types",
     "deploy:staging": "wrangler deploy",

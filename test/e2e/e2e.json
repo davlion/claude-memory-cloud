@@ -1,0 +1,22 @@
+{
+  "general_repo": "davlion/claude-memory-test",
+  "client_repo": "davlion-test-client/claude-memory",
+  "client_scope": "davlion-test-client",
+  "sample_project": "davlion-test-client/sample-app",
+  "kit_project": "davlion/claude-memory-cloud",
+  "repeats": 3,
+  "hosts": {
+    "H1": {"label": "Mac CLI", "ssh": null, "claude": "~/.local/bin/claude", "python": "/usr/bin/python3",
+           "mcp_prefixes": ["mcp__claude_ai_claude-memory-staging__", "mcp__claude-memory-staging__"],
+           "dirs": {"sample_app": "~/src/sample-app", "kit_repo": "~/src/claude-memory-cloud",
+                    "no_remote": "~/e2e-no-remote"}},
+    "H3": {"label": "earsvm", "ssh": "earsvm.local", "claude": "~/.local/bin/claude", "python": "/usr/bin/python3",
+           "mcp_prefixes": ["mcp__claude_ai_claude-memory-staging__"],
+           "dirs": {"sample_app": "~/src/sample-app", "kit_repo": "~/src/claude-memory-cloud",
+                    "no_remote": "~/e2e-no-remote"}},
+    "H4": {"label": "lume", "ssh": "lumevm", "claude": "~/.local/bin/claude", "python": "/usr/bin/python3",
+           "mcp_prefixes": ["mcp__claude_ai_claude-memory-staging__"],
+           "dirs": {"sample_app": "~/src/sample-app", "kit_repo": "~/src/claude-memory-cloud",
+                    "no_remote": "~/e2e-no-remote"}}
+  }
+}

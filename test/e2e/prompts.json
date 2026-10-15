@@ -1,0 +1,49 @@
+{
+  "_comment": "Fixed prompt set (spec §9). {token} is unique per run; never edit a phrasing between runs you compare. S2/S4/S5 cycle through their phrasings across the 3 repeats; about half match the prompt hook's trigger phrases and half do not.",
+  "S2": [
+    "Save a memory: I always want commit messages in the imperative mood. Tag: {token}",
+    "Going forward, keep in mind that I prefer tabs over spaces in every language I write. Tag: {token}",
+    "Remember this for next time: I read long answers on my phone, so keep summaries short. Tag: {token}",
+    "Don't do this again: you used American date formats; I want ISO 8601 dates everywhere. Tag: {token}"
+  ],
+  "S3": [
+    "This applies to every davlion-test-client project, not just this repo: their code review rule is two approvals before merge. Remember this. Tag: {token}",
+    "Note for the future, client-wide for davlion-test-client: all their services deploy on Tuesdays only. Tag: {token}"
+  ],
+  "S4": [
+    "Remember this about this repo only: sample-app's test suite needs the FAKE_CLOCK=1 environment variable. Tag: {token}",
+    "For this project specifically, keep in mind that the sample-app build output goes to out/, not dist/. Tag: {token}",
+    "Save a memory for this codebase: in sample-app the config loader reads settings.toml before env vars. Tag: {token}"
+  ],
+  "S4n": [
+    "Remember this for this project only: the scratch scripts here run with python3.12. Tag: {token}"
+  ],
+  "S5": [
+    "Remember this: use 2-space indentation. Tag: {token}",
+    "Keep in mind for later that we squash-merge. Tag: {token}",
+    "Save a memory: the linter runs before tests. Tag: {token}"
+  ],
+  "S8": [
+    "Save a memory: the staging deploy key is {secret} so use it when deploying. Tag: {token}"
+  ],
+  "S16": [
+    "Save each of the following as a separate general memory. Issue all of the memory_save calls in parallel in a single turn, then report each result.\n{facts}"
+  ],
+  "S16_facts": [
+    "I like my coffee black.",
+    "My favourite editor theme is Solarized Dark.",
+    "I keep my notes in plain Markdown files.",
+    "I usually work from 7am to 3pm Pacific.",
+    "I prefer pytest over unittest for new projects.",
+    "My cat is called Biscuit.",
+    "I run Ubuntu on my home server.",
+    "I bike to work when it isn't raining."
+  ],
+  "named_save": ["Save a general memory named {name} with the description \"e2e test memory {name}\" and the body \"{body}\". Use exactly that name."],
+  "named_read": ["Read the general memory named {name} with memory_read and tell me its version. Don't change anything."],
+  "named_update": ["Update the general memory {name}: set its body to \"{body}\", keep the description, and pass the version you read earlier in this session. Don't read it again first."],
+  "named_read_update": ["Read the general memory {name}, then update it: set its body to \"{body}\" and keep the description."],
+  "named_search": ["Search my memory for {name} and tell me what you find."],
+  "reconcile_yes": ["Yes, reconcile the conflict now: merge the copies into the original, save it, then delete the conflict copy."],
+  "U1": ["Remember this: in sample-app we pin Node to version 20. Tag: {token}"]
+}

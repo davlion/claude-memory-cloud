@@ -5,3 +5,4 @@ node_modules/
 dist/
 scopes.*.json
 __pycache__/
+test/e2e/results/raw/
