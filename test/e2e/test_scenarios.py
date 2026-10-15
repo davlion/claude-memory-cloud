@@ -139,6 +139,24 @@ class Soft(unittest.TestCase):
         self.assertIn("1 save calls, 1 failed in transit", v.notes)
 
 
+class Uninstall(unittest.TestCase):
+    """Stream-json carries no UserPromptSubmit hook output, so U1 checks settings.json for the kit's hooks."""
+
+    def u1(self, hook_count):
+        sh = FakeShell({"grep -c": lambda s: f"{hook_count}\n",
+                        "-exec grep": lambda s: "/h/.claude/projects/-s/memory/node.md\n"})
+        claude = FakeClaude(stream(kit=""), stream(kit=""))
+        return S.u1(ctx(claude, sh=sh), HOST)["U1"]
+
+    def test_u1_passes_when_hooks_are_gone_and_auto_memory_writes(self):
+        self.assertEqual(self.u1(0).status, C.PASS)
+
+    def test_u1_fails_when_kit_hooks_remain_in_settings(self):
+        v = self.u1(2)
+        self.assertEqual(v.status, C.FAIL)
+        self.assertIn("kit hooks still registered in ~/.claude/settings.json (2)", v.notes)
+
+
 class Env(unittest.TestCase):
     def test_ctx_env_reaches_every_run(self):
         claude = FakeClaude(stream(calls=[("memory_index", {"project": "client/sample-app"}, "i", False)]))

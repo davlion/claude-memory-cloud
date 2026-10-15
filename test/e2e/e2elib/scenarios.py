@@ -315,11 +315,13 @@ def u1(ctx: Ctx, host: Host, i: int = 0) -> Verdicts:
     t = ctx.claude(host, Invocation("hi", "sample_app", no_connector=True), "U1a")
     notes = ["kit SessionStart hook still fires"] if t.kit_context() else []
     notes += [f"memory tool called: {c.short}" for c in t.memory_calls()]
+    # stream-json carries no UserPromptSubmit hook output, so check the registration itself
+    hooks = ctx.sh(host, "grep -c /.claude-memory-cloud/kit/hooks/ ~/.claude/settings.json 2>/dev/null; true").strip()
+    if hooks.isdigit() and int(hooks):
+        notes.append(f"kit hooks still registered in ~/.claude/settings.json ({hooks})")
     tok = ctx.token()
     marker = ctx.marker(host, tok)
     t = ctx.claude(host, Invocation(ctx.prompt("U1", token=tok), "sample_app", no_connector=True), "U1b")
-    notes += ["kit prompt hook still fires"] if any("claude-memory:" in h.context for h in t.hooks
-                                                    if h.name.startswith("UserPromptSubmit")) else []
     files = ctx.sh(host, f"find ~/.claude/projects -path '*/memory/*' -type f -newer {marker} "
                          f"-exec grep -l -- {shlex.quote(tok)} {{}} + 2>/dev/null; true").split()
     notes += [] if files else ["no auto-memory file holds the fact"]
