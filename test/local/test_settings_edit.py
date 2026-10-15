@@ -4,7 +4,7 @@ import stat
 import unittest
 
 from helpers import FIXTURES, tempdir
-from memory_kit.settings_edit import (ABSENT, DATE_ALLOW_RULE, SettingsError, detect_style, dumps,
+from memory_kit.settings_edit import (ABSENT, DATE_ALLOW_RULE, GIT_ORIGIN_ALLOW_RULE, SettingsError, detect_style, dumps,
                                       install_settings, install_file, install_with_info, uninstall_file,
                                       uninstall_settings)
 
@@ -43,7 +43,7 @@ class Merge(unittest.TestCase):
                          {"hooks": [{"type": "command", "command": SESSION, "timeout": 5}]})
         self.assertNotIn("matcher", new["hooks"]["SessionStart"][1])     # all sources, including compact
         self.assertEqual(new["hooks"]["UserPromptSubmit"][1]["hooks"][0]["timeout"], 2)
-        self.assertEqual(new["permissions"]["allow"], ALLOW + [DATE_ALLOW_RULE])
+        self.assertEqual(new["permissions"]["allow"], ALLOW + [DATE_ALLOW_RULE, GIT_ORIGIN_ALLOW_RULE])
 
     def test_install_is_idempotent_and_replaces_old_kit_hooks(self):
         _, data, _ = roundtrip("settings-plain.json")
@@ -152,7 +152,7 @@ class FixRound1(unittest.TestCase):
         return install_with_info(data, **KW)
 
     def test_user_rules_survive_uninstall(self):
-        user = ["Bash(ls ~/.claude-memory-cloud/)", DATE_ALLOW_RULE, ALLOW[1], "Bash(npm test *)"]
+        user = ["Bash(ls ~/.claude-memory-cloud/)", DATE_ALLOW_RULE, GIT_ORIGIN_ALLOW_RULE, ALLOW[1], "Bash(npm test *)"]
         data = {"permissions": {"allow": list(user)}}
         new, info = self.inst(data)
         self.assertEqual(info["added_rules"], [ALLOW[0]])          # only what was really appended

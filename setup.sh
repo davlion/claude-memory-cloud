@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# claude-memory-cloud local kit: ./setup.sh [--worker-url URL] [--scopes-file F [--login L]] [--scope N=O/R --login L] [--dry-run]
+# claude-memory-cloud local kit: ./setup.sh [--worker-url URL] [--scopes-file F [--login L]] [--scope N=O/R --login L] [--mcp-server NAME]... [--dry-run]
 #                                ./setup.sh --uninstall [--force] [--delete-cache|--keep-cache] [--dry-run]
 #                                ./setup.sh --export-local [--finish] [--cwd DIR]
 set -euo pipefail

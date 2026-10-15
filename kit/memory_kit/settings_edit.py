@@ -21,6 +21,8 @@ AUTO_MEMORY_KEY = "autoMemoryEnabled"
 # Narrow rule so writing an outbox entry's timestamp doesn't prompt. Has no PERMISSION_MARKER, so it is
 # matched by exact string on uninstall (a user's own identical rule would be removed too; unavoidable).
 DATE_ALLOW_RULE = "Bash(date -u +%Y%m%dT%H%M%SZ)"
+# Fallback for the session-start hook not stating the project; exact-string match on uninstall like the date rule.
+GIT_ORIGIN_ALLOW_RULE = "Bash(git remote get-url origin)"
 ABSENT = "absent"   # state.json value when autoMemoryEnabled wasn't set before install
 
 
@@ -77,6 +79,7 @@ KNOWN_KIT_RULES = [
     "Edit(~/.claude-memory-cloud/export/**)",
     "Read(~/.claude-memory-cloud/**)",
     DATE_ALLOW_RULE,
+    GIT_ORIGIN_ALLOW_RULE,
 ]
 _CONTAINERS = ("hooks", "hooks.SessionStart", "hooks.UserPromptSubmit", "permissions", "permissions.allow")
 
@@ -153,7 +156,7 @@ def install_with_info(data: Dict[str, Any], *, session_cmd: str, prompt_cmd: str
         created.append("permissions.allow")
     rules = perms.setdefault("allow", [])
     added: List[str] = []
-    for r in list(allow) + [DATE_ALLOW_RULE]:
+    for r in list(allow) + [DATE_ALLOW_RULE, GIT_ORIGIN_ALLOW_RULE]:
         if r not in rules:
             rules.append(r)
             added.append(r)

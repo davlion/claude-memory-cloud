@@ -198,7 +198,7 @@ The script:
 - turns off Claude Code's built-in local memory (`"autoMemoryEnabled": false`), remembering your previous setting for uninstall
 - adds the memory routing rule to `~/.claude/CLAUDE.md`, between `<!-- claude-memory-cloud:routing-rule:begin -->` and `…:end -->` marker lines
 - adds two hooks to `~/.claude/settings.json` next to any hooks you already have: one on each prompt (a reminder when you ask Claude to remember something) and one at session start, including after compaction (queued saves, a health check, and a stale read-only copy of your memory index)
-- allows Claude to write its outbox and snapshot files in `~/.claude-memory-cloud/` without asking
+- allows Claude to write its outbox and snapshot files in `~/.claude-memory-cloud/` without asking, to run `date -u …` and `git remote get-url origin`, and to call the read-only memory tools `memory_index`, `memory_read` and `memory_search` without asking (`memory_save` and `memory_delete` still ask). The tool names contain your connector's name, `mcp__<name>__memory_index` and so on, so the script finds that name in `~/.claude.json` by matching the server's URL to `--worker-url`. If it prints "no memory MCP server found", the server is probably a claude.ai connector or not added to Claude Code yet; rerun with `--mcp-server <name>` using the name `/mcp` shows; the flag can be repeated and is used in addition to anything it finds
 - keeps a timestamped backup of each file it changes (`settings.json.bak-<time>`, `CLAUDE.md.memkit-backup-<time>`)
 - prints a health report: one line per problem, with what to do about it
 

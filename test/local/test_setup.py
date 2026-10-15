@@ -75,7 +75,8 @@ class Setup(unittest.TestCase):
     def test_installed_hooks_run(self):
         self.install()
         hooks = self.root / "kit" / "hooks"
-        self.assertEqual(run_hook("session_start.py", {"source": "startup", "cwd": str(self.repo)}, self.env, hooks)[0], "")
+        self.assertEqual(run_hook("session_start.py", {"source": "startup", "cwd": str(self.repo)}, self.env, hooks)[0],
+                         "Memory project for this session: acme-org/billing")
         out = run_hook("user_prompt_submit.py", {"prompt": "remember this", "cwd": str(self.repo)}, self.env, hooks)[0]
         self.assertIn("Client scope for this repo's owner acme-org: acme.", out)
 
@@ -207,6 +208,90 @@ class SetupSafety(unittest.TestCase):
     def tree(self):
         """Every path under HOME except ~/Library (Apple's python writes its bytecode cache there)."""
         return sorted(str(p) for p in self.home.rglob("*") if "Library" not in p.relative_to(self.home).parts[:1])
+
+    # memory MCP allow rules ---------------------------------------------------------------------------
+    def write_claude_json(self, data):
+        (self.home / ".claude.json").write_text(data if isinstance(data, str) else json.dumps(data))
+
+    def mcp_rules(self, *names):
+        return [f"mcp__{n}__{t}" for n in names for t in ("memory_index", "memory_read", "memory_search")]
+
+    def allow(self):
+        return json.loads(self.settings.read_text())["permissions"]["allow"]
+
+    def test_detects_project_and_user_scoped_servers(self):
+        u = self.worker.url
+        self.write_claude_json({
+            "mcpServers": {"user-mem": {"url": u + "/mcp"}, "other": {"url": "https://example.com/mcp"}},
+            "projects": {"/a": {"mcpServers": {"proj-mem": {"url": u + "/"}}}, "/b": {"mcpServers": "odd"},
+                         "/c": 5, "/d": {"mcpServers": {"dup": {"url": u}, "user-mem": {"url": u + "/mcp"},
+                                                         "x": 3, "evil": {"url": u + ".evil.com/mcp"}}}}})
+        r = self.install()
+        rules = self.allow()
+        for n in ("user-mem", "proj-mem", "dup"):
+            for rule in self.mcp_rules(n):
+                self.assertIn(rule, rules)
+        self.assertEqual(len([x for x in rules if x.startswith("mcp__")]), 9)
+        self.assertFalse([x for x in rules if "other" in x or "evil" in x or "memory_save" in x or "memory_delete" in x])
+        self.assertIn("Bash(git remote get-url origin)", rules)
+        self.assertNotIn("--mcp-server", r.stdout)
+        self.assertEqual(sorted(json.loads((self.root / "config.json").read_text())["mcp_servers"]),
+                         ["dup", "proj-mem", "user-mem"])
+
+    def test_no_server_found_prints_hint_and_still_installs(self):
+        for label, content in (("missing", None), ("invalid", "{nope"), ("array", "[]"),
+                               ("odd", {"mcpServers": [1], "projects": []})):
+            with self.subTest(label):
+                if (self.home / ".claude.json").exists():
+                    (self.home / ".claude.json").unlink()
+                if content is not None:
+                    self.write_claude_json(content)
+                r = self.install()
+                self.assertIn("rerun with --mcp-server <name>", r.stdout.replace("Rerun", "rerun"))
+                self.assertFalse([x for x in self.allow() if x.startswith("mcp__")])
+                self.setup_sh("--uninstall", "--delete-cache")
+
+    def test_mcp_server_flag_validation_and_union(self):
+        for bad in ("a b", "x/y", "", "é", "a;b"):
+            r = self.setup_sh("--worker-url", self.worker.url, "--scope", "general=dav/claude-memory",
+                              "--login", "dav", "--mcp-server", bad)
+            self.assertEqual(r.returncode, 2, bad)
+            self.assertFalse(self.root.exists())
+        self.write_claude_json({"mcpServers": {"found": {"url": self.worker.url + "/mcp"}}})
+        r = self.install("--mcp-server", "mine", "--mcp-server", "mine_2", "--mcp-server", "found")
+        self.assertNotIn("--mcp-server <name>", r.stdout)
+        self.assertEqual([x for x in self.allow() if x.startswith("mcp__")], self.mcp_rules("mine", "mine_2", "found"))
+
+    def test_dry_run_shows_mcp_rules(self):
+        self.write_claude_json({"mcpServers": {"found": {"url": self.worker.url + "/mcp"}}})
+        r = self.install("--dry-run", "--mcp-server", "mine")
+        self.assertIn("memory MCP servers: mine, found", r.stdout)
+        self.assertIn("+      \"mcp__found__memory_read\"", r.stdout)
+        self.assertIn("mcp__mine__memory_search", r.stdout)
+        self.assertFalse(self.root.exists())
+
+    def test_mcp_rules_idempotent_tracked_and_uninstall_exact(self):
+        pre = ["Bash(npm test *)", "mcp__mine__memory_read", "Bash(git remote get-url origin)"]
+        self.settings.write_text(json.dumps({"permissions": {"allow": list(pre)}}))
+        self.install("--mcp-server", "mine")
+        added = self.state()["added_rules"]
+        self.assertIn("mcp__mine__memory_index", added)
+        self.assertIn("mcp__mine__memory_search", added)
+        self.assertNotIn("mcp__mine__memory_read", added)           # the user already had it
+        self.assertNotIn("Bash(git remote get-url origin)", added)
+        after, st = self.files(), self.state()
+        self.install()                      # rerun without the flag: stored name kept, nothing changes
+        self.assertEqual((self.files(), self.state()), (after, st))
+        self.assertEqual(len([x for x in self.allow() if x.startswith("mcp__")]), 3)
+        self.setup_sh("--uninstall", "--delete-cache")
+        self.assertEqual(self.allow(), pre)
+
+    def test_uninstall_without_state_removes_stored_mcp_rules(self):
+        self.install("--mcp-server", "mine")
+        (self.root / "state.json").unlink()
+        self.setup_sh("--uninstall", "--delete-cache")
+        left = json.loads(self.settings.read_text()) if self.settings.exists() else {}
+        self.assertEqual(left.get("permissions", {}).get("allow", []), [])
 
     def test_claude_md_round_trip_byte_for_byte(self):
         for label, content in (("missing", None), ("trailing newline", "# mine\nline\n"),

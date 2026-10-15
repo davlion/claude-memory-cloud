@@ -89,10 +89,54 @@ def commands(paths: KitPaths, python: str) -> Dict[str, str]:
     }
 
 
-def allow_rules(memkit_cmd: str) -> List[str]:
+MCP_NAME_RE = re.compile(r"[A-Za-z0-9_-]+", re.ASCII)
+MCP_READ_TOOLS = ("memory_index", "memory_read", "memory_search")    # memory_save / memory_delete keep prompting
+
+
+def memkit_rule(memkit_cmd: str) -> str:
+    return f"Bash({memkit_cmd} outbox-done *)"
+
+
+def mcp_rules(names: List[str]) -> List[str]:
+    return [f"mcp__{n}__{t}" for n in names for t in MCP_READ_TOOLS]
+
+
+def allow_rules(memkit_cmd: str, mcp_names: Tuple[str, ...] = ()) -> List[str]:
     d = f"~/{KIT_DIRNAME}"
     return [f"Edit({d}/outbox/**)", f"Edit({d}/cache/**)", f"Edit({d}/export/**)", f"Read({d}/**)",
-            f"Bash({memkit_cmd} outbox-done *)"]
+            memkit_rule(memkit_cmd), *mcp_rules(list(mcp_names))]
+
+
+def detect_mcp_servers(home: Path, worker_url: str) -> List[str]:
+    """Names of the MCP servers in ~/.claude.json (top level and every project) whose url is the Worker's.
+    Read-only; a missing / invalid / oddly shaped file gives []."""
+    try:
+        with open(Path(home) / ".claude.json", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    base = worker_url.rstrip("/")
+    found: List[str] = []
+
+    def scan(servers: Any) -> None:
+        if not isinstance(servers, dict):
+            return
+        for name, cfg in servers.items():
+            url = cfg.get("url") if isinstance(cfg, dict) else None
+            if not isinstance(url, str) or not isinstance(name, str) or not MCP_NAME_RE.fullmatch(name):
+                continue
+            u = url.strip().rstrip("/")
+            if (u == base or u.startswith(base + "/") or u.startswith(base + "?")) and name not in found:
+                found.append(name)
+
+    if isinstance(data, dict):
+        scan(data.get("mcpServers"))
+        projects = data.get("projects")
+        if isinstance(projects, dict):
+            for proj in projects.values():
+                if isinstance(proj, dict):
+                    scan(proj.get("mcpServers"))
+    return found
 
 
 def load_settings(path: Path) -> Tuple[Dict[str, Any], Any, Optional[str]]:
@@ -132,15 +176,26 @@ def _copy_kit(src: Path, dst: Path) -> None:
 
 
 def install(paths: KitPaths, *, worker_url: str, scope_map: Dict[str, Any], python: str, src_kit: Path,
-            dry_run: bool = False, out: Out = print, now: Optional[datetime] = None) -> int:
+            mcp_servers: Tuple[str, ...] = (), dry_run: bool = False, out: Out = print,
+            now: Optional[datetime] = None) -> int:
     """0 on success, 1 when installed but preflight found problems. Raises SettingsError / MarkerError (before any
     write) when settings.json or CLAUDE.md can't be edited safely."""
     now = now or _now()
     cmds = commands(paths, python)
+    # MCP server names: explicit + detected in ~/.claude.json + those a previous run stored in config.json
+    detected = detect_mcp_servers(paths.home, worker_url)
+    stored_cfg = load_config(paths.config) or {}
+    kept = [n for n in stored_cfg.get("mcp_servers", []) if isinstance(n, str) and MCP_NAME_RE.fullmatch(n)] \
+        if isinstance(stored_cfg.get("mcp_servers"), list) else []
+    names: List[str] = []
+    for n in [*mcp_servers, *detected, *kept]:
+        if n not in names:
+            names.append(n)
+    allow = allow_rules(cmds["memkit"], tuple(names))
     # 1. plan (pure)
     settings, style, settings_text = load_settings(paths.settings)
     new_settings, info = install_with_info(settings, session_cmd=cmds["session"], prompt_cmd=cmds["prompt"],
-                                           allow=allow_rules(cmds["memkit"]))
+                                           allow=allow)
     new_settings_text = dumps(new_settings, style)
     md_text = _read(paths.claude_md)
     template = (src_kit / "templates" / "routing-rule.md").read_text(encoding="utf-8")
@@ -177,6 +232,8 @@ def install(paths: KitPaths, *, worker_url: str, scope_map: Dict[str, Any], pyth
             backups.append(f"{_real(paths.settings)}.bak-<time>")
         if md_text is not None and new_md != md_text:
             backups.append(f"{_real(paths.claude_md)}.memkit-backup-<time>")
+        out("memory MCP servers: " + (", ".join(names) if names else "none found (rerun with --mcp-server <name>, "
+                                      "the name shown by /mcp, to allow the read-only memory tools)"))
         out(f"would write {paths.config}, {paths.scopes} ({json.dumps(scope_map['scopes'], sort_keys=True)}), "
             f"{paths.state}, copy the kit to {paths.kit}/ and create {paths.outbox}, {paths.cache}, {paths.export}")
         out("would create backups: " + (", ".join(b.strip() for b in backups) or "none (no existing file changes)"))
@@ -190,14 +247,15 @@ def install(paths: KitPaths, *, worker_url: str, scope_map: Dict[str, Any], pyth
         _write_private(paths.state, json.dumps(state, indent=2) + "\n")
     _copy_kit(src_kit, paths.kit)
     _write_private(paths.config, json.dumps({"worker_url": worker_url, "hook_version": HOOK_VERSION,
-                                             "python": python}, indent=2) + "\n")
+                                             "python": python,
+                                             "mcp_servers": names}, indent=2) + "\n")
     _write_private(paths.scopes, json.dumps(scope_map, indent=2) + "\n")
     for d in (paths.outbox, paths.cache, paths.export):
         d.mkdir(mode=0o700, exist_ok=True)
         os.chmod(d, 0o700)
     if new_settings_text != (settings_text or ""):
         r = install_file(paths.settings, session_cmd=cmds["session"], prompt_cmd=cmds["prompt"],
-                         allow=allow_rules(cmds["memkit"]))
+                         allow=allow)
         via = f" (symlink; wrote {r['wrote']})" if r["symlink"] else ""
         out(f"updated {paths.settings}{via} (auto-memory off, hooks, allow rules)"
             + (f"; backup {r['backup']}" if r["backup"] else ""))
@@ -205,6 +263,11 @@ def install(paths: KitPaths, *, worker_url: str, scope_map: Dict[str, Any], pyth
         _backup(paths.claude_md, now)
         write_atomic(_real(paths.claude_md), new_md)
         out(f"updated {paths.claude_md} (memory routing rule)")
+    if names:
+        out("memory tools allowed without prompting (read-only): " + ", ".join(names))
+    else:
+        out("note: no memory MCP server found in ~/.claude.json, so its read-only tools will still prompt. "
+            "Rerun with --mcp-server <name> (the name shown by /mcp).")
     return print_preflight(paths, out=out, now=now)
 
 
@@ -228,9 +291,13 @@ def _fallback_rules(paths: KitPaths) -> List[str]:
     out: List[str] = []
     for py in pys:
         if isinstance(py, str) and py:
-            r = allow_rules(commands(paths, py)["memkit"])[-1]
+            r = memkit_rule(commands(paths, py)["memkit"])
             if r not in out:
                 out.append(r)
+    names = cfg.get("mcp_servers")
+    if isinstance(names, list):
+        out += [r for r in mcp_rules([n for n in names if isinstance(n, str) and MCP_NAME_RE.fullmatch(n)])
+                if r not in out]
     return out
 
 
@@ -466,6 +533,8 @@ def main(argv: Optional[List[str]] = None, src_kit: Optional[Path] = None) -> in
     ap.add_argument("--scopes-file", type=Path)
     ap.add_argument("--login")
     ap.add_argument("--scope", action="append", default=[], metavar="NAME=OWNER/REPO")
+    ap.add_argument("--mcp-server", action="append", default=[], metavar="NAME",
+                    help="name of the memory MCP server as shown by /mcp (repeatable; detected from ~/.claude.json too)")
     ap.add_argument("--dry-run", action="store_true", help="print the planned changes (diffs) and write nothing")
     ap.add_argument("--force", action="store_true")
     cache = ap.add_mutually_exclusive_group()
@@ -476,6 +545,11 @@ def main(argv: Optional[List[str]] = None, src_kit: Optional[Path] = None) -> in
     a = ap.parse_args(argv)
     if (a.force or a.delete_cache is not None) and not a.uninstall:
         ap.error("--force, --delete-cache and --keep-cache only apply to --uninstall")
+    bad = [n for n in a.mcp_server if not MCP_NAME_RE.fullmatch(n)]
+    if bad:
+        ap.error(f"--mcp-server {bad[0]!r}: use only letters, digits, '_' and '-'")
+    if a.mcp_server and (a.uninstall or a.export_local):
+        ap.error("--mcp-server only applies to install")
     if a.finish and not a.export_local:
         ap.error("--finish only applies to --export-local")
     paths = kit_paths()
@@ -511,7 +585,7 @@ def main(argv: Optional[List[str]] = None, src_kit: Optional[Path] = None) -> in
             print("setup: pass --worker-url https://<worker>.workers.dev (no path).", file=sys.stderr)
             return 2
         return install(paths, worker_url=worker_url, scope_map=scope_map, python=python, src_kit=src_kit,
-                       dry_run=a.dry_run)
+                       mcp_servers=tuple(a.mcp_server), dry_run=a.dry_run)
     except (SettingsError, MarkerError) as e:
         print(f"setup: {e}", file=sys.stderr)
         print("Nothing was changed.", file=sys.stderr)
