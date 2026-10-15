@@ -3,6 +3,10 @@
 Drives real Claude Code sessions against the **staging** server and checks the outcome in the test repos
 (`davlion/claude-memory-test`, `davlion-test-client/claude-memory`) with `gh api`. Spec: §9 Level 4.
 
+**After a run,** `memory_index` shows a ⚠ provenance warning for the test repo: cleanup deletes files with
+`gh api`, which the server rightly flags as a change made outside it. It clears at the next save through the
+server.
+
 **Safety:** it writes only to those two repos. Every test memory carries `e2e-<run>-<n>`, and cleanup deletes
 only files holding the run's token. Raw transcripts (`results/raw/`) hold memory content and are gitignored.
 

@@ -21,7 +21,7 @@
   "S5": [
     "Remember this: use 2-space indentation. Tag: {token}",
     "Keep in mind for later that we squash-merge. Tag: {token}",
-    "Save a memory: the linter runs before tests. Tag: {token}"
+    "Save a memory: we tag releases with a v prefix. Tag: {token}"
   ],
   "S8": [
     "Save a memory: the staging deploy key is {secret} so use it when deploying. Tag: {token}"
