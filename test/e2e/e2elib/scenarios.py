@@ -233,6 +233,23 @@ def s16(ctx: Ctx, host: Host, i: int = 0) -> Verdicts:
     return {"S16": v}
 
 
+def s17(ctx: Ctx, host: Host, i: int = 0) -> Verdicts:
+    """S17: the user's recourse when a memory lands in the wrong scope — "move that memory to <scope>". There is no
+    move tool: Claude reads, saves in the new scope and deletes the old copy (a delete prompts in real use; here it
+    is pre-approved). Pass: one live copy in the project scope, none left in general, and "saved to project"."""
+    name, since, sid = ctx.token(), ctx.since(), str(uuid.uuid4())
+    ctx.claude(host, Invocation(ctx.prompt("named_save", name=name, body=f"original {name}"), "sample_app",
+                                allow=SAVE, session_id=sid), "S17a")
+    t = ctx.claude(host, Invocation(ctx.prompt("S17_move", name=name, target="this project (sample-app)"),
+                                    "sample_app", allow=SAVE_DELETE, resume=sid), "S17b")
+    live = [f for f in ctx.found(name, since) if not f.parts["conflict"] and ctx.gh.exists(f.repo, f.path)]
+    notes = C.expect_one([f for f in live if f.repo == ctx.cfg.client_repo] or live, repo=ctx.cfg.client_repo,
+                         project=ctx.sample_repo_name(), scope=ctx.project_scope())
+    notes += [f"old copy still in {f.repo}: {f.path}" for f in live if f.repo == ctx.cfg.general_repo]
+    notes += C.announced(t, "saved to project")
+    return {"S17": C.verdict(notes)}
+
+
 # ---------- two-host scenarios (a: the Mac, b: a VM)
 
 def _save_named(ctx: Ctx, host: Host, name: str, body: str, label: str) -> Transcript:
@@ -329,7 +346,7 @@ def u1(ctx: Ctx, host: Host, i: int = 0) -> Verdicts:
 
 
 SINGLE = {"S1": s1_s12h, "S2": s2, "S3": s3, "S4": s4, "S4n": s4n, "S5": s5, "S8": s8,
-          "S11": s11_chain, "S14": s14_s7, "S16": s16, "U1": u1}
+          "S11": s11_chain, "S14": s14_s7, "S16": s16, "S17": s17, "U1": u1}
 PAIR = {"S6": s6, "S6p": lambda ctx, a, b: {"S6p": s6(ctx, a, b, project=True)["S6"]},
         "S9": s9, "S11c": s11c, "S13": s13}
 REPEATED = ("S2", "S4", "S5")   # spec: routing prompts run 3x per host; all runs must pass

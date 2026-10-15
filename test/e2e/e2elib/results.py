@@ -10,7 +10,7 @@ from typing import Dict, List, Tuple
 from .checks import ERROR, FAIL, PASS, SKIPPED, SOFT_FAIL, SOFT_PASS, Verdict
 
 ORDER = ["S0", "S1", "S2", "S3", "S4", "S4n", "S5", "S6", "S6p", "S7", "S8", "S9", "S10", "S11", "S11b", "S11c",
-         "S11d", "S11e", "S11f", "S12", "S12h", "S13", "S14", "S15", "S16", "U1"]
+         "S11d", "S11e", "S11f", "S12", "S12h", "S13", "S14", "S15", "S16", "S17", "U1"]
 
 
 def record(run_dir: Path, host: str, scenario: str, v: Verdict, layers: str) -> None:

@@ -44,6 +44,7 @@
   "named_update": ["Update the general memory {name}: set its body to \"{body}\", keep the description, and pass the version you read earlier in this session. Don't read it again first."],
   "named_read_update": ["Read the general memory {name}, then update it: set its body to \"{body}\" and keep the description."],
   "named_search": ["Search my memory for {name} and tell me what you find."],
+  "S17_move": ["Move the memory {name} you just saved to {target} instead: it belongs there, not in general."],
   "reconcile_yes": ["Yes, reconcile the conflict now: merge the copies into the original, save it, then delete the conflict copy."],
   "U1": ["Remember this: in sample-app we pin Node to version 20. Tag: {token}"]
 }

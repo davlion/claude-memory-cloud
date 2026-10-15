@@ -6,7 +6,8 @@ from e2elib import config
 
 FIELDS = {"S2": {"token"}, "S3": {"token"}, "S4": {"token"}, "S4n": {"token"}, "S5": {"token"}, "S8": {"token", "secret"},
           "S16": {"facts"}, "named_save": {"name", "body"}, "named_read": {"name"}, "named_update": {"name", "body"},
-          "named_read_update": {"name", "body"}, "named_search": {"name"}, "reconcile_yes": set(), "U1": {"token"}}
+          "named_read_update": {"name", "body"}, "named_search": {"name"}, "reconcile_yes": set(), "U1": {"token"},
+          "S17_move": {"name", "target"}}
 
 
 class Files(unittest.TestCase):

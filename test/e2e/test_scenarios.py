@@ -139,6 +139,49 @@ class Soft(unittest.TestCase):
         self.assertIn("1 save calls, 1 failed in transit", v.notes)
 
 
+class Move(unittest.TestCase):
+    """S17: a memory saved in the wrong scope can be moved on request: one live copy in the new scope, none left
+    in the old one, and the move is announced."""
+
+    def run_s17(self, delete_old=True, text="saved to project"):
+        gh, state = FakeGh(), {}
+
+        def save_general(inv):
+            name = inv.prompt.split("named ")[1].split(" ")[0]
+            state["name"] = name
+            gh.add("me/claude-memory-test", f"memories/{name}.md", f"original {name}", "general")
+            return stream(calls=[("memory_save", {"scope": "general", "name": name}, saved(), False)], text="saved to general")
+
+        def move(inv):
+            name = state["name"]
+            gh.add("client/claude-memory", f"projects/sample-app/memories/{name}.md", f"original {name}",
+                   "project:client/sample-app")
+            calls = [("memory_save", {"scope": "project"}, saved(), False)]
+            if delete_old:
+                gh.gone.add(("me/claude-memory-test", f"memories/{name}.md"))
+                calls.append(("memory_delete", {"scope": "general"}, saved("deleted"), False))
+            return stream(calls=calls, text=text)
+        claude = FakeClaude(save_general, move)
+        v = S.s17(ctx(claude, gh), HOST)["S17"]
+        return v, claude
+
+    def test_move_passes(self):
+        v, claude = self.run_s17()
+        self.assertEqual(v.status, C.PASS, v)
+        self.assertEqual(claude.invocations[1].resume, claude.invocations[0].session_id)
+        self.assertEqual(claude.invocations[1].allow, ("memory_save", "memory_delete"))
+        self.assertIn("project", claude.invocations[1].prompt)
+
+    def test_copy_left_behind_fails(self):
+        v, _ = self.run_s17(delete_old=False)
+        self.assertEqual(v.status, C.FAIL)
+        self.assertTrue(any("still in me/claude-memory-test" in n for n in v.notes), v.notes)
+
+    def test_missing_announcement_fails(self):
+        v, _ = self.run_s17(text="Moved it.")
+        self.assertIn("reply lacks the announcement 'saved to project'", v.notes)
+
+
 class Uninstall(unittest.TestCase):
     """Stream-json carries no UserPromptSubmit hook output, so U1 checks settings.json for the kit's hooks."""
 

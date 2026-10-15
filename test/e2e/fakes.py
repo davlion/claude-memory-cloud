@@ -52,6 +52,7 @@ class FakeGh:
     def __init__(self) -> None:
         self.files: List[Tuple[Found, str]] = []
         self.deleted: List[str] = []
+        self.gone: set = set()          # (repo, path) deleted since: still in history, not at HEAD
 
     def add(self, repo: str, path: str, text: str, scope: str) -> None:
         self.files.append((Found(repo, path, "abc1234", scope, "claude-code on test"), text))
@@ -60,7 +61,7 @@ class FakeGh:
         return [f for f, text in self.files if token in text and f.repo in repos]
 
     def exists(self, repo, path):
-        return any(f.repo == repo and f.path == path for f, _ in self.files)
+        return (repo, path) not in self.gone and any(f.repo == repo and f.path == path for f, _ in self.files)
 
 
 class FakeShell:
