@@ -7,7 +7,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from .checks import ERROR, FAIL, PASS, SOFT_FAIL, SOFT_PASS, Verdict
+from .checks import ERROR, FAIL, PASS, SKIPPED, SOFT_FAIL, SOFT_PASS, Verdict
 
 ORDER = ["S0", "S1", "S2", "S3", "S4", "S4n", "S5", "S6", "S6p", "S7", "S8", "S9", "S10", "S11", "S11b", "S11c",
          "S11d", "S11e", "S11f", "S12", "S12h", "S13", "S14", "S15", "S16", "U1"]
@@ -30,6 +30,8 @@ def load(run_dir: Path) -> List[dict]:
 def cell(statuses: List[str]) -> str:
     """One grid cell. Hard results: PASS only if every run passed. Soft results never read as FAIL."""
     n = len(statuses)
+    if all(s == SKIPPED for s in statuses):
+        return "skipped"
     if all(s in (SOFT_PASS, SOFT_FAIL) for s in statuses):
         ok = statuses.count(SOFT_PASS)
         return "soft ✓" if ok == n else f"soft ✗ {ok}/{n}"

@@ -8,6 +8,7 @@ from .gh import Found
 from .transcript import Transcript
 
 PASS, FAIL, SOFT_PASS, SOFT_FAIL, ERROR = "PASS", "FAIL", "SOFT-PASS", "SOFT-FAIL", "ERROR"
+SKIPPED = "SKIPPED"   # recorded by hand for a scenario deliberately not run
 PROBLEMS_MARK = "claude-memory preflight found problems"   # kit/memory_kit/session.py PROBLEMS_HEAD
 COMPACT_MARK = "Context was compacted. Call memory_index again"  # session.py COMPACT_LINE
 SNAPSHOT_MARK = "<memory-snapshot "

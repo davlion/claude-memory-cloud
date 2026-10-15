@@ -18,6 +18,7 @@ class Cells(unittest.TestCase):
         self.assertEqual(results.cell([C.SOFT_FAIL]), "soft ✗ 0/1")
         self.assertEqual(results.cell([C.SOFT_PASS]), "soft ✓")
         self.assertEqual(results.cell([C.PASS, C.ERROR]), "ERROR 1/2")
+        self.assertEqual(results.cell([C.SKIPPED]), "skipped")
 
     def test_render_without_records(self):
         self.assertEqual(results.render("r1", [], []), "# Level 4 results — run r1\n\nNo results recorded.\n")
