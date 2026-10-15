@@ -1,0 +1,150 @@
+"""Scenario logic against scripted transcripts and a fake repo set (no network, no claude)."""
+import tempfile
+import unittest
+from datetime import datetime, timezone
+from pathlib import Path
+
+from e2elib import checks as C
+from e2elib import scenarios as S
+from fakes import CFG, HOST, FakeClaude, FakeGh, FakeShell, saved, stream
+
+
+def ctx(claude, gh=None, sh=None, env=None):
+    tmp = Path(tempfile.mkdtemp())
+    return S.Ctx(CFG, gh or FakeGh(), "r1", tmp, claude=claude, sh=sh or FakeShell(), env=env,
+                 now=lambda: datetime(2026, 10, 15, 12, 0, 0, tzinfo=timezone.utc))
+
+
+class Routing(unittest.TestCase):
+    def run_s2(self, repo, path, scope, text="saved to general", sh=None):
+        gh = FakeGh()
+
+        def answer(inv):
+            gh.add(repo, path, f"body {inv.prompt.split('Tag: ')[1]}", scope)
+            return stream(calls=[("memory_save", {"scope": "general"}, saved(), False)], text=text)
+        claude = FakeClaude(answer)
+        return S.s2(ctx(claude, gh, sh), HOST, 0), claude
+
+    def test_s2_pass_and_s0_pass(self):
+        v, claude = self.run_s2("me/claude-memory-test", "memories/x.md", "general")
+        self.assertEqual((v["S2"].status, v["S0"].status), (C.PASS, C.PASS), v)
+        self.assertEqual(claude.invocations[0].allow, ("memory_save",))
+        self.assertIn("e2e-r1-01", claude.invocations[0].prompt)
+
+    def test_s2_wrong_scope_fails_with_reasons(self):
+        v, _ = self.run_s2("client/claude-memory", "memories/x.md", "client")
+        self.assertEqual(v["S2"].status, C.FAIL)
+        self.assertTrue(any("expected me/claude-memory-test" in n for n in v["S2"].notes))
+
+    def test_s2_missing_announcement_fails(self):
+        v, _ = self.run_s2("me/claude-memory-test", "memories/x.md", "general", text="Done!")
+        self.assertIn("reply lacks the announcement 'saved to general'", v["S2"].notes)
+
+    def test_auto_memory_write_fails_s0(self):
+        sh = FakeShell({"find ~/.claude/projects": lambda s: "/Users/x/.claude/projects/-s/memory/a.md\n"})
+        v, _ = self.run_s2("me/claude-memory-test", "memories/x.md", "general", sh=sh)
+        self.assertEqual(v["S0"].status, C.FAIL)
+        self.assertEqual(v["S2"].status, C.FAIL)
+
+    def test_s4_project_path_and_trailer(self):
+        gh = FakeGh()
+
+        def answer(inv):
+            gh.add("client/claude-memory", "projects/sample-app/memories/x.md", inv.prompt, "project:client/sample-app")
+            return stream(text="saved to project sample-app")
+        v = S.s4(ctx(FakeClaude(answer), gh), HOST, 0)
+        self.assertEqual(v["S4"].status, C.PASS, v)
+
+    def test_s5_saving_without_asking_fails(self):
+        v = S.s5(ctx(FakeClaude(stream(calls=[("memory_save", {"scope": "general"}, saved(), False)], text="Saved."))), HOST)
+        self.assertEqual(v["S5"].status, C.FAIL)
+        self.assertEqual(len(v["S5"].notes), 2)
+
+    def test_s5_question_passes(self):
+        v = S.s5(ctx(FakeClaude(stream(text="general, client, or this project?"))), HOST)
+        self.assertEqual(v["S5"].status, C.PASS)
+
+    def test_s8_secret_is_fake_and_must_be_refused(self):
+        claude = FakeClaude(stream(calls=[("memory_save", {}, saved("rejected_secret"), False)], text="not saved: secret"))
+        v = S.s8(ctx(claude), HOST)
+        self.assertEqual(v["S8"].status, C.PASS, v)
+        self.assertRegex(claude.invocations[0].prompt, r"AKIA[A-Z0-9]{16}")
+
+    def test_s1_wrong_project_and_denied_prompt(self):
+        out = stream(calls=[("memory_index", {"project": "other/x"}, "index", False)])
+        out = out.replace('{"type": "result"', '{"type": "system", "subtype": "permission_denied", "tool_name": '
+                          '"mcp__x__memory_index"}\n{"type": "result"')
+        v = S.s1_s12h(ctx(FakeClaude(out)), HOST)
+        self.assertEqual(v["S1"].status, C.FAIL)
+        self.assertEqual(len(v["S1"].notes), 2)
+        self.assertEqual(v["S12h"].status, C.PASS)
+
+    def test_s12h_fails_when_preflight_reports(self):
+        kit = ("Memory project for this session: client/sample-app\n\nclaude-memory preflight found problems. Tell the "
+               "user one line per problem, starting with \"⚠ memory:\" and including its action:\n- Scope map missing")
+        v = S.s1_s12h(ctx(FakeClaude(stream(kit=kit, calls=[("memory_index", {"project": "client/sample-app"}, "i", False)]))), HOST)
+        self.assertEqual(v["S12h"].status, C.FAIL)
+        self.assertEqual(C.problems(FakeClaude(stream(kit=kit))(HOST, None).transcript), ["Scope map missing"])
+
+
+class Outbox(unittest.TestCase):
+    def test_s11_chain_all_pass(self):
+        gh, state = FakeGh(), {"queued": []}
+        now = int(datetime(2026, 10, 15, 12, 0, 0, tzinfo=timezone.utc).timestamp())
+
+        def queue(inv):
+            state["queued"].append("/o/" + inv.prompt.split("Tag: ")[1] + ".md")
+            return stream(text="queued in outbox for general")
+
+        def flush(inv):
+            tok = state["queued"][0][3:-3]
+            gh.add("me/claude-memory-test", "memories/q.md", tok, "general")
+            state["queued"].clear()
+            return stream(kit="Memory project for this session: me/claude-memory-cloud\n\n1 memory queued in outbox.",
+                          text="saved to general")
+        claude = FakeClaude(stream(kit="Memory project for this session: me/claude-memory-cloud",
+                                   calls=[("memory_index", {"project": "me/claude-memory-cloud"}, "i", False)]),
+                            queue,
+                            stream(kit="Memory project for this session: me/claude-memory-cloud\n\n<memory-snapshot key=\"k\">x"),
+                            flush)
+        sh = FakeShell({"getmtime": lambda s: f"{now + 3}\n", "outbox": lambda s: " ".join(state["queued"])})
+        v = S.s11_chain(ctx(claude, gh, sh), HOST)
+        self.assertEqual({k: x.status for k, x in v.items()},
+                         {"S11f": C.PASS, "S11": C.PASS, "S11e": C.PASS, "S11b": C.PASS}, v)
+        self.assertTrue(claude.invocations[1].no_connector and claude.invocations[2].no_connector)
+        self.assertFalse(claude.invocations[3].no_connector)
+
+    def test_stale_snapshot_fails_s11f(self):
+        sh = FakeShell({"getmtime": lambda s: "1000\n"})
+        claude = FakeClaude(stream(calls=[("memory_index", {"project": "me/claude-memory-cloud"}, "i", False)]),
+                            stream(), stream(), stream())
+        v = S.s11_chain(ctx(claude, sh=sh), HOST)
+        self.assertEqual(v["S11f"].status, C.FAIL)
+
+
+class Soft(unittest.TestCase):
+    def test_s16_never_hard_fails(self):
+        gh = FakeGh()
+
+        def answer(inv):
+            marks = [line.split(":")[0][2:] for line in inv.prompt.splitlines() if line.startswith("- ")]
+            for m in marks[:-1]:
+                gh.add("me/claude-memory-test", f"memories/{m}.md", m, "general")
+            gh.add("me/claude-memory-test", f"memories/{marks[0]}.conflict-20261015T120000Z.md", marks[0], "general")
+            return stream(calls=[("memory_save", {}, "ECONNRESET", True)])
+        v = S.s16(ctx(FakeClaude(answer), gh), HOST)["S16"]
+        self.assertEqual(v.status, C.SOFT_FAIL)
+        self.assertTrue(any("stored 0 times" in n for n in v.notes))
+        self.assertTrue(any("conflict copies" in n for n in v.notes))
+        self.assertIn("1 save calls, 1 failed in transit", v.notes)
+
+
+class Env(unittest.TestCase):
+    def test_ctx_env_reaches_every_run(self):
+        claude = FakeClaude(stream(calls=[("memory_index", {"project": "client/sample-app"}, "i", False)]))
+        S.s1_s12h(ctx(claude, env={"CLAUDE_MEMORY_KIT_PROMPT_HINT": "off"}), HOST)
+        self.assertEqual(claude.invocations[0].env, {"CLAUDE_MEMORY_KIT_PROMPT_HINT": "off"})
+
+
+if __name__ == "__main__":
+    unittest.main()
