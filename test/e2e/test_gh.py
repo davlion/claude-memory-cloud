@@ -49,6 +49,10 @@ class Api(unittest.TestCase):
         self.assertIn("since=2026-10-15T12%3A00%3A00Z", self.api.calls[0][0])
         self.assertEqual(cs[0].files, [("memories/x.md", "added"), ("MEMORY.md", "modified")])
 
+    def test_empty_repo_has_no_commits(self):
+        gh = GitHub(FakeApi({"repos/client/claude-memory/commits?since=": GhError(409, "Git Repository is empty.")}))
+        self.assertEqual(gh.commits_since("client/claude-memory", "2026-10-15T12:00:00Z"), [])
+
     def test_trailers(self):
         c = Commit("a", SERVER, [])
         self.assertEqual(c.trailers, {"Memory-Source": "claude-code on mac", "Memory-Scope": "general"})

@@ -66,7 +66,12 @@ class GitHub:
 
     def commits_since(self, repo: str, since: str) -> List[Commit]:
         """Commits on the default branch since `since` (ISO 8601 Z), oldest first, with their files."""
-        listing = json.loads(self.api([f"repos/{repo}/commits?since={quote(since)}&per_page=100"]))
+        try:
+            listing = json.loads(self.api([f"repos/{repo}/commits?since={quote(since)}&per_page=100"]))
+        except GhError as e:
+            if e.status == 409:   # "Git Repository is empty": no memory saved there yet
+                return []
+            raise
         out = []
         for c in reversed(listing):
             d = json.loads(self.api([f"repos/{repo}/commits/{c['sha']}"]))
