@@ -410,6 +410,123 @@ class SetupSafety(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual((self.root / "outbox" / "notes.txt").read_text(), "mine")
 
+    def _stage(self, items):
+        mem = "---\nname: {n}\ndescription: {d}\nmetadata:\n  type: project\n---\n\nbody {d}\n"
+        stage = self.root / "export" / "acme-org__billing"
+        for scope, n, d in items:
+            (stage / scope).mkdir(parents=True, exist_ok=True)
+            (stage / scope / f"{n}.md").write_text(mem.format(n=n, d=d))
+        return mem
+
+    def _target(self):
+        return self.home / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.repo)) / "memory"
+
+    def test_install_write_failure_is_clean_and_uninstall_restores(self):
+        settings = '{\n  "theme": "dark"\n}\n'
+        self.settings.write_text(settings)
+        ro = self.tmp / "ro"
+        ro.mkdir()
+        self.claude_md.symlink_to(ro / "CLAUDE.md")     # dangling link into a dir we can't write to
+        os.chmod(ro, 0o500)
+        self.addCleanup(os.chmod, ro, 0o700)
+        r = self.install(ok=False)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("setup: install stopped partway (PermissionError", r.stderr)
+        self.assertIn("run ./setup.sh --uninstall to undo what was done.", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertNotEqual(self.settings.read_text(), settings)    # settings had been written before the failure
+        r = self.setup_sh("--uninstall", "--delete-cache")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.settings.read_text(), settings)
+        self.assertFalse(self.root.exists())
+
+    def test_uninstall_write_failure_is_clean(self):
+        self.install()
+        os.chmod(self.claude_md.parent, 0o500)      # atomic write of CLAUDE.md/settings.json now fails
+        self.addCleanup(os.chmod, self.claude_md.parent, 0o700)
+        r = self.setup_sh("--uninstall", "--delete-cache")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("setup: uninstall stopped partway (", r.stderr)
+        self.assertIn("rerun ./setup.sh --uninstall.", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_setup_sh_writes_no_bytecode(self):
+        import shutil
+        copy = self.tmp / "checkout"
+        copy.mkdir()
+        shutil.copy2(REPO / "setup.sh", copy / "setup.sh")
+        shutil.copytree(REPO / "kit", copy / "kit", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        r = subprocess.run(["bash", str(copy / "setup.sh"), "--worker-url", self.worker.url, "--scope",
+                            "general=dav/claude-memory", "--login", "dav", "--dry-run"],
+                           capture_output=True, text=True, env=self.env, cwd=str(self.repo), timeout=60)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(list(copy.rglob("__pycache__")) + list(copy.rglob("*.pyc")), [])
+        self.assertEqual([p for p in self.home.rglob("*.pyc")], [])
+
+    def test_export_never_overwrites_and_reserves_memory(self):
+        self.install()
+        mem = self._stage([("project", "foo", "new foo"), ("general", "MEMORY", "idx")])
+        target = self._target()
+        target.mkdir(parents=True)
+        (target / "foo.md").write_text("mine")
+        (target / "foo.cloud.md").write_text("older export")
+        (target / "MEMORY.md").write_text("# index\n")
+        r = self.setup_sh("--export-local", "--finish", "--cwd", str(self.repo))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((target / "foo.md").read_text(), "mine")
+        self.assertEqual((target / "foo.cloud.md").read_text(), "older export")
+        self.assertIn("body new foo", (target / "foo.cloud-2.md").read_text())
+        self.assertIn("body idx", (target / "MEMORY.cloud.md").read_text())
+        self.assertEqual((target / "MEMORY.md").read_text().splitlines()[0], "# index")
+        r = self.setup_sh("--export-local", "--finish", "--cwd", str(self.repo))   # idempotent
+        self.assertIn("exported 0 memories", r.stdout)
+        self.assertFalse((target / "foo.cloud-3.md").exists())
+
+    def test_export_skips_a_symlinked_index(self):
+        self.install()
+        self._stage([("project", "foo", "new foo")])
+        target = self._target()
+        target.mkdir(parents=True)
+        outside = self.tmp / "index.md"
+        outside.write_text("# mine\n")
+        (target / "MEMORY.md").symlink_to(outside)
+        r = self.setup_sh("--export-local", "--finish", "--cwd", str(self.repo))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("is a symlink", r.stdout)
+        self.assertIn("- [foo](foo.md)", r.stdout)
+        self.assertEqual(outside.read_text(), "# mine\n")
+        self.assertTrue((target / "foo.md").exists())
+
+    def test_install_warns_when_previous_auto_memory_is_unknown(self):
+        self.install()
+        (self.root / "state.json").unlink()
+        r = self.install()
+        self.assertIn("previous auto-memory setting is unknown", r.stdout)
+        self.assertIsNone(self.state()["auto_memory_previous"])
+        r = self.install()      # state exists now: no repeat warning
+        self.assertNotIn("unknown", r.stdout)
+
+    def test_messages(self):
+        self.install()
+        (self.root / "outbox" / "20261013T180400Z-a.md").write_text("x")
+        r = self.setup_sh("--uninstall")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("Nothing was changed.", r.stdout)
+        os.unlink(self.root / "outbox" / "20261013T180400Z-a.md")
+        (self.root / "cache" / "_none.md").write_text("x")
+        r = self.setup_sh("--uninstall")
+        self.assertIn("--delete-cache", r.stdout)
+        self.install()
+        self.settings.write_text("{bad")
+        r = self.install(ok=False)
+        self.assertEqual(r.stderr.count("Nothing was changed."), 1)
+
+    def test_dry_run_lists_export_dir_and_backups(self):
+        self.settings.write_text('{\n  "theme": "dark"\n}\n')
+        r = self.install("--dry-run")
+        self.assertIn(str(self.root / "export"), r.stdout)
+        self.assertIn("settings.json.bak-<time>", r.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

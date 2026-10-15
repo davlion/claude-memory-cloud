@@ -166,11 +166,20 @@ def install(paths: KitPaths, *, worker_url: str, scope_map: Dict[str, Any], pyth
         if sep is not None:     # the block had been removed by hand; remember the new separator
             state["claude_md_sep"] = sep
 
+    if stored is None and info["auto_memory_previous"] is None:
+        out("warning: the kit's hooks are already in settings.json but there is no state.json, so your previous "
+            "auto-memory setting is unknown; uninstall will leave autoMemoryEnabled as it is (off).")
     if dry_run:
         out(_diff(paths.settings, settings_text or "", new_settings_text) or f"{paths.settings}: no change")
         out(_diff(paths.claude_md, md_text or "", new_md) or f"{paths.claude_md}: no change")
+        backups = []
+        if settings_text is not None and new_settings_text != settings_text:
+            backups.append(f"{_real(paths.settings)}.bak-<time>")
+        if md_text is not None and new_md != md_text:
+            backups.append(f"{_real(paths.claude_md)}.memkit-backup-<time>")
         out(f"would write {paths.config}, {paths.scopes} ({json.dumps(scope_map['scopes'], sort_keys=True)}), "
-            f"{paths.state}, copy the kit to {paths.kit}/ and create {paths.outbox}, {paths.cache}")
+            f"{paths.state}, copy the kit to {paths.kit}/ and create {paths.outbox}, {paths.cache}, {paths.export}")
+        out("would create backups: " + (", ".join(b.strip() for b in backups) or "none (no existing file changes)"))
         out("dry run: nothing was written.")
         return 0
 
@@ -240,7 +249,7 @@ def uninstall(paths: KitPaths, *, force: bool = False, delete_cache: Optional[bo
     if queued and not force:
         out(f"{len(queued)} memories are still queued in {paths.outbox}. Flush them first: start Claude Code in any repo "
             "with the claude-memory connector working; the session-start hook asks Claude to flush them. "
-            "Or rerun with --force (the entries are kept in that folder, not deleted).")
+            "Or rerun with --force (the entries are kept in that folder, not deleted). Nothing was changed.")
         return 3
 
     # plan (pure)
@@ -311,7 +320,7 @@ def uninstall(paths: KitPaths, *, force: bool = False, delete_cache: Optional[bo
         if delete_cache:
             shutil.rmtree(paths.cache)
         else:
-            out(f"kept {paths.cache}")
+            out(f"kept {paths.cache} (rerun with --delete-cache to remove it)")
     else:
         _rmdir_if_empty(paths.cache, out)
     try:
@@ -415,16 +424,26 @@ def export_finish(paths: KitPaths, cwd: str, out: Out = print) -> int:
                 out(f"skipped {src.name}: no memory frontmatter")
                 continue
             name = src.stem if scope == "project" or src.stem not in project_names else f"general-{src.stem}"
+            if name == "MEMORY":    # never collide with the index file
+                name = "MEMORY.cloud"
             dst = target / f"{name}.md"
-            if dst.exists() and dst.read_text(encoding="utf-8") != text:
-                dst = target / f"{name}.cloud.md"
-            if not dst.exists() or dst.read_text(encoding="utf-8") != text:
+            n = 1
+            while (dst.exists() or dst.is_symlink()) and (
+                    dst.is_symlink() or not dst.is_file() or dst.read_text(encoding="utf-8") != text):
+                n += 1      # never overwrite: name.cloud.md, name.cloud-2.md, ...
+                dst = target / (f"{name}.cloud.md" if n == 2 else f"{name}.cloud-{n - 1}.md")
+            if not dst.exists():
                 write_atomic(dst, text)
                 written += 1
             index_lines.append(f"- [{name}]({dst.name}) — {top_fm.get('description', '')}")
     index = target / "MEMORY.md"
     existing = index.read_text(encoding="utf-8") if index.exists() else ""
     new_lines = [ln for ln in index_lines if f"]({ln.split('](')[1].split(')')[0]})" not in existing]
+    if new_lines and index.is_symlink():
+        out(f"skipped the index: {index} is a symlink; add these lines to it yourself:")
+        for ln in new_lines:
+            out(ln)
+        new_lines = []
     if new_lines:
         write_atomic(index, existing + ("" if existing.endswith("\n") or not existing else "\n")
                      + "\n".join(new_lines) + "\n")
@@ -495,5 +514,17 @@ def main(argv: Optional[List[str]] = None, src_kit: Optional[Path] = None) -> in
                        dry_run=a.dry_run)
     except (SettingsError, MarkerError) as e:
         print(f"setup: {e}", file=sys.stderr)
-        print("setup: nothing was changed.", file=sys.stderr)
+        print("Nothing was changed.", file=sys.stderr)
+        return 2
+    except Exception as e:      # OSError and anything unexpected: no traceback, say how to recover
+        err = f"{type(e).__name__}: {e}"
+        if a.uninstall:
+            tail = "Fix the problem and rerun ./setup.sh --uninstall."
+        elif a.export_local:
+            tail = "Fix the problem and rerun the command."
+        else:
+            tail = "Fix the problem and rerun ./setup.sh, or run ./setup.sh --uninstall to undo what was done."
+        what = "uninstall" if a.uninstall else ("export" if a.export_local else "install")
+        print(f"setup: {what} stopped partway ({err}). Your previous files are backed up next to them. {tail}",
+              file=sys.stderr)
         return 2
