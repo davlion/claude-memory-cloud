@@ -99,15 +99,15 @@ def _strip_kit(groups: List[Any]) -> List[Any]:
 
 
 def _check_shapes(data: Dict[str, Any]) -> None:
-    hooks = data.get("hooks")
-    if hooks is not None:
+    if "hooks" in data:
+        hooks = data["hooks"]
         if not isinstance(hooks, dict):
             raise SettingsError('"hooks" must be an object; refusing to edit')
         for ev, v in hooks.items():
             if not isinstance(v, list):
                 raise SettingsError(f'"hooks.{ev}" must be a list; refusing to edit')
-    perms = data.get("permissions")
-    if perms is not None:
+    if "permissions" in data:
+        perms = data["permissions"]
         if not isinstance(perms, dict):
             raise SettingsError('"permissions" must be an object; refusing to edit')
         if "allow" in perms and not isinstance(perms["allow"], list):

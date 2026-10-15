@@ -209,7 +209,8 @@ class FixRound1(unittest.TestCase):
 
     def test_bad_shapes_refused(self):
         bad = [{"hooks": []}, {"hooks": {"SessionStart": {"hooks": []}}}, {"hooks": {"Stop": "x"}},
-               {"permissions": []}, {"permissions": {"allow": "x"}}]
+               {"permissions": []}, {"permissions": {"allow": "x"}},
+               {"hooks": None}, {"permissions": None}, {"permissions": {"allow": None}}]
         for b in bad:
             with self.subTest(b=b):
                 with self.assertRaises(SettingsError):
