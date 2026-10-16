@@ -78,6 +78,18 @@ class Api(unittest.TestCase):
         self.assertIn("since=2026-10-15T12%3A00%3A00Z", self.api.calls[0][0])
         self.assertEqual(cs[0].files, [("memories/x.md", "added"), ("MEMORY.md", "modified")])
 
+    def test_commit_listing_follows_pages(self):
+        page1 = [{"sha": f"p1-{i}"} for i in range(100)]
+        page2 = [{"sha": "p2-0"}]
+
+        def api(args):
+            if "commits?since=" in args[0]:
+                return json.dumps(page1 if args[0].endswith("&page=1") else page2 if args[0].endswith("&page=2") else [])
+            return json.dumps(commit(args[0].rsplit("/", 1)[1], "", []))
+        cs = GitHub(api).commits_since(R, "2026-10-15T12:00:00Z")
+        self.assertEqual(len(cs), 101)
+        self.assertEqual(cs[0].sha, "p2-0")      # oldest first across pages
+
     def test_empty_repo_has_no_commits(self):
         gh = GitHub(FakeApi({"repos/client/claude-memory/commits?since=": GhError(409, "Git Repository is empty.")}))
         self.assertEqual(gh.commits_since("client/claude-memory", "2026-10-15T12:00:00Z"), [])

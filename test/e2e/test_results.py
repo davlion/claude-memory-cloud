@@ -83,5 +83,33 @@ class Cleanup(unittest.TestCase):
         self.assertIn("memkit.py outbox-done 20261015T120000Z-e2e.md", c.sh.seen[-1])
 
 
+    def test_a_memory_that_existed_before_the_run_is_kept_and_reported(self):
+        # Claude may update a real memory with a test fact ("prefer updating"): never delete a file the run didn't add.
+        class Gh:
+            deleted = []
+
+            def commits_since(self, repo, since):
+                return [Commit("a", "", [("memories/real.md", "modified")]),
+                        Commit("b", "", [("memories/new.md", "added")])] if repo == CFG.general_repo else []
+
+            def file_text(self, repo, path, ref="HEAD"):
+                return {"memories/real.md": "real memory, now with e2e-r1-04", "memories/new.md": "e2e-r1-05"}.get(path)
+
+            def delete(self, repo, path, message):
+                self.deleted.append(path)
+                return True
+
+        class Ctx:
+            run_id, cfg, gh = "r1", CFG, Gh()
+
+            def outbox_files(self, host, token):
+                return []
+        c, said = Ctx(), []
+        removed = cleanup(c, "2026-10-15T12:00:00Z", [HOST], out=said.append)
+        self.assertEqual(c.gh.deleted, ["memories/new.md"])
+        self.assertEqual(removed, [f"{CFG.general_repo}/memories/new.md"])
+        self.assertEqual(said, [f"  kept {CFG.general_repo}/memories/real.md: it existed before the run; "
+                                "remove the test text by hand"])
+
 if __name__ == "__main__":
     unittest.main()
