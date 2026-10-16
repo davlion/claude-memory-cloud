@@ -3,15 +3,15 @@ export const newNonce = () => crypto.randomUUID().replace(/-/g, "").slice(0, 12)
 
 const attr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-/**
- * Defense in depth: neutralizes anything in memory text that could open or close a memory tag, including
- * spaced (`< /memory`) and fullwidth (`＜/memory`) variants. The real boundary is the nonce closing tag.
- */
 /** NFKC-normalizes and strips format characters (zero-width space etc.), so lookalike text matches its plain form. */
 export function normalizeForMatch(s: string): string {
   return s.normalize("NFKC").replace(/\p{Cf}/gu, "");
 }
 
+/**
+ * Defense in depth: neutralizes anything in memory text that could open or close a memory tag, including
+ * spaced (`< /memory`) and fullwidth (`＜/memory`) variants. The real boundary is the nonce closing tag.
+ */
 export function escapeData(s: string): string {
   // Match on an NFKC-normalized copy with format characters (zero-width space etc.) removed, so `<\u200b/memory>`,
   // `<／memory>`, `﹤/memory>` and `</ＭＥＭＯＲＹ>` are caught. Each normalized char remembers the span of the original

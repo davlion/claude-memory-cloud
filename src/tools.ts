@@ -176,10 +176,6 @@ async function memorySearch(d: ToolDeps, a: Record<string, unknown>, nonce: stri
   return parts.join("\n\n");
 }
 
-/**
- * Save and delete results: the preamble, then the JSON status object (machine-readable fields unchanged; `similar`
- * lists names only), then each similar memory's description in an escaped data block. Descriptions are memory text.
- */
 /** Guard inputs for a save: the target's kind, and the other clients (never general, never the scope owning this repo) to keep text from. */
 export function guardContext(cfg: ScopeConfig, t: Target): GuardContext {
   const own = Object.entries(cfg).find(([, repo]) => repo === t.repo)?.[0];
@@ -192,6 +188,10 @@ export function guardContext(cfg: ScopeConfig, t: Target): GuardContext {
   return { kind, others };
 }
 
+/**
+ * Save and delete results: the preamble, then the JSON status object (machine-readable fields unchanged; `similar`
+ * lists names only), then each similar memory's description in an escaped data block. Descriptions are memory text.
+ */
 function framedResult(res: OpResult, nonce: string): string {
   const { similar, ...status } = res;
   const parts = [preamble(nonce), JSON.stringify(similar ? { ...status, similar: similar.map((x) => ({ name: x.name })) } : status, null, 2)];
