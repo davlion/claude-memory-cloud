@@ -334,6 +334,15 @@ describe("instructionsFor (Level 4 H6 findings)", () => {
     expect(t.endsWith("(its name is the filename without .md).")).toBe(true);
   });
 
+  it("stays under the cap with many long client names: lists what fits, then says how many more", () => {
+    const cfg: Record<string, string> = { general: "dav/mem" };
+    for (let i = 0; i < 12; i++) cfg[`client-number-${String(i).padStart(2, "0")}-${"x".repeat(40)}`] = `o${i}/claude-memory`;
+    const t = instructionsFor(cfg);
+    expect(t.length).toBeLessThanOrEqual(4000);
+    expect(t).toMatch(/(and \d+ more|12 client scopes) \(memory_scopes lists them\)/);
+    expect(t.endsWith("(its name is the filename without .md).")).toBe(true);
+  });
+
   it("puts the scope line with the save rules, ahead of the less important text", () => {
     const t = instructionsFor({ general: "dav/mem", acme: "a/b" });
     expect(t.indexOf("This user's scopes")).toBeLessThan(t.indexOf("Always pass source"));

@@ -18,18 +18,29 @@ If an index lists Conflicts, offer to reconcile them: read both files, save the 
 
 
 const PLAIN_SCOPE = /^[A-Za-z0-9_.-]{1,64}$/;
+/** Claude Code keeps only the first 4096 characters of server instructions. */
+export const MAX_INSTRUCTIONS = 4000;
 
-/** Claude Code keeps only the first 4096 characters of server instructions; tests hold the total to 4000.
- * The scope line goes right after the save rules, so anything cut is the least important text. */
+/** The scope line goes right after the save rules; instructionsFor sizes it so the whole text stays within
+ * MAX_INSTRUCTIONS, listing as many client names as fit. */
 export const INSTRUCTIONS = `${HEAD}\n\n${TAIL}`;
 
 /** INSTRUCTIONS plus this user's scope names, so Claude can tell an ambiguous fact even before calling memory_index
  * (claude.ai chat often never does). Names come from the operator's SCOPES config; only plain names are listed. */
 export function instructionsFor(cfg: Record<string, string>): string {
   const clients = Object.keys(cfg).filter((k) => k !== "general" && PLAIN_SCOPE.test(k));
-  const line = clients.length
-    ? `This user's scopes: "general", ${clients.map((c) => `client "${c}"`).join(", ")}, and "project" (one per codebase). ` +
-      `When a fact could belong to more than one of these (for example "we …" could mean the user or a client), ask in one line before saving.`
-    : `This user's scopes: "general" and "project" (one per codebase). There are no client scopes.`;
-  return `${HEAD}\n\n${line}\n\n${TAIL}`;
+  if (!clients.length) {
+    return `${HEAD}\n\nThis user's scopes: "general" and "project" (one per codebase). There are no client scopes.\n\n${TAIL}`;
+  }
+  // List as many client names as fit in MAX_INSTRUCTIONS; name the rest by count (memory_scopes has them all).
+  for (let shown = clients.length; ; shown--) {
+    const rest = clients.length - shown;
+    const names = clients.slice(0, shown).map((c) => `client "${c}"`);
+    const list = shown === 0 ? `${rest} client scopes (memory_scopes lists them)`
+      : names.join(", ") + (rest ? `, and ${rest} more (memory_scopes lists them)` : "");
+    const line = `This user's scopes: "general", ${list}, and "project" (one per codebase). ` +
+      `When a fact could belong to more than one of these (for example "we …" could mean the user or a client), ask in one line before saving.`;
+    const text = `${HEAD}\n\n${line}\n\n${TAIL}`;
+    if (text.length <= MAX_INSTRUCTIONS || shown === 0) return text;
+  }
 }
