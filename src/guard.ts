@@ -34,7 +34,16 @@ const LOCATION_TERMS =
 const PRIVATE_LIFE =
   "(?:going through (?:a |an )?(?:divorce|separation|breakup|chemo\\w*)|getting (?:a )?divorce[d]?|(?:is|was|got|been|recently|just) divorced|pregnant|expecting (?:a )?(?:baby|child)|(?:has|had|have|got|diagnosed with) (?:cancer|diabetes|depression|anxiety|hiv|an? (?:illness|disease|eating disorder|addiction))|in rehab|in therapy|on (?:medication|antidepressants|sick leave|medical leave)|(?:struggling|battling|dealing) with (?:depression|addiction|anxiety|alcoholism|cancer|illness)|having an affair|cheating on|(?:filed|filing) for (?:bankruptcy|divorce)|diagnosed with \\w+)";
 
-const NAME = "(?!(?:The|This|That|It|There|We|They|He|She|I|If|When|My|Our)\\b)[A-Z][a-z]+";
+// A single word that is not a function word, determiner, pronoun or common work noun. Matched case-insensitively
+// (not everyone capitalizes names), so the stoplist is what keeps "the server is ..." and "it earns ..." out.
+const NOT_A_NAME =
+  "the|a|an|this|that|these|those|our|their|my|your|his|her|its|i|we|you|it|they|he|she|me|us|them|who|which|what|there|here|and|or|but|so|if|when|then|also|still|not|never|just|now|recently|currently|is|was|are|were|be|been|being|has|had|have|do|does|did|will|would|can|could|should|may|might|to|of|in|on|for|with|by|from|as|at|about|after|before|while|because|since|than|very|more|most|all|some|any|each|every|no|one|two|new|old|other|another|such|only|even|both|either|many|much|few|own|same|server|servers|service|services|api|apis|app|apps|process|processes|job|jobs|team|teams|system|systems|module|modules|function|functions|client|clients|company|project|org|repo|database|db|worker|workers|queue|cache|pipeline|build|test|tests|code|data|user|users|customer|customers|vendor|contractor|investor|manager|boss|owner|management|leadership|colleague|coworker|ceo|cto|cfo|founder|founders|friend|contact|neighbor|neighbour|landlord";
+const NAME = `(?!(?:${NOT_A_NAME})\\b)[a-z]{2,}`;
+
+// Destinations after "moved to" / "live in" that are tools or things, not places.
+const DEST_TECH =
+  "postgres|postgresql|mysql|sqlite|kubernetes|k8s|docker|aws|gcp|azure|python|rust|go|golang|typescript|javascript|react|node|nodejs|java|kotlin|swift|terraform|github|gitlab|v\\d|version|monorepo|microservices|redis|kafka|vite|webpack|bun|deno|pnpm|npm|yarn|cloudflare|vercel|ruby|rails|django|flask|php|laravel|vue|angular|svelte|next|nextjs|linux|ubuntu|macos|windows|vitest|jest|pytest|jenkins|circleci|helm|ansible|mongodb|dynamodb|elasticsearch|oracle|snowflake|bigquery|graphql|grpc|rest|s3|ec2|lambda|serverless|cloud|prod|production|staging|main|master|trunk|git|ci|cd|oauth|sso|tls|sql|nosql|json|yaml|toml|typescript|ts|js|py|cpp|dotnet|tailwind";
+const DEST_ARTICLE = "a|an|the|new|my|our|this|that|one|another|each|every|some|any";
 const LEAD = "(?:(?:is|was|has|had|are|just|recently|currently|now|been|got|have|will be)\\s+){0,3}";
 const ROLE_NOUN =
   "(?:client|customer|founders?|ceo|cto|cfo|boss|manager|colleagues?|coworkers?|co-workers?|vendor|contractor|investors?|management|leadership|owner|team lead)";
@@ -58,10 +67,12 @@ const RESTRICTED_RULES: [RestrictedCategory, RegExp][] = [
   ["family", /\b(?:i'?m|i am)\s+(?:getting\s+(?:married|divorced)|engaged|expecting)\b|\bour baby\b/i],
   ["location", new RegExp(`\\bmy\\s+(?:\\w+\\s+){0,2}(?:${LOCATION_TERMS})\\b(?!\\s*(?:dir|directory|folder|network|server|lab|router|assistant|page|screen|config|office|machine|setup|nas|wifi|wi-fi))`, "i")],
   ["location", /\bmy\s+(?:home\s+)?address\s+is\b/i],
-  ["location", /\b[Ww]e\s+live\s+(?:in|near|on|at)\s+[A-Z]/],
-  ["location", /\b(?:[Ii]|[Ww]e)(?:'re|'m| am| are|'ve| have)?\s+(?:relocating|relocated)\s+to\s+[A-Z]/],
-  ["location", /\b[Ii](?:'m| am|'ve| have)?\s+(?:moving|moved)\s+to\s+[A-Z]/],
-  ["location", /\bi\s+live\s+(?:in|on|at|near|with|next|by|just)\b/i],
+  ["location", new RegExp(`\\bwe\\s+live\\s+(?:in|near|on|at)\\s+(?!(?:${DEST_TECH}|${DEST_ARTICLE})\\b)[a-z]`, "i")],
+  ["location", new RegExp(`\\b(?:i|we)(?:'re|'m| am| are|'ve| have)?\\s+(?:relocating|relocated)\\s+to\\s+(?!(?:${DEST_TECH}|${DEST_ARTICLE})\\b)[a-z]`, "i")],
+  ["location", new RegExp(`\\bi(?:'m| am|'ve| have)?\\s+(?:moving|moved)\\s+to\\s+(?!(?:${DEST_TECH}|${DEST_ARTICLE})\\b)[a-z]`, "i")],
+  ["location", new RegExp(`\\bi\\s+live\\s+(?:in|on|at|near)\\s+(?!(?:${DEST_TECH})\\b)[a-z]`, "i")],
+  ["location", /\bi\s+live\s+(?:with|next|by|just)\b/i],
+  ["location", /\bwe\s+live\s+in\s+(?:a|an|the)\s+(?:\w+\s+)?(?:house|apartment|flat|town|city|village|suburb|neighbou?rhood|condo)\b/i],
   ["location", /\b(?:i|we)(?:'ve| have)?\s+(?:moved|moving|relocated|relocating)\s+(?:in)?to\s+(?:a|an|the|my|our)\s+(?:\w+\s+)?(?:house|apartment|flat|home|town|city|suburb|neighbou?rhood|condo)\b/i],
   ["schedule", /\bi(?:'ll| will|'m| am)\s+(?:be\s+)?(?:away|unavailable|offline|out of (?:the )?office|on (?:\w+\s+)?(?:vacation|holiday|leave|pto)|out (?:from|until|on|next|this|all|for)|off (?:on|from|until|next|this|for)|(?:travell?ing|flying)\s+(?:to|on|next|from))\b/i],
   ["schedule", /\b[Ii](?:'ll| will|'m| am)\s+(?:be\s+)?in\s+[A-Z]\w+(?:\s+[A-Z]\w+)?\s+(?:(?:on|from|until|for|between|the)\s+)?\d/],
@@ -91,9 +102,9 @@ const CANDID_RULES: [PersonalHit & { tier: "candid" }, RegExp][] = [
     { tier: "candid", category: "candid" },
     new RegExp(`\\bi\\s+(?:(?:can't|cannot|can not|don't|do not)\\s+(?:stand|trust|respect)|despise|loathe|distrust|resent|dislike|hate)\\s+(?:working with\\s+)?${PERSON_ROLE}`, "i"),
   ],
-  [{ tier: "candid", category: "about_others" }, new RegExp(`\\b${NAME}(?:'s)?\\s+${LEAD}${PRIVATE_LIFE}`)],
-  [{ tier: "candid", category: "about_others" }, new RegExp(`\\b${NAME}'s\\s+(?:salary|pay|bonus|compensation|income)\\b`)],
-  [{ tier: "candid", category: "about_others" }, new RegExp(`\\b${NAME}\\s+(?:earns\\s+(?:about |around )?[$£€]?\\s?\\d|(?:makes|is paid|gets paid)\\s+(?:about |around )?[$£€]\\s?\\d)`)],
+  [{ tier: "candid", category: "about_others" }, new RegExp(`\\b${NAME}(?:'s)?\\s+${LEAD}${PRIVATE_LIFE}`, "i")],
+  [{ tier: "candid", category: "about_others" }, new RegExp(`\\b${NAME}'s\\s+(?:salary|pay|bonus|compensation|income)\\b`, "i")],
+  [{ tier: "candid", category: "about_others" }, new RegExp(`\\b${NAME}\\s+(?:earns\\s+(?:about |around )?[$£€]?\\s?\\d|(?:makes|is paid|gets paid)\\s+(?:about |around )?[$£€]\\s?\\d)`, "i")],
   [
     { tier: "candid", category: "about_others" },
     new RegExp(`\\b(?:my|our|the)\\s+(?:colleague|coworker|co-worker|manager|boss|client|contact|friend|teammate|cto|ceo|cfo|founder|neighbou?r|landlord)(?:'s\\s+(?:salary|pay|bonus|compensation|income)\\b|\\s+${LEAD}${PRIVATE_LIFE})`, "i"),

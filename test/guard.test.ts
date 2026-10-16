@@ -48,6 +48,10 @@ const POSITIVE: Record<string, string[]> = {
     "I'm moving to Lisbon",
     "we're relocating to Denver",
     "We live in Portland",
+    "i'm moving to lisbon",
+    "we're relocating to denver",
+    "we live in portland",
+    "we live in a small town",
   ],
   schedule: [
     "I'll be away from 3 to 20 November",
@@ -132,6 +136,20 @@ const WORK_FACTS = [
   "I built the sick-leave API",
   "I wrote the disease-model service",
   "I fixed the hospital-api client",
+  "the server is going through a migration",
+  "alice owns the billing service",
+  "priya prefers squash merges",
+  "bob owns the deploy pipeline",
+  "the api earns revenue",
+  "it was diagnosed as a race condition",
+  "I'm moving to Postgres",
+  "I moved to Kubernetes",
+  "we're moving to the new API",
+  "I'm moving to v2",
+  "we live in Docker",
+  "we live in a monorepo",
+  "we moved to postgres last year",
+  "i'm moving to typescript",
 ];
 
 describe("scanPersonal: restricted tiers", () => {
@@ -155,6 +173,15 @@ describe("scanPersonal: candid tier", () => {
         });
       }
     });
+  }
+});
+
+describe("scanPersonal: names need no capital letters", () => {
+  for (const s of (CANDID.about_others ?? []).map((x) => x.toLowerCase())) {
+    it(`flags: ${s}`, () => expect(scanPersonal(s)).toEqual({ tier: "candid", category: "about_others" }));
+  }
+  for (const s of ["bob is going through a divorce", "alice was recently diagnosed with cancer", "dan earns $140k", "maria is pregnant"]) {
+    it(`flags: ${s}`, () => expect(scanPersonal(s)).toEqual({ tier: "candid", category: "about_others" }));
   }
 });
 
