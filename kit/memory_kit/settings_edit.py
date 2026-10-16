@@ -81,7 +81,7 @@ KNOWN_KIT_RULES = [
     DATE_ALLOW_RULE,
     GIT_ORIGIN_ALLOW_RULE,
 ]
-_CONTAINERS = ("hooks", "hooks.SessionStart", "hooks.UserPromptSubmit", "permissions", "permissions.allow")
+_CONTAINERS = ("hooks", "hooks.SessionStart", "hooks.UserPromptSubmit", "hooks.PostToolUse", "permissions", "permissions.allow")
 
 
 def _is_kit_entry(h: Any) -> bool:
@@ -122,7 +122,11 @@ def _has_kit_hooks(data: Dict[str, Any]) -> bool:
                for h in (g.get("hooks") if isinstance(g.get("hooks"), list) else []))
 
 
-def install_with_info(data: Dict[str, Any], *, session_cmd: str, prompt_cmd: str, allow: List[str]):
+# The snapshot hook stores every memory_index result, whatever the connector's name (claude.ai or a local one).
+SNAPSHOT_MATCHER = "mcp__.*__memory_index"
+
+
+def install_with_info(data: Dict[str, Any], *, session_cmd: str, prompt_cmd: str, snapshot_cmd: str, allow: List[str]):
     """Returns (new_data, info). info (store it; on re-install merge with the stored one):
       auto_memory_previous: ABSENT | bool | {"value": raw} | None (None = kit already installed, keep stored value)
       added_rules: allow rules appended by this call (not already present)
@@ -143,11 +147,14 @@ def install_with_info(data: Dict[str, Any], *, session_cmd: str, prompt_cmd: str
     if "hooks" not in out:
         created.append("hooks")
     hooks = out.setdefault("hooks", {})
-    for event, cmd, timeout in (("SessionStart", session_cmd, 5), ("UserPromptSubmit", prompt_cmd, 2)):
+    for event, matcher, cmd, timeout in (("SessionStart", None, session_cmd, 5), ("UserPromptSubmit", None, prompt_cmd, 2),
+                                         ("PostToolUse", SNAPSHOT_MATCHER, snapshot_cmd, 5)):
         if event not in hooks:
             created.append("hooks." + event)
         groups = _strip_kit(hooks.get(event, []))
-        groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": timeout}]})
+        group: Dict[str, Any] = {"matcher": matcher} if matcher else {}
+        group["hooks"] = [{"type": "command", "command": cmd, "timeout": timeout}]
+        groups.append(group)
         hooks[event] = groups
     if "permissions" not in out:
         created.append("permissions")
@@ -163,9 +170,10 @@ def install_with_info(data: Dict[str, Any], *, session_cmd: str, prompt_cmd: str
     return out, {"auto_memory_previous": None if reinstall else prev, "added_rules": added, "created": created}
 
 
-def install_settings(data: Dict[str, Any], *, session_cmd: str, prompt_cmd: str, allow: List[str]) -> Dict[str, Any]:
+def install_settings(data: Dict[str, Any], *, session_cmd: str, prompt_cmd: str, snapshot_cmd: str,
+                     allow: List[str]) -> Dict[str, Any]:
     """Returns a copy with auto-memory off, the kit's hooks (replacing older kit hook entries) and allow rules."""
-    return install_with_info(data, session_cmd=session_cmd, prompt_cmd=prompt_cmd, allow=allow)[0]
+    return install_with_info(data, session_cmd=session_cmd, prompt_cmd=prompt_cmd, snapshot_cmd=snapshot_cmd, allow=allow)[0]
 
 
 def uninstall_settings(data: Dict[str, Any], auto_memory_previous: Any, *,
@@ -287,10 +295,11 @@ def _apply(path, transform) -> Dict[str, Any]:
     return out
 
 
-def install_file(path, *, session_cmd: str, prompt_cmd: str, allow: List[str]) -> Dict[str, Any]:
+def install_file(path, *, session_cmd: str, prompt_cmd: str, snapshot_cmd: str, allow: List[str]) -> Dict[str, Any]:
     """Merges into the file. Result: changed, backup, wrote, symlink, plus the install info to store
     (auto_memory_previous, added_rules, created; see install_with_info)."""
-    return _apply(path, lambda d: install_with_info(d, session_cmd=session_cmd, prompt_cmd=prompt_cmd, allow=allow))
+    return _apply(path, lambda d: install_with_info(d, session_cmd=session_cmd, prompt_cmd=prompt_cmd,
+                                                    snapshot_cmd=snapshot_cmd, allow=allow))
 
 
 def uninstall_file(path, auto_memory_previous: Any, *, added_rules: Optional[List[str]] = None,

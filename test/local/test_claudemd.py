@@ -25,11 +25,11 @@ class Block(unittest.TestCase):
 
     def test_render_rule_fills_placeholders(self):
         tpl = (KIT / "templates" / "routing-rule.md").read_text()
-        out = render_rule(tpl, outbox_dir="/h/.claude-memory-cloud/outbox", cache_dir="/h/.claude-memory-cloud/cache",
+        out = render_rule(tpl, outbox_dir="/h/.claude-memory-cloud/outbox",
                           memkit_cmd="/usr/bin/python3 -I -S /h/.claude-memory-cloud/kit/bin/memkit.py")
         self.assertTrue(out.startswith(BEGIN + "\n") and out.endswith("\n" + END))
         self.assertNotIn("{{", out)
-        self.assertIn("/h/.claude-memory-cloud/cache/<key>.md", out)
+        self.assertNotIn("/cache", out)     # the PostToolUse hook writes the snapshot; Claude never does
         self.assertIn("memkit.py outbox-done <filename>", out)
 
     def test_template_example_matches_task5_fixture(self):
@@ -70,14 +70,16 @@ class Block(unittest.TestCase):
                         fn(text)
                     self.assertIn("CLAUDE.md", str(cm.exception))
 
-    def test_rule_uses_write_tool_for_snapshot_and_outbox(self):
+    def test_rule_uses_write_tool_for_outbox_only(self):
         tpl = (KIT / "templates" / "routing-rule.md").read_text()
-        out = render_rule(tpl, outbox_dir="/h/.claude-memory-cloud/outbox", cache_dir="/h/.claude-memory-cloud/cache",
+        out = render_rule(tpl, outbox_dir="/h/.claude-memory-cloud/outbox",
                           memkit_cmd="/usr/bin/python3 -I -S /h/.claude-memory-cloud/kit/bin/memkit.py")
         snap = next(l for l in out.splitlines() if l.startswith("- **Snapshot:**"))
         box = next(l for l in out.splitlines() if l.startswith("- **Outbox:**"))
-        for line in (snap, box):
-            self.assertIn("with the Write tool (never shell redirection, heredocs or `mkdir`", line)
+        self.assertIn("with the Write tool (never shell redirection, heredocs or `mkdir`", box)
+        self.assertNotIn("Write", snap)
+        self.assertIn("if `memory_index` fails, use the session-start snapshot", snap)
+        self.assertIn("never write memories to local files except the outbox below.", out)
         self.assertIn("date -u +%Y%m%dT%H%M%SZ", box)
 
     def test_rule_wording(self):
@@ -85,7 +87,6 @@ class Block(unittest.TestCase):
         self.assertIn("run `/mcp` to see if it's enabled in this session. Saves will be queued.", tpl)
         self.assertNotIn("unavailable — …", tpl)
         self.assertIn("keep `project` as at session start", tpl)
-        self.assertIn("only after a `memory_index` call that included the session's project", tpl)
         flush = tpl[tpl.index("- **Flushing:**"):]
         self.assertIn("`not_reachable`", flush)
         self.assertIn("`unsupported_remote`", flush)

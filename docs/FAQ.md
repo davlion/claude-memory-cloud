@@ -100,7 +100,7 @@ Say it naturally: "save a memory that we deploy on Tuesdays", "remember that…"
 In local Claude Code, the memory goes into an outbox (`~/.claude-memory-cloud/outbox/`). Claude flushes it at the next session start where the server works, through the normal checks. In cloud sessions and chat there's no local disk, so Claude tells you it wasn't saved.
 
 ### Can I still read memories offline?
-In local Claude Code, yes, but read-only and possibly out of date. After each successful load, Claude keeps a snapshot of your memory index, and the session-start hook loads it, labeled with its date. Full memory text and search need the server.
+In local Claude Code, yes, but read-only and possibly out of date. After each successful load, a hook quietly saves a snapshot of your memory index, and the session-start hook loads it, labeled with its date. Full memory text and search need the server.
 
 ### If I save a memory on my laptop, when do my other sessions see it?
 - **New sessions:** immediately; they load the latest index at start.
@@ -125,7 +125,7 @@ The setup script turns it off, so memories don't end up in two places. Your exis
 
 ### Why does the kit live in `~/.claude-memory-cloud` and not `~/.claude`?
 
-Claude writes two kinds of local files: a stale snapshot of your memory index (so a session still has something when the server is unreachable) and outbox entries (saves queued while the server is down). Claude Code treats everything under `~/.claude` as protected: every write there asks for permission, and allow rules can't change that. Under `~/.claude-memory-cloud` the setup script's allow rules apply, so these writes happen silently. Only `~/.claude/settings.json` (hooks, auto-memory off) and `~/.claude/CLAUDE.md` (the routing rule) are changed inside `~/.claude`.
+The kit keeps two kinds of local files: a stale snapshot of your memory index (so a session still has something when the server is unreachable), which a hook writes, and outbox entries (saves queued while the server is down), which Claude writes. Claude Code treats everything under `~/.claude` as protected: every write there asks for permission, and allow rules can't change that. Under `~/.claude-memory-cloud` the setup script's allow rules apply, so Claude's outbox writes happen without a prompt. Only `~/.claude/settings.json` (hooks, auto-memory off) and `~/.claude/CLAUDE.md` (the routing rule) are changed inside `~/.claude`.
 
 ## Setup and operations
 

@@ -29,10 +29,8 @@ def has_marker(text: str) -> bool:
     return BEGIN in text
 
 
-def render_rule(template: str, *, outbox_dir: Path, cache_dir: Path, memkit_cmd: str) -> str:
-    body = (template.replace("{{OUTBOX_DIR}}", str(outbox_dir))
-            .replace("{{CACHE_DIR}}", str(cache_dir))
-            .replace("{{MEMKIT}}", memkit_cmd))
+def render_rule(template: str, *, outbox_dir: Path, memkit_cmd: str) -> str:
+    body = template.replace("{{OUTBOX_DIR}}", str(outbox_dir)).replace("{{MEMKIT}}", memkit_cmd)
     return f"{BEGIN}\n{body.strip(chr(10))}\n{END}"
 
 

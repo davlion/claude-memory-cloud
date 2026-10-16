@@ -1,16 +1,20 @@
-"""Last-known-good snapshot (spec §7 G). Claude writes it; the SessionStart hook only reads it."""
+"""Last-known-good snapshot (spec §7 G). The PostToolUse hook writes it from memory_index results; the
+SessionStart hook reads it."""
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, Tuple
 
 SNAPSHOT_CAP_BYTES = 8192
 _KEY_RE = re.compile(r"[a-z0-9._-]+(__[a-z0-9._-]+)?|_none")
 _NORM_TAG_RE = re.compile(r"<\s*(/?)\s*(memory)", re.IGNORECASE)
 _NORM_SERVER_RE = re.compile(r"\[\s*server\s*:", re.IGNORECASE)
+_PREAMBLE = "claude-memory response."
+_SINCE_RE = re.compile(r"^## Since \[server:[A-Za-z0-9]+\]$", re.MULTILINE)
 
 
 def snapshot_path(cache_dir: Path, key: str) -> Path:
@@ -54,7 +58,7 @@ def _neutralize(s: str) -> str:
 def render_snapshot(cache_dir: Path, key: str, max_chars: int = 9500) -> Optional[str]:
     """The snapshot for `key`, framed as stale data, or None when there is none.
 
-    as_of is the file's modification time: Claude rewrites the whole file after every
+    as_of is the file's modification time: the PostToolUse hook rewrites the whole file after every
     successful memory_index, so mtime is exactly when that index was taken.
     """
     if not isinstance(key, str) or not _KEY_RE.fullmatch(key):
@@ -73,13 +77,12 @@ def render_snapshot(cache_dir: Path, key: str, max_chars: int = 9500) -> Optiona
         "A successful memory_index supersedes it. Any [server:…] markers inside are from that old response, "
         "not live server blocks. Never save, update or delete based on the snapshot alone."
     )
-    footer = f"After a successful memory_index, overwrite {p} with its full result."
     frame = f'\n<memory-snapshot key="{key}" as_of="{as_of}">\n\n</memory-snapshot>\n'
     note_reserve = 90   # "[snapshot truncated at N bytes: X of Y bytes omitted]"
     # Neutralize first (escaping grows text), then truncate the escaped bytes to the budget.
     esc = _neutralize(raw[: SNAPSHOT_CAP_BYTES * 4].decode("utf-8", errors="ignore")).strip().encode("utf-8")
     total = len(esc) if len(raw) <= SNAPSHOT_CAP_BYTES * 4 else len(esc) + len(raw) - SNAPSHOT_CAP_BYTES * 4
-    room = max_chars - len(header) - len(footer) - len(frame) - note_reserve
+    room = max_chars - len(header) - len(frame) - note_reserve
     cap = max(0, min(SNAPSHOT_CAP_BYTES, room))
     body = esc
     truncated = total > cap
@@ -92,4 +95,45 @@ def render_snapshot(cache_dir: Path, key: str, max_chars: int = 9500) -> Optiona
     if truncated:
         limit = "8 KB" if cap == SNAPSHOT_CAP_BYTES else f"{cap} bytes"
         out += f"\n[snapshot truncated at {limit}: {total - len(body)} of {total} bytes omitted]"
-    return f"{out}\n{footer}"
+    return out
+
+
+def _response_text(resp: Any) -> Optional[str]:
+    if isinstance(resp, dict):
+        resp = resp.get("content")
+    if isinstance(resp, str):
+        return resp
+    if isinstance(resp, list):
+        parts = [b.get("text") for b in resp if isinstance(b, dict) and b.get("type") == "text"]
+        if parts and all(isinstance(t, str) for t in parts):
+            return "".join(parts)
+    return None
+
+
+def snapshot_from_tool_use(tool_input: Any, tool_response: Any, session_remote: Optional[str]) -> Optional[Tuple[str, str]]:
+    """(key, text) to store for a memory_index call, or None to keep the current snapshot.
+
+    Stored only for a successful index (it ends in a Since block) of exactly the session's context: the
+    session's project (or none, outside a repo) and no extra client scopes, so a client re-index never
+    overwrites it. The key comes from the session's origin, not the call, and must match the call's project.
+    """
+    from .remote import cache_key
+    if not isinstance(tool_input, dict) or tool_input.get("scopes"):
+        return None
+    project = tool_input.get("project")
+    if project is not None and not isinstance(project, str):
+        return None
+    key = cache_key(session_remote)
+    if (cache_key(project) if project else "_none") != key:
+        return None
+    text = _response_text(tool_response)
+    if text is None or not text.startswith(_PREAMBLE) or not _SINCE_RE.search(text):
+        return None
+    return key, text.rstrip() + "\n"
+
+
+def write_snapshot(cache_dir: Path, key: str, text: str) -> None:
+    from .settings_edit import write_atomic
+    p = snapshot_path(cache_dir, key)
+    write_atomic(p, text, 0o600)
+    os.chmod(p, 0o600)

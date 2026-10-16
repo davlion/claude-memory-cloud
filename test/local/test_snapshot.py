@@ -26,7 +26,8 @@ class Snapshot(unittest.TestCase):
         self.assertIn('<memory-snapshot key="acme-org__billing" as_of="2026-10-14T10:00:00Z">', out)
         self.assertIn("- a\n</memory-snapshot>", out)
         self.assertNotIn("truncated", out)
-        self.assertIn(f"overwrite {self.d / 'acme-org__billing.md'}", out)
+        self.assertNotIn("overwrite", out)    # the PostToolUse hook keeps it current; nothing for Claude to do
+        self.assertTrue(out.endswith("</memory-snapshot>"))
 
     def test_truncated(self):
         self.write("_none", "".join(f"- memory-{i:04d} — some description text here\n" for i in range(400)))

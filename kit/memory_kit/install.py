@@ -85,6 +85,7 @@ def commands(paths: KitPaths, python: str) -> Dict[str, str]:
     return {
         "session": f"{py} {shlex.quote(str(paths.kit / 'hooks' / 'session_start.py'))}",
         "prompt": f"{py} {shlex.quote(str(paths.kit / 'hooks' / 'user_prompt_submit.py'))}",
+        "snapshot": f"{py} {shlex.quote(str(paths.kit / 'hooks' / 'post_tool_use.py'))}",
         "memkit": f"{py} {shlex.quote(str(paths.kit / 'bin' / 'memkit.py'))}",
     }
 
@@ -103,7 +104,7 @@ def mcp_rules(names: List[str]) -> List[str]:
 
 def allow_rules(memkit_cmd: str, mcp_names: Tuple[str, ...] = ()) -> List[str]:
     d = f"~/{KIT_DIRNAME}"
-    return [f"Edit({d}/outbox/**)", f"Edit({d}/cache/**)", f"Edit({d}/export/**)", f"Read({d}/**)",
+    return [f"Edit({d}/outbox/**)", f"Edit({d}/export/**)", f"Read({d}/**)",
             memkit_rule(memkit_cmd), *mcp_rules(list(mcp_names))]
 
 
@@ -195,11 +196,11 @@ def install(paths: KitPaths, *, worker_url: str, scope_map: Dict[str, Any], pyth
     # 1. plan (pure)
     settings, style, settings_text = load_settings(paths.settings)
     new_settings, info = install_with_info(settings, session_cmd=cmds["session"], prompt_cmd=cmds["prompt"],
-                                           allow=allow)
+                                           snapshot_cmd=cmds["snapshot"], allow=allow)
     new_settings_text = dumps(new_settings, style)
     md_text = _read(paths.claude_md)
     template = (src_kit / "templates" / "routing-rule.md").read_text(encoding="utf-8")
-    block = render_rule(template, outbox_dir=paths.outbox, cache_dir=paths.cache, memkit_cmd=cmds["memkit"])
+    block = render_rule(template, outbox_dir=paths.outbox, memkit_cmd=cmds["memkit"])
     new_md, sep = upsert_block(md_text or "", block)
 
     stored = _load_state(paths)
@@ -255,7 +256,7 @@ def install(paths: KitPaths, *, worker_url: str, scope_map: Dict[str, Any], pyth
         os.chmod(d, 0o700)
     if new_settings_text != (settings_text or ""):
         r = install_file(paths.settings, session_cmd=cmds["session"], prompt_cmd=cmds["prompt"],
-                         allow=allow)
+                         snapshot_cmd=cmds["snapshot"], allow=allow)
         via = f" (symlink; wrote {r['wrote']})" if r["symlink"] else ""
         out(f"updated {paths.settings}{via} (auto-memory off, hooks, allow rules)"
             + (f"; backup {r['backup']}" if r["backup"] else ""))

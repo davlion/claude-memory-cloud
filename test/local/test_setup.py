@@ -43,6 +43,9 @@ class Setup(unittest.TestCase):
         self.assertIs(s["autoMemoryEnabled"], False)
         self.assertEqual(len(s["hooks"]["SessionStart"]), 2)
         self.assertIn("/.claude-memory-cloud/kit/hooks/session_start.py", s["hooks"]["SessionStart"][1]["hooks"][0]["command"])
+        self.assertEqual(s["hooks"]["PostToolUse"][0]["matcher"], "mcp__.*__memory_index")
+        self.assertIn("/.claude-memory-cloud/kit/hooks/post_tool_use.py", s["hooks"]["PostToolUse"][0]["hooks"][0]["command"])
+        self.assertNotIn("Edit(~/.claude-memory-cloud/cache/**)", s["permissions"]["allow"])   # the hook writes the snapshot
         self.assertIn("<!-- claude-memory-cloud:routing-rule:begin -->", self.claude_md.read_text())
         self.assertEqual(json.loads((self.root / "scopes.json").read_text()), SCOPES)
         self.assertEqual(json.loads((self.root / "config.json").read_text())["worker_url"], self.worker.url)
@@ -323,7 +326,7 @@ class SetupSafety(unittest.TestCase):
         self.assertIs(st["auto_memory_previous"], True)
         self.assertNotIn("Read(~/.claude-memory-cloud/**)", st["added_rules"])    # the user already had it
         self.assertIn("Edit(~/.claude-memory-cloud/outbox/**)", st["added_rules"])
-        self.assertEqual(st["created"], ["hooks", "hooks.SessionStart", "hooks.UserPromptSubmit"])
+        self.assertEqual(st["created"], ["hooks", "hooks.SessionStart", "hooks.UserPromptSubmit", "hooks.PostToolUse"])
         for k in ("version", "added_rules", "created", "settings_created", "claude_md_created", "claude_md_sep",
                   "installed_at", "auto_memory_previous"):
             self.assertIn(k, st)
@@ -332,7 +335,7 @@ class SetupSafety(unittest.TestCase):
         self.assertEqual(self.state(), first)
         # a later reinstall that adds a rule unions it in (user removed one rule by hand)
         s = json.loads(self.settings.read_text())
-        s["permissions"]["allow"].remove("Edit(~/.claude-memory-cloud/cache/**)")
+        s["permissions"]["allow"].remove("Edit(~/.claude-memory-cloud/export/**)")
         self.settings.write_text(json.dumps(s))
         self.install()
         self.assertEqual(self.state()["added_rules"], first["added_rules"])

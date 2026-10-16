@@ -10,8 +10,9 @@ from memory_kit.settings_edit import (ABSENT, DATE_ALLOW_RULE, GIT_ORIGIN_ALLOW_
 
 SESSION = "/usr/bin/python3 -I -S /h/.claude-memory-cloud/kit/hooks/session_start.py"
 PROMPT = "/usr/bin/python3 -I -S /h/.claude-memory-cloud/kit/hooks/user_prompt_submit.py"
+SNAPSHOT = "/usr/bin/python3 -I -S /h/.claude-memory-cloud/kit/hooks/post_tool_use.py"
 ALLOW = ["Edit(~/.claude-memory-cloud/outbox/**)", "Read(~/.claude-memory-cloud/**)"]
-KW = dict(session_cmd=SESSION, prompt_cmd=PROMPT, allow=ALLOW)
+KW = dict(session_cmd=SESSION, prompt_cmd=PROMPT, snapshot_cmd=SNAPSHOT, allow=ALLOW)
 
 
 def roundtrip(name):
@@ -43,6 +44,8 @@ class Merge(unittest.TestCase):
                          {"hooks": [{"type": "command", "command": SESSION, "timeout": 5}]})
         self.assertNotIn("matcher", new["hooks"]["SessionStart"][1])     # all sources, including compact
         self.assertEqual(new["hooks"]["UserPromptSubmit"][1]["hooks"][0]["timeout"], 2)
+        self.assertEqual(new["hooks"]["PostToolUse"],
+                         [{"matcher": "mcp__.*__memory_index", "hooks": [{"type": "command", "command": SNAPSHOT, "timeout": 5}]}])
         self.assertEqual(new["permissions"]["allow"], ALLOW + [DATE_ALLOW_RULE, GIT_ORIGIN_ALLOW_RULE])
 
     def test_install_is_idempotent_and_replaces_old_kit_hooks(self):
@@ -50,7 +53,8 @@ class Merge(unittest.TestCase):
         once = install_settings(data, **KW)
         twice = install_settings(once, **KW)
         self.assertEqual(once, twice)
-        moved = install_settings(once, session_cmd=SESSION.replace("/usr/bin", "/opt"), prompt_cmd=PROMPT, allow=ALLOW)
+        moved = install_settings(once, session_cmd=SESSION.replace("/usr/bin", "/opt"), prompt_cmd=PROMPT,
+                                 snapshot_cmd=SNAPSHOT, allow=ALLOW)
         self.assertEqual(len(moved["hooks"]["SessionStart"]), 1)
 
     def test_uninstall_is_the_inverse(self):
@@ -198,7 +202,7 @@ class FixRound1(unittest.TestCase):
     def test_preexisting_empty_containers_kept(self):
         data = {"hooks": {"SessionStart": [], "Stop": []}, "permissions": {"allow": []}}
         new, info = self.inst(data)
-        self.assertEqual(info["created"], ["hooks.UserPromptSubmit"])
+        self.assertEqual(info["created"], ["hooks.UserPromptSubmit", "hooks.PostToolUse"])
         back = uninstall_settings(new, ABSENT, added_rules=info["added_rules"], created=info["created"])
         self.assertEqual(back, data)
         data2 = {"hooks": {}, "permissions": {}}
