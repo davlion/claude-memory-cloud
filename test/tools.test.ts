@@ -701,6 +701,22 @@ describe("memory_save guard wiring", () => {
     expect(jsonOf((await save({ name: "d", scope: "acme", body: candid, confirmed: true })).text)).toMatchObject({ status: "rejected_personal" });
   });
 
+  it("rejected_cross_client: another client's name is refused in a client scope; the target's own name and general never trigger it", async () => {
+    store.put("globex-org/claude-memory", "README.md", "r");
+    deps = { ...deps, cfg: cfg3 };
+    const before = store.commits.length;
+    for (const body of ["Globex runs its deploys on Fridays\n", "see globex-org/billing for the retry fix\n"]) {
+      const r = await save({ name: "x", scope: "acme", body });
+      expect(jsonOf(r.text)).toEqual(expect.objectContaining({ status: "rejected_cross_client", client: "globex" }));
+      expect(r.text).not.toContain("deploys on Fridays");
+      expect(r.text).not.toContain("globex-org/billing");
+    }
+    expect(store.commits.length).toBe(before);
+    expect(jsonOf((await save({ name: "own", scope: "acme", description: "Acme deploy day", body: "Acme deploys from acme-org/infra on Tuesdays\n" })).text).status).toBe("created");
+    expect(jsonOf((await save({ name: "both", scope: "general", description: "Client days", body: "I work with Acme on Mondays and Globex on Fridays\n" })).text).status).toBe("created");
+    expect(jsonOf((await save({ name: "word", scope: "acme", description: "Parser ownership", body: "the globexian parser is ours\n" })).text).status).toBe("created");
+  });
+
   it("restricted text is refused through the tool", async () => {
     expect(jsonOf((await save({ name: "r", body: "my mortgage is 6%\n", force: true })).text)).toMatchObject({ status: "rejected_personal", category: "finances" });
   });
