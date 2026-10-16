@@ -20,7 +20,7 @@ export type PersonalHit =
 // Rules run in order; the first match wins. Text is matched after NFKC + format-character stripping.
 
 const HEALTH_TERMS =
-  "doctor|physician|cardiolog\\w*|oncolog\\w*|dermatolog\\w*|neurolog\\w*|psychiatr\\w*|psycholog\\w*|therap(?:y|ist|ists)|dentist|orthodont\\w*|surgery|surgeon|diagnos\\w+|medications?|prescriptions?|antidepressants?|migraines?|blood pressure|cholesterol|anxiety|depression|allerg\\w+|diabet\\w+|asthma|back pain|injur(?:y|ies)|chemo\\w*|pregnan\\w+|physio\\w*|mental health|sick leave|eating disorder|panic attacks?";
+  "doctor|physician|cardiolog\\w*|oncolog\\w*|dermatolog\\w*|neurolog\\w*|psychiatr\\w*|psycholog\\w*|therap(?:y|ist|ists)|dentist|orthodont\\w*|surgery|surgeon|diagnosed with|diagnosis|cancer|tumou?rs?|hospital\\w*|illness|diseases?|sick|adhd|autis\\w*|medications?|prescriptions?|antidepressants?|migraines?|blood pressure|cholesterol|anxiety|depression|allerg\\w+|diabet\\w+|asthma|back pain|injur(?:y|ies)|chemo\\w*|pregnan\\w+|physio\\w*|mental health|sick leave|eating disorder|panic attacks?";
 
 const FINANCE_TERMS =
   "401\\(?k\\)?|mortgage|savings|salary|debts?|credit (?:score|card)s?|net worth|tax(?:es| returns?)|retirement|pension|investments?|portfolio|bank account|brokerage|loans?|stocks?|crypto\\w*|income|paycheck|bonus|rent";
@@ -48,7 +48,7 @@ const RESTRICTED_RULES: [RestrictedCategory, RegExp][] = [
     "sexuality",
     /\b(?:sexual orientation|sex life|my gender (?:identity|transition)|(?:i|i'm|i am)\b[^.!?\n]{0,25}\b(?:gay|lesbian|bisexual|transgender|nonbinary|non-binary|asexual|pansexual)|i came out)\b/i,
   ],
-  ["health", new RegExp(`\\b(?:my|i)\\b[^.!?\\n]{0,40}?\\b(?:${HEALTH_TERMS})\\b`, "i")],
+  ["health", new RegExp(`\\b(?:my|i)\\b(?!/)[^.!?\\n]{0,40}?\\b(?:${HEALTH_TERMS})\\b(?![-/])`, "i")],
   ["legal", /\bmy\s+(?:\w+\s+){0,2}(?:lawsuit|lawyer|attorney|solicitor|visa|green card|immigration|citizenship|asylum|court (?:date|case|hearing)|custody|divorce|restraining order|criminal record|arrest|probation|parole|legal (?:case|troubles?|issues?))\b/i],
   ["legal", /\bi(?:'m| am| was| got| have been| had been)\s+(?:being\s+)?(?:suing|sued|arrested|charged with|detained|deported|convicted)\b/i],
   ["finances", new RegExp(`\\b(?:my|our)\\s+(?:[\\w$]+\\s+){0,2}(?:${FINANCE_TERMS})\\b`, "i")],
@@ -57,9 +57,14 @@ const RESTRICTED_RULES: [RestrictedCategory, RegExp][] = [
   ["family", new RegExp(`\\bmy\\s+(?:\\w+\\s+)?(?:${FAMILY_TERMS})\\b`, "i")],
   ["family", /\b(?:i'?m|i am)\s+(?:getting\s+(?:married|divorced)|engaged|expecting)\b|\bour baby\b/i],
   ["location", new RegExp(`\\bmy\\s+(?:\\w+\\s+){0,2}(?:${LOCATION_TERMS})\\b(?!\\s*(?:dir|directory|folder|network|server|lab|router|assistant|page|screen|config|office|machine|setup|nas|wifi|wi-fi))`, "i")],
+  ["location", /\bmy\s+(?:home\s+)?address\s+is\b/i],
+  ["location", /\b[Ww]e\s+live\s+(?:in|near|on|at)\s+[A-Z]/],
+  ["location", /\b(?:[Ii]|[Ww]e)(?:'re|'m| am| are|'ve| have)?\s+(?:relocating|relocated)\s+to\s+[A-Z]/],
+  ["location", /\b[Ii](?:'m| am|'ve| have)?\s+(?:moving|moved)\s+to\s+[A-Z]/],
   ["location", /\bi\s+live\s+(?:in|on|at|near|with|next|by|just)\b/i],
   ["location", /\b(?:i|we)(?:'ve| have)?\s+(?:moved|moving|relocated|relocating)\s+(?:in)?to\s+(?:a|an|the|my|our)\s+(?:\w+\s+)?(?:house|apartment|flat|home|town|city|suburb|neighbou?rhood|condo)\b/i],
-  ["schedule", /\bi(?:'ll| will|'m| am)\s+(?:be\s+)?(?:away|unavailable|offline|out of (?:the )?office|on (?:vacation|holiday|leave|pto)|out (?:from|until|on|next|this|all|for)|off (?:on|from|until|next|this|for)|(?:travell?ing|flying)\s+(?:to|on|next|from))\b/i],
+  ["schedule", /\bi(?:'ll| will|'m| am)\s+(?:be\s+)?(?:away|unavailable|offline|out of (?:the )?office|on (?:\w+\s+)?(?:vacation|holiday|leave|pto)|out (?:from|until|on|next|this|all|for)|off (?:on|from|until|next|this|for)|(?:travell?ing|flying)\s+(?:to|on|next|from))\b/i],
+  ["schedule", /\b[Ii](?:'ll| will|'m| am)\s+(?:be\s+)?in\s+[A-Z]\w+(?:\s+[A-Z]\w+)?\s+(?:(?:on|from|until|for|between|the)\s+)?\d/],
   ["schedule", /\bmy\s+(?:\w+\s+){0,2}(?:vacation|holidays?|days? off|day off|trip|flight|travel plans|routine|gym|bedtime|commute|sabbatical|time off|pto)\b/i],
   ["schedule", /\bi\s+(?:wake up|go to bed|go to the gym)\b/i],
   ["business_terms", /\bmy\s+(?:\w+\s+){0,2}(?:rates?\b(?!\s+limit)|fees?\b|retainer|invoices?\b|contract(?!s?\s+tests?)\b|pricing|billing rate)/i],

@@ -18,6 +18,10 @@ const POSITIVE: Record<string, string[]> = {
     "I'm seeing a therapist on Fridays",
     "my migraines get worse in winter",
     "I have a dentist appointment on Monday",
+    "I have cancer",
+    "I'm in hospital this week",
+    "I have an illness that flares up",
+    "my ADHD diagnosis came late",
   ],
   finances: [
     "I'm moving my IRA",
@@ -39,6 +43,11 @@ const POSITIVE: Record<string, string[]> = {
     "my home address is 12 Oak Lane",
     "I moved to a new apartment last month",
     "my neighborhood floods every spring",
+    "my address is 12 Oak Lane",
+    "My address is 12 Oak Lane, Springfield",
+    "I'm moving to Lisbon",
+    "we're relocating to Denver",
+    "We live in Portland",
   ],
   schedule: [
     "I'll be away from 3 to 20 November",
@@ -47,6 +56,8 @@ const POSITIVE: Record<string, string[]> = {
     "I'll be out of the office all of August",
     "I wake up at 5 and go to the gym",
     "my flight leaves on the 2nd",
+    "I'm in Paris 3-10 Dec",
+    "I'll be on parental leave in March",
   ],
   business_terms: [
     "my rate for this client is $150/hour",
@@ -112,6 +123,15 @@ const WORK_FACTS = [
   "I prefer small commits and short branches",
   "Bob owns the deploy pipeline and reviews all infra changes",
   "I live-stream the weekly demo",
+  "I diagnosed the bug",
+  "I diagnosed a memory leak",
+  "I added a diagnostics page",
+  "my diagnostics script",
+  "the I/O diagnostics endpoint",
+  "I fixed the injury-report form",
+  "I built the sick-leave API",
+  "I wrote the disease-model service",
+  "I fixed the hospital-api client",
 ];
 
 describe("scanPersonal: restricted tiers", () => {
