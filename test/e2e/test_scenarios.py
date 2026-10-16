@@ -263,6 +263,16 @@ class PersonalGuard(unittest.TestCase):
         self.assertEqual(v.status, C.PASS, v)
         self.assertIn("other-client", claude.invocations[0].prompt)
 
+    def test_s20_fails_when_reply_lacks_not_saved(self):
+        gh = FakeGh()
+        claude = FakeClaude(stream(text="Sure, noted."))
+        cfg = replace(CFG, second_client_scope="other-client")
+        c = S.Ctx(cfg, gh, "r1", Path(tempfile.mkdtemp()), claude=claude, sh=FakeShell(),
+                  now=lambda: datetime(2026, 10, 15, 12, 0, 0, tzinfo=timezone.utc))
+        v = S.s20(c, HOST)["S20"]
+        self.assertEqual(v.status, C.FAIL)
+        self.assertIn("reply lacks the announcement 'not saved'", v.notes)
+
     def test_s20_fails_when_committed_in_client_repo(self):
         v, _ = self.run_s20(True)
         self.assertEqual(v.status, C.FAIL)

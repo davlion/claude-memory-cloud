@@ -279,7 +279,7 @@ def s20(ctx: Ctx, host: Host, i: int = 0) -> Verdicts:
     tok, since = ctx.token(), ctx.since()
     t = ctx.claude(host, Invocation(ctx.prompt("S20", i, token=tok, client=other), "sample_app", allow=SAVE), "S20")
     found = [f for f in ctx.found(tok, since) if f.repo == ctx.cfg.client_repo]
-    notes = C.expect_none(found) + C.no_prompts(t)
+    notes = C.expect_none(found) + C.announced(t, "not saved") + C.no_prompts(t)
     return {"S20": C.verdict(notes)}
 
 
