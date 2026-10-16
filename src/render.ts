@@ -7,6 +7,11 @@ const attr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").rep
  * Defense in depth: neutralizes anything in memory text that could open or close a memory tag, including
  * spaced (`< /memory`) and fullwidth (`＜/memory`) variants. The real boundary is the nonce closing tag.
  */
+/** NFKC-normalizes and strips format characters (zero-width space etc.), so lookalike text matches its plain form. */
+export function normalizeForMatch(s: string): string {
+  return s.normalize("NFKC").replace(/\p{Cf}/gu, "");
+}
+
 export function escapeData(s: string): string {
   // Match on an NFKC-normalized copy with format characters (zero-width space etc.) removed, so `<\u200b/memory>`,
   // `<／memory>`, `﹤/memory>` and `</ＭＥＭＯＲＹ>` are caught. Each normalized char remembers the span of the original
@@ -17,7 +22,7 @@ export function escapeData(s: string): string {
   for (let i = 0; i < s.length;) {
     const cp = s.codePointAt(i)!;
     const len = cp > 0xffff ? 2 : 1;
-    const n = String.fromCodePoint(cp).normalize("NFKC").replace(/\p{Cf}/gu, "");
+    const n = normalizeForMatch(String.fromCodePoint(cp));
     for (let k = 0; k < n.length; k++) { from.push(i); to.push(i + len); }
     norm += n;
     i += len;
