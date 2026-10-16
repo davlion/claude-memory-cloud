@@ -77,13 +77,22 @@ it("register → consent → GitHub → callback → token → tools/list with p
   const init = await call({ jsonrpc: "2.0", id: 1, method: "initialize", params: {
     protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } } });
   expect(init.status).toBe(200);
-  expect(await init.text()).toContain("memory_index");  // instructions mention it
+  const initText = await init.text();
+  expect(initText).toContain("memory_index");  // instructions mention it
+  expect(initText).toContain("This user's scopes:");   // instructions are per user
 
   const list = await call({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
   const text = await list.text();
   for (const t of ["memory_scopes", "memory_index", "memory_health", "memory_read", "memory_search", "memory_save", "memory_delete"]) {
     expect(text).toContain(t);
   }
+  // read-only tools carry readOnlyHint so hosts can run them without asking (Level 4 H5 finding)
+  const tools = JSON.parse(text.split("\n").find((l) => l.startsWith("data: "))!.slice(6)).result.tools as
+    { name: string; annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean } }[];
+  const hint = (n: string) => tools.find((t) => t.name === n)!.annotations;
+  for (const n of ["memory_scopes", "memory_health", "memory_index", "memory_read", "memory_search"]) expect(hint(n)?.readOnlyHint).toBe(true);
+  expect(hint("memory_save")).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+  expect(hint("memory_delete")).toMatchObject({ readOnlyHint: false, destructiveHint: true });
 
   // props reached the tool: memory_scopes calls GitHub with the user's token
   const scopes = await call({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "memory_scopes", arguments: {} } });

@@ -88,6 +88,8 @@ Yes, up to about five people. `SCOPES` lists who may sign in and which repos eac
 ### Why does memory in claude.ai chat show only my general memories?
 Loading follows context. In a Claude Code session inside a repo you get general + the client that owns the repo + that project. Without a repo (chat) you get general only, so one client's notes don't show up in unrelated conversations. Name the client ("what do we know about acme?") and Claude loads that scope too.
 
+Chat also tends not to load the index at all until a message is about memory: "hi" doesn't load it, "what do you remember about…" does. The connector tells Claude your scope names up front, so when you save a fact that could be yours or a client's ("we squash-merge"), it asks which.
+
 ## Day to day
 
 ### How do I save a memory?
@@ -122,6 +124,15 @@ Yes. They're plain Markdown files in your repo. The index is rebuilt from the fi
 
 ### What about Claude Code's built-in memory?
 The setup script turns it off, so memories don't end up in two places. Your existing local memory files are left in place as a backup.
+
+### What about claude.ai's built-in memory?
+claude.ai chat (web, Desktop and mobile) has its own memory, and it competes with the connector: with both on, "remember this" can land in claude.ai's memory instead of your repo. The connector tells Claude to use it unless you name the built-in feature, but the reliable fix is to turn claude.ai's memory off in claude.ai Settings. The setup script can't do that for you.
+
+Move what it holds first, because nothing exports it automatically:
+
+1. Copy it out: claude.ai's memory settings show what it remembers, or ask a chat (with it still on): *"List everything you remember about me, one item per line, verbatim."*
+2. In a chat with the connector on, paste the list: *"Save each of these to claude-memory. Ask me about the scope for any that could be general or client-specific."*
+3. Turn claude.ai's memory off.
 
 ### Why does the kit live in `~/.claude-memory-cloud` and not `~/.claude`?
 
@@ -174,3 +185,11 @@ Then ask Claude to retry. Anything saved meanwhile was queued in the outbox and 
 **Seen after:** upgrading iTerm (the first session after the upgrade). Toggling iTerm's **Local Network** permission in System Settings → Privacy & Security wasn't enough on its own; the flush was what fixed it.
 
 If the flush doesn't help, check that the Worker URL in `~/.claude-memory-cloud/config.json` is spelled right: a typo gives the same error.
+
+### In chat, Claude says it can't save, or memory is turned off
+The connector is probably switched off for that chat. Open the **+** menu in the message box and switch claude-memory on. The switch can stay off in new chats, and on other devices, after you turn it off once.
+
+### A cloud session can't save project memories, or loads only general
+A cloud session started with `claude --cloud` from a local folder gets a copy of your files without a git remote, so neither Claude nor the server can tell which repo it is. Claude asks for the `owner/repo`; tell it, and it saves there. Sessions started from the repository picker on claude.ai/code have a normal remote and work without asking.
+
+The picker lists only repos the Claude GitHub app can access (this is Anthropic's app for cloud sessions, not your memory server's app). To use a client's repo, install the Claude GitHub app on that organization and select the repo.

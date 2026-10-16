@@ -173,6 +173,8 @@ The GitHub App is how the server gets access to your memory repo, **and only tha
 
 The connector now works in claude.ai chat (web, Desktop, mobile), in Claude Code cloud sessions, and in local Claude Code when you're logged in with your claude.ai account.
 
+5. Turn off claude.ai's built-in memory in claude.ai Settings, so chat saves go to the connector instead. Move anything it holds first (see "What about claude.ai's built-in memory?" in the [FAQ](FAQ.md)). In chat, the connector can be switched on or off per chat from the **+** menu in the message box.
+
 ---
 
 ## Part 7 — Set up each machine
@@ -211,7 +213,7 @@ It's safe to run again; rerunning without `--scopes-file`/`--scope` keeps your c
 
 **What lives where:** `~/.claude-memory-cloud/` holds the installed hooks, your scope map, the outbox (`outbox/`: saves queued while the server was unreachable) and the snapshot cache (`cache/`). It is outside `~/.claude` on purpose: Claude Code asks before every write under `~/.claude`, and allow rules can't change that.
 
-**For cloud sessions:** hooks and `~/.claude` settings don't run there. In your Claude Code cloud environment's settings, add the environment variable `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. The server's own instructions cover the rest. There is no outbox in the cloud: a save that fails is reported as "not saved".
+**For cloud sessions:** hooks and `~/.claude` settings don't run there. In your Claude Code cloud environment's settings, add the environment variable `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. The server's own instructions cover the rest. There is no outbox in the cloud: a save that fails is reported as "not saved". Start cloud sessions from the repository picker on claude.ai/code where you can: a session made with `claude --cloud` from a local folder has no git remote, so Claude has to ask which repo it is before saving project memories.
 
 ---
 

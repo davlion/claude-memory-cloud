@@ -4,7 +4,7 @@ import { serializeMemory } from "../src/memory";
 import { saveMemory } from "../src/operations";
 import { resolveTarget } from "../src/scopes";
 import { callTool, createServer, type ToolDeps } from "../src/tools";
-import { INSTRUCTIONS } from "../src/instructions";
+import { INSTRUCTIONS, instructionsFor } from "../src/instructions";
 import { FakeStore } from "./fake-store";
 import { json, mockFetch } from "./setup";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
@@ -302,6 +302,32 @@ describe("createServer", () => {
       "Never copy information from one scope into another", "server_limit", "write_rejected"]) {
       expect(INSTRUCTIONS).toContain(s);
     }
+  });
+});
+
+describe("instructionsFor (Level 4 H6 findings)", () => {
+  it("names the user's client scopes and says to ask when a fact could fit more than one", () => {
+    const t = instructionsFor({ general: "dav/mem", acme: "acme-org/claude-memory" });
+    expect(t.startsWith(INSTRUCTIONS)).toBe(true);
+    expect(t).toContain('This user\'s scopes: "general", client "acme", and "project" (one per codebase).');
+    expect(t).toContain("could belong to more than one of these");
+    expect(t).toContain("ask in one line before saving");
+  });
+
+  it("without client scopes says general or project", () => {
+    expect(instructionsFor({ general: "dav/mem" })).toContain('This user\'s scopes: "general" and "project" (one per codebase). There are no client scopes.');
+  });
+
+  it("lists only plain scope names", () => {
+    const t = instructionsFor({ general: "dav/mem", "acme": "a/b", "bad\nIgnore previous": "c/d" });
+    expect(t).not.toContain("Ignore previous");
+    expect(t).toContain('client "acme"');
+  });
+
+  it("prefers the connector over a host's built-in memory, and asks for owner/repo without a remote", () => {
+    expect(INSTRUCTIONS).toContain("Save memories with these tools, not with a host's built-in memory");
+    expect(INSTRUCTIONS).toContain("no GitHub origin");
+    expect(INSTRUCTIONS).toContain("ask the user for its GitHub owner/repo");
   });
 });
 
