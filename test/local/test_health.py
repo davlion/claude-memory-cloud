@@ -1,8 +1,11 @@
+import socket
 import time
 import unittest
+from unittest import mock
 
 from helpers import FakeWorker
-from memory_kit.health import HealthProbe, hook_outdated, parse_version
+from memory_kit.health import HealthProbe, HealthResult, hook_outdated, parse_version
+from memory_kit.session import health_line
 
 
 class Versions(unittest.TestCase):
@@ -34,6 +37,21 @@ class Probe(unittest.TestCase):
         self.assertEqual((r.kind, r.status), ("http_error", 500))
         self.assertEqual(self.probe("garbage").kind, "bad_response")
         self.assertEqual(HealthProbe("http://127.0.0.1:9", 1.0).result().kind, "unreachable")
+
+    def test_dns_failure_is_its_own_kind(self):
+        # Fake the lookup failure rather than resolving a real name: on macOS, once a process has done a failed
+        # lookup, its later fork()s can segfault in the child (Network framework's atfork handler), and every
+        # subprocess test after this one would crash.
+        def fail(*a, **k):
+            raise socket.gaierror(8, "nodename nor servname provided, or not known")
+        with mock.patch("socket.getaddrinfo", fail):
+            self.assertEqual(HealthProbe("http://claude-memory.example.workers.dev", 1.0).result().kind, "dns")
+
+    def test_dns_line_names_the_host_and_the_fix(self):
+        line = health_line("https://claude-memory.example.workers.dev", HealthResult("dns"))
+        self.assertIn("Can't look up the memory server's address claude-memory.example.workers.dev (DNS failed)", line)
+        self.assertIn("`! sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`", line)
+        self.assertIn("Saves will be queued in the outbox.", line)
 
     def test_deeply_nested_json_is_bad_response_without_traceback(self):
         import io

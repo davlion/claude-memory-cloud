@@ -54,7 +54,8 @@ class Block(unittest.TestCase):
         tpl = (KIT / "templates" / "routing-rule.md").read_text()
         for s in ["[server:<code>]", "saved to <scope>", "queued in outbox for <scope>", "not saved: <reason>",
                   "unavailable", "reauth_required", "server_limit", "memory connector unavailable", "once at session start",
-                  "`scope` is required", "`source`", "`since`"]:
+                  "`scope` is required", "`source`", "`since`",
+                  "getaddrinfo ENOTFOUND", "`! sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`"]:
             self.assertIn(s, tpl)
 
     def test_broken_markers_raise_and_leave_text_alone(self):

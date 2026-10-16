@@ -157,3 +157,20 @@ At session start, Claude runs a health check and stays silent if everything's fi
 
 ### Why TypeScript for the server, and Python and shell for the rest?
 Cloudflare's OAuth and MCP libraries for Workers are TypeScript, so the server is TypeScript. Everything that runs on your machine (hooks, setup script, test runner) is Python and shell, to keep it simple and dependency-free.
+
+## Troubleshooting
+
+### Memory tools fail with `getaddrinfo ENOTFOUND`, but the internet works
+**Symptom:** a memory tool call fails with `getaddrinfo ENOTFOUND claude-memory.<sub>.workers.dev`, often mid-session after session start worked. `curl https://github.com` fails too, yet `dig github.com @1.1.1.1` answers. Your network and DNS servers are fine; the Mac's own resolver (mDNSResponder), which Node, curl and Python all use, has stopped answering. You may also see a burst of "Python quit unexpectedly" reports: on a Mac in this state, a process that does a failed lookup and then starts a subprocess crashes in the child.
+
+**Fix:** flush the resolver. In Claude Code, type:
+
+```
+! sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder
+```
+
+Then ask Claude to retry. Anything saved meanwhile was queued in the outbox and is flushed on the next successful `memory_index`.
+
+**Seen after:** upgrading iTerm (the first session after the upgrade). Toggling iTerm's **Local Network** permission in System Settings → Privacy & Security wasn't enough on its own; the flush was what fixed it.
+
+If the flush doesn't help, check that the Worker URL in `~/.claude-memory-cloud/config.json` is spelled right: a typo gives the same error.

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Tuple
+from urllib.parse import urlsplit
 
 from . import HOOK_VERSION
 from .claudemd import has_marker
@@ -37,6 +38,12 @@ def load_config(path: Path) -> Optional[Dict[str, str]]:
 
 
 def health_line(url: str, h: HealthResult) -> Optional[str]:
+    if h.kind == "dns":
+        host = urlsplit(url).hostname or url
+        return (f"Can't look up the memory server's address {host} (DNS failed). If other sites load, the Mac's DNS "
+                "resolver is probably stuck: run `! sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`, "
+                "then retry (toggling the terminal's Local Network permission alone isn't enough). If it still fails, "
+                "check the Worker URL in `~/.claude-memory-cloud/config.json`. Saves will be queued in the outbox.")
     if h.kind == "unreachable":
         return (f"Can't reach the memory server {url}. Check this machine's network/DNS "
                 f"(`curl -sS {url}/health`). Saves will be queued in the outbox.")
@@ -83,6 +90,9 @@ def session_report(*, cwd: str, paths: KitPaths, env: Mapping[str, str], now: da
                    managed: Path = MANAGED_SETTINGS, health_timeout: float = 1.0) -> SessionReport:
     """Runs every local preflight check plus the one /health GET (spec §7 F local half)."""
     cfg = load_config(paths.config)
+    # Run `git` before the probe starts: on macOS, a fork() after a failed DNS lookup (resolver stuck) can segfault
+    # the child. Costs the probe a few ms of overlap with the local checks.
+    remote, git_failed = resolve_origin(cwd) if cwd else (None, False)
     probe = HealthProbe(cfg["worker_url"], health_timeout) if cfg else None  # overlaps the local checks
     problems: List[str] = [] if cfg else [CONFIG_LINE]
     problems += ensure_private_dirs(paths.root, [paths.outbox, paths.cache])
@@ -98,7 +108,6 @@ def session_report(*, cwd: str, paths: KitPaths, env: Mapping[str, str], now: da
         load_scope_map(paths.scopes)
     except ScopeMapError:
         problems.append(SCOPE_MAP_LINE)
-    remote, git_failed = resolve_origin(cwd) if cwd else (None, False)
     project = normalize_remote(remote) if remote else None
     ob = scan_outbox(paths.outbox, project, now)
     if ob.malformed:

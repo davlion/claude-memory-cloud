@@ -102,6 +102,30 @@ class SessionHook(unittest.TestCase):
         self.assert_one_problem("Can't reach the memory server http://127.0.0.1:9. Check this machine's network/DNS "
                                 "(`curl -sS http://127.0.0.1:9/health`). Saves will be queued in the outbox.")
 
+    def test_git_runs_before_the_health_probe_starts(self):
+        # On macOS a fork() after a failed DNS lookup can segfault the child, so `git` must not start after the probe.
+        from datetime import datetime, timezone
+        from unittest import mock
+        from memory_kit import session
+        from memory_kit.health import HealthResult
+        from memory_kit.paths import kit_paths
+        order = []
+
+        class Probe:
+            def __init__(self, *a):
+                order.append("probe")
+
+            def result(self):
+                return HealthResult("ok")
+
+        real = session.resolve_origin
+        with mock.patch.object(session, "HealthProbe", Probe), \
+                mock.patch.object(session, "resolve_origin", lambda cwd: (order.append("git"), real(cwd))[1]):
+            r = session.session_report(cwd=str(self.repo), paths=kit_paths(self.home), env=self.env,
+                                       now=datetime.now(timezone.utc))
+        self.assertEqual(order, ["git", "probe"])
+        self.assertEqual(r.project, ("acme-org", "billing"))
+
     def test_daily_limit(self):
         self.worker.mode = "429"
         self.assert_one_problem("The memory server hit its daily request limit; resets 00:00 UTC; saves are queued in the outbox.")

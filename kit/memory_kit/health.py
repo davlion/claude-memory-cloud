@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 import threading
 import time
 import urllib.error
@@ -13,7 +14,7 @@ from typing import Optional, Tuple
 
 @dataclass
 class HealthResult:
-    kind: str                 # ok | unreachable | daily_limit | http_error | bad_response
+    kind: str                 # ok | dns | unreachable | daily_limit | http_error | bad_response
     status: int = 0
     version: str = ""
     min_hook_version: str = ""
@@ -37,6 +38,9 @@ def _get(url: str, timeout: float) -> HealthResult:
         e.close()
         # Cloudflare answers 429 (error 1027 on Workers Free) once a daily request limit is hit.
         return HealthResult("daily_limit" if e.code == 429 or b"1027" in body else "http_error", e.code)
+    except urllib.error.URLError as e:
+        # The host name didn't resolve: a typo'd Worker URL, or the Mac's resolver stuck while direct DNS still works.
+        return HealthResult("dns" if isinstance(e.reason, socket.gaierror) else "unreachable")
     except Exception:  # noqa: BLE001 — DNS, refused, TLS, timeout: all mean "can't reach"
         return HealthResult("unreachable")
     try:
