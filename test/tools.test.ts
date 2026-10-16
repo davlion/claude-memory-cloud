@@ -145,7 +145,7 @@ describe("memory_index", () => {
     putMem("dav/mem", "work-note", "Use pnpm.\n");
     healthyGitHub();
     const t = (await callTool(deps, "memory_index", {})).text;
-    expect(t).toContain("⚠ personal:general — 1 memories look personal (lawyer-note) → move them to claude.ai memory and delete them");
+    expect(t).toContain("⚠ personal:general — 1 memory looks personal (lawyer-note) → move them to claude.ai memory and delete them");
     expect(t).not.toMatch(/personal:general[^\n]*work-note/);
     expect(t).not.toContain("zebrafish");
   });

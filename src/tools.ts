@@ -118,7 +118,7 @@ async function gather(d: ToolDeps, a: Record<string, unknown>, nonce: string): P
       since[t.scopeLabel] = idx.version;
       if (idx.flagged.length) {
         health.push({ check: `personal:${t.scopeLabel}`, status: "warn",
-          detail: `${idx.flagged.length} memories look personal (${idx.flagged.slice(0, 5).join(", ")}${idx.flagged.length > 5 ? "…" : ""})`,
+          detail: `${idx.flagged.length} ${idx.flagged.length === 1 ? "memory looks" : "memories look"} personal (${idx.flagged.slice(0, 5).join(", ")}${idx.flagged.length > 5 ? "…" : ""})`,
           action: "move them to claude.ai memory and delete them" });
       }
       if (idx.head) heads.set(t.repo, idx.head);
