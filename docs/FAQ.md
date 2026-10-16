@@ -166,6 +166,9 @@ Most of the cost is fixed per-call overhead (token decryption, building the MCP 
 ### How do I know it's working?
 At session start, Claude runs a health check and stays silent if everything's fine. Each problem is reported in one line with what to do, e.g. "reconnect the claude-memory connector in claude.ai → Settings → Connectors". You can also ask "is memory working?" at any time. Errors say whether they're temporary (`unavailable`, `reauth_required`, `server_limit`) or need a fix first (for example `write_rejected`, when a branch rule blocks the server's commits, or `repo_public`).
 
+### How is this tested end to end?
+Level 4 drives real Claude Code sessions on a Mac and two VMs against a staging server and checks the results in test repos with `gh api`, never Claude's wording; the Desktop app, cloud sessions, web chat and mobile are tested by hand with the same checks. See [`test/e2e/README.md`](../test/e2e/README.md) for how to run it. The latest grids are in [`test/e2e/results/`](../test/e2e/results/).
+
 ### Why TypeScript for the server, and Python and shell for the rest?
 Cloudflare's OAuth and MCP libraries for Workers are TypeScript, so the server is TypeScript. Everything that runs on your machine (hooks, setup script, test runner) is Python and shell, to keep it simple and dependency-free.
 
