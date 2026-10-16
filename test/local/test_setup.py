@@ -318,6 +318,27 @@ class SetupSafety(unittest.TestCase):
         self.setup_sh("--uninstall", "--delete-cache")
         self.assertEqual(self.settings.read_bytes(), b"")
 
+    def test_upgrade_from_0_1_1_then_uninstall_restores_the_original(self):
+        original = '{\n  "autoMemoryEnabled": true,\n  "permissions": {"allow": ["Bash(ls)"]}\n}\n'
+        self.settings.write_text(original)
+        self.install()
+        # Make it look like kit 0.1.1 left it: no PostToolUse group, the cache Edit rule, and state to match.
+        s = json.loads(self.settings.read_text())
+        del s["hooks"]["PostToolUse"]
+        s["permissions"]["allow"].append("Edit(~/.claude-memory-cloud/cache/**)")
+        self.settings.write_text(json.dumps(s, indent=2) + "\n")
+        st = self.state()
+        st["created"].remove("hooks.PostToolUse")
+        st["added_rules"].append("Edit(~/.claude-memory-cloud/cache/**)")
+        (self.root / "state.json").write_text(json.dumps(st))
+        self.install()                                   # the 0.1.2 upgrade
+        up = json.loads(self.settings.read_text())
+        self.assertIn("post_tool_use.py", up["hooks"]["PostToolUse"][0]["hooks"][0]["command"])
+        self.assertIn("hooks.PostToolUse", self.state()["created"])
+        self.setup_sh("--uninstall", "--delete-cache")
+        back = json.loads(self.settings.read_text())
+        self.assertEqual(back, json.loads(original))     # no PostToolUse, no cache rule left behind
+
     def test_state_schema_and_reinstall_merge(self):
         self.settings.write_text('{\n  "autoMemoryEnabled": true,\n  "permissions": {"allow": ["Read(~/.claude-memory-cloud/**)"]}\n}\n')
         self.install()

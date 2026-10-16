@@ -14,7 +14,8 @@ _KEY_RE = re.compile(r"[a-z0-9._-]+(__[a-z0-9._-]+)?|_none")
 _NORM_TAG_RE = re.compile(r"<\s*(/?)\s*(memory)", re.IGNORECASE)
 _NORM_SERVER_RE = re.compile(r"\[\s*server\s*:", re.IGNORECASE)
 _PREAMBLE = "claude-memory response."
-_SINCE_RE = re.compile(r"^## Since \[server:[A-Za-z0-9]+\]$", re.MULTILINE)
+_SINCE_JSON_RE = re.compile(r"^## Since \[server:[A-Za-z0-9]+\]\n[^\n]*\n```json\n(.*?)\n```", re.MULTILINE | re.DOTALL)
+_HEALTH_RE = re.compile(r"^## Health \[server:[A-Za-z0-9]+\]\n(.*?)(?:\n\n|\Z)", re.MULTILINE | re.DOTALL)
 
 
 def snapshot_path(cache_dir: Path, key: str) -> Path:
@@ -127,13 +128,36 @@ def snapshot_from_tool_use(tool_input: Any, tool_response: Any, session_remote: 
     if (cache_key(project) if project else "_none") != key:
         return None
     text = _response_text(tool_response)
-    if text is None or not text.startswith(_PREAMBLE) or not _SINCE_RE.search(text):
+    if text is None or not text.startswith(_PREAMBLE) or not _complete(text):
         return None
     return key, text.rstrip() + "\n"
 
 
+def _complete(text: str) -> bool:
+    """Every scope loaded: a non-empty Since map and no failed (✗) Health line. During a GitHub outage the server
+    still answers, with failures and an empty map; storing that would wipe the snapshot the outage needs."""
+    import json
+    m = _SINCE_JSON_RE.search(text)
+    if not m:
+        return False
+    try:
+        since = json.loads(m.group(1))
+    except ValueError:
+        return False
+    if not isinstance(since, dict) or not since:
+        return False
+    h = _HEALTH_RE.search(text)
+    return not (h and any(line.startswith("✗") for line in h.group(1).splitlines()))
+
+
 def write_snapshot(cache_dir: Path, key: str, text: str) -> None:
+    """Never creates the cache directory (setup owns it, 0700). An older snapshot, which Claude's Write tool may
+    have created world-readable, is made 0600 before the new text goes in (write_atomic keeps the old mode)."""
     from .settings_edit import write_atomic
+    if not Path(cache_dir).is_dir():
+        return
     p = snapshot_path(cache_dir, key)
+    if p.exists():
+        os.chmod(p, 0o600)
     write_atomic(p, text, 0o600)
     os.chmod(p, 0o600)

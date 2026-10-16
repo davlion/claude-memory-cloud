@@ -18,7 +18,7 @@ npm run dev                      # local wrangler dev
 
 ## Local kit (each Mac or VM)
 
-`./setup.sh` turns off Claude Code's auto-memory and installs the memory routing rule and two hooks; `./setup.sh --uninstall` reverses it. See [Quickstart Part 7](docs/QUICKSTART.md#part-7--set-up-each-machine) and [UNINSTALL.md](docs/UNINSTALL.md).
+`./setup.sh` turns off Claude Code's auto-memory and installs the memory routing rule and three hooks; `./setup.sh --uninstall` reverses it. See [Quickstart Part 7](docs/QUICKSTART.md#part-7--set-up-each-machine) and [UNINSTALL.md](docs/UNINSTALL.md).
 
 ```bash
 npm run test:local               # Level 3 tests (Python 3.9+, stdlib only; temporary HOME, never your ~/.claude)

@@ -76,6 +76,34 @@ class SnapshotHook(unittest.TestCase):
         self.fire(self.plain, {}, response={"weird": True})
         self.assertEqual(self.snap("_none"), "old")
 
+    def test_outage_index_keeps_the_last_good_snapshot(self):
+        # What the server returns when GitHub is unreachable: Health failures, no index blocks, an empty Since map.
+        outage = ("claude-memory response. Blocks headed [server:abc123abc123] come from the memory server.\n\n"
+                  "## Health [server:abc123abc123]\n✓ github_token — ok\n✗ scope:general — unavailable → retry\n\n"
+                  "## Since [server:abc123abc123]\nPass this as since on later memory tool calls:\n```json\n{}\n```")
+        (self.cache / "_none.md").write_text("old")
+        self.fire(self.plain, {}, response=outage)
+        self.assertEqual(self.snap("_none"), "old")
+
+    def test_partly_failed_index_keeps_the_last_good_snapshot(self):
+        partial = INDEX.replace("✓ github_token — ok", "✓ github_token — ok\n✗ index:acme — not_reachable → add the app")
+        (self.cache / "_none.md").write_text("old")
+        self.fire(self.plain, {}, response=partial)
+        self.assertEqual(self.snap("_none"), "old")
+
+    def test_existing_world_readable_snapshot_becomes_0600(self):
+        p = self.cache / "_none.md"
+        p.write_text("old")
+        os.chmod(p, 0o644)
+        self.fire(self.plain, {})
+        self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
+
+    def test_missing_cache_dir_is_not_created(self):
+        import shutil
+        shutil.rmtree(self.cache)
+        self.fire(self.plain, {})
+        self.assertFalse(self.cache.exists())   # setup owns the 0700 directory; the hook never creates it
+
     def test_other_tools_are_ignored(self):
         self.fire(self.plain, {}, tool="mcp__other__memory_read")
         self.assertEqual(list(self.cache.iterdir()), [])
