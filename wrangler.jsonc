@@ -25,8 +25,8 @@
     "production": {
       "name": "claude-memory",
       "kv_namespaces": [
-        { "binding": "OAUTH_KV", "id": "REPLACE_IN_PLAN_4" },
-        { "binding": "CACHE_KV", "id": "REPLACE_IN_PLAN_4" }
+        { "binding": "OAUTH_KV", "id": "<OAUTH_KV id>" },
+        { "binding": "CACHE_KV", "id": "<CACHE_KV id>" }
       ],
       "ratelimits": [
         { "name": "AUTH_RATE_LIMIT", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } }
