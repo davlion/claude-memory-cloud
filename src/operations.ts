@@ -22,7 +22,7 @@ export interface OpResult {
 }
 
 export interface SearchHit { scope: string; name: string; description: string; snippet: string }
-export interface IndexResult { text: string; version: string; head: HeadCommit | null }
+export interface IndexResult { text: string; version: string; head: HeadCommit | null; /** Names of memories that look personal (restricted, or candid in a client/project scope). Names only. */ flagged: string[] }
 export interface ScopeFailure { scope: string; error: ErrorCode; message: string; action?: string; retryable: boolean }
 
 export function scopeFailure(scope: string, e: unknown): ScopeFailure {
@@ -46,6 +46,20 @@ function entries(snap: Snapshot): { list: IndexEntry[]; conflicts: string[] } {
     }
   }
   return { list, conflicts };
+}
+
+/** Memories (by name) whose text the personal guard flags: restricted anywhere, candid in client/project scopes. Unreadable files and conflict copies are skipped. */
+function flaggedNames(snap: Snapshot, kind: GuardContext["kind"]): string[] {
+  const out: string[] = [];
+  for (const [path, f] of snap.files) {
+    const p = parseMemoryPath(path);
+    if (!p || p.conflict || f.unreadable) continue;
+    let text: string;
+    try { const m = parseMemory(f.content); text = `${p.name}\n${m.description}\n${m.body}`; } catch { text = `${p.name}\n${f.content}`; }
+    const hit = scanPersonal(text);
+    if (hit && (hit.tier === "restricted" || kind !== "general")) out.push(p.name);
+  }
+  return out;
 }
 
 /** Index after applying `changes` to `snap`. */
@@ -170,11 +184,11 @@ export async function readMemories(store: Store, t: Target, names: string[]) {
  * (spec §10b: a hand edit can't inject text). The version is the SHA-1 of the rebuilt text, so a hand-edited
  * memory changes it even when MEMORY.md is untouched ("none" for a set with no memories).
  */
-export async function getIndexVersioned(store: Store, t: Target): Promise<IndexResult> {
+export async function getIndexVersioned(store: Store, t: Target, kind: GuardContext["kind"] = "general"): Promise<IndexResult> {
   const snap = await store.snapshot(t.repo, t.prefix);
   const { list, conflicts } = entries(snap);
   const text = buildIndex(t.displayLabel, list, conflicts);
-  return { text, version: snap.files.size === 0 ? "none" : await sha1Hex(text), head: snap.head };
+  return { text, version: snap.files.size === 0 ? "none" : await sha1Hex(text), head: snap.head, flagged: flaggedNames(snap, kind) };
 }
 
 async function sha1Hex(s: string): Promise<string> {

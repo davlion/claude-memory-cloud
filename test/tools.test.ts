@@ -138,6 +138,29 @@ describe("memory_index", () => {
     expect(t).toContain("⚠ provenance:dav/mem — latest commit c2 on 2026-10-13 was made outside the memory server");
     expect(t).toContain("https://github.com/dav/mem/commit/c2");
   });
+  const putMem = (repo: string, name: string, body: string) =>
+    store.put(repo, `memories/${name}.md`, serializeMemory({ name, description: "d", type: "user", body }), "Memory-Source: test");
+  it("health flags restricted memories by name only", async () => {
+    putMem("dav/mem", "lawyer-note", "my lawyer agrees zebrafish\n");
+    putMem("dav/mem", "work-note", "Use pnpm.\n");
+    healthyGitHub();
+    const t = (await callTool(deps, "memory_index", {})).text;
+    expect(t).toContain("⚠ personal:general — 1 memories look personal (lawyer-note) → move them to claude.ai memory and delete them");
+    expect(t).not.toMatch(/personal:general[^\n]*work-note/);
+    expect(t).not.toContain("zebrafish");
+  });
+  it("no personal line for a clean scope", async () => {
+    putMem("dav/mem", "work-note", "Use pnpm.\n");
+    healthyGitHub();
+    expect((await callTool(deps, "memory_index", {})).text).not.toContain("personal:");
+  });
+  it("lists at most 5 flagged names and the full count", async () => {
+    for (let i = 1; i <= 7; i++) putMem("dav/mem", `legal-${i}`, "my lawyer agrees\n");
+    healthyGitHub();
+    const line = (await callTool(deps, "memory_index", {})).text.split("\n").find((l) => l.includes("personal:general"))!;
+    expect(line).toContain("7 memories look personal (legal-1, legal-2, legal-3, legal-4, legal-5…)");
+    expect(line).not.toContain("legal-6");
+  });
   it("no provenance warning for server commits", async () => {
     await save({ name: "a" });
     healthyGitHub();

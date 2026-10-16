@@ -73,7 +73,7 @@ async function changesSince(d: ToolDeps, since: Record<string, string>, nonce: s
       let t: Target;
       try { t = targetForKey(d.cfg, key); } catch { delete next[key]; continue; }
       try {
-        const cur = await getIndexVersioned(d.store, t);
+        const cur = await getIndexVersioned(d.store, t, guardContext(d.cfg, t).kind);
         if (cur.version !== version) { parts.push(indexBlock(t, cur.text, nonce)); next[key] = cur.version; }
       } catch { /* keep this key's old version */ }
     }
@@ -113,9 +113,14 @@ async function gather(d: ToolDeps, a: Record<string, unknown>, nonce: string): P
   const heads = new Map<string, HeadCommit>();
   for (const t of targets) {
     try {
-      const idx = await getIndexVersioned(d.store, t);
+      const idx = await getIndexVersioned(d.store, t, guardContext(d.cfg, t).kind);
       blocks.push(indexBlock(t, idx.text, nonce));
       since[t.scopeLabel] = idx.version;
+      if (idx.flagged.length) {
+        health.push({ check: `personal:${t.scopeLabel}`, status: "warn",
+          detail: `${idx.flagged.length} memories look personal (${idx.flagged.slice(0, 5).join(", ")}${idx.flagged.length > 5 ? "…" : ""})`,
+          action: "move them to claude.ai memory and delete them" });
+      }
       if (idx.head) heads.set(t.repo, idx.head);
     } catch (e) {
       health.push(indexFailCheck(d, t, e));
