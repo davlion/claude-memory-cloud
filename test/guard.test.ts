@@ -187,6 +187,98 @@ const WORK_FACTS = [
   "Stripe fee disputes are handled by the billing service",
 ];
 
+// Memories are usually written about the user ("The user prefers …"), so the backstop must read that form too.
+const THIRD_PERSON: Record<string, string[]> = {
+  sexuality: ["The user is gay", "the user is bisexual", "User came out last year", "I'm queer", "The user is queer"],
+  health: [
+    "The user has a dentist appointment on the 14th",
+    "the user's doctor changed their medication",
+    "User was diagnosed with diabetes",
+    "The user is seeing a therapist on Fridays",
+    "the user has ADHD",
+    "my partner is sick",
+    "the user is pregnant",
+  ],
+  finances: [
+    "The user's mortgage rate went up",
+    "User owes about $12k on a credit card",
+    "The user earns $90k a year",
+    "the user is moving their IRA",
+  ],
+  family: [
+    "User is going through a divorce",
+    "the user's wife is travelling next week",
+    "The user is getting married in June",
+    "User's kids have a recital",
+    "the user's partner is expecting",
+  ],
+  location: [
+    "The user lives in Lyon, France",
+    "the user's home is on Elm Street",
+    "User moved to Lisbon",
+    "The user lives in a small town near the coast",
+  ],
+  schedule: [
+    "The user will be away from 3 to 20 November",
+    "User is on vacation until the 14th",
+    "the user's flight leaves on the 2nd",
+    "The user wakes up at 5 and goes to the gym",
+  ],
+  business_terms: [
+    "User's hourly rate for Acme is $150",
+    "the user's rate for this client is $150/hour",
+    "The user charges double for weekend work",
+    "the user's invoice is 60 days overdue",
+    "Acme owes the user for March",
+  ],
+  beliefs: ["The user votes for the green party", "the user's political views lean left", "The user goes to church on Sundays"],
+  legal: ["the user's lawyer says to wait", "The user was arrested once", "the user's visa renewal is pending", "The developer is suing a former employer"],
+};
+
+const THIRD_PERSON_CANDID: Record<string, string[]> = {
+  candid: [
+    "The user finds Acme's CTO incompetent",
+    "User's opinion: Acme's business plan is weak",
+    "The user thinks the client's founders are clueless",
+    "the user can't stand the client's CEO",
+    "I think the client's migration plan is badly thought through and their lead architect is out of his depth",
+  ],
+};
+
+// The app-user sense ("the user model", "each user's address") is a work fact.
+const THIRD_PERSON_WORK_FACTS = [
+  "The user prefers small, focused commits",
+  "the user's home directory holds the dotfiles",
+  "the user's address field is validated server-side",
+  "each user's billing address lives in the accounts table",
+  "the user table has a diagnosis column",
+  "the user record stores the diagnosis code",
+  "the user is redirected to the login page",
+  "the user session expires after 30 minutes",
+  "the user invoices endpoint is paginated",
+  "the current user's rate limit is 100 requests per minute",
+  "User wants PRs under 300 lines",
+  "the user works with Acme on Mondays",
+  "the user owns the deploy pipeline",
+  "the user's partner API key is in the vault",
+  "they moved to Kubernetes last year",
+  "If the user is on vacation, pause the digest emails",
+  "when the user's invoice is overdue, show a banner",
+  "Once the user moves to the new plan, bill them monthly",
+];
+
+describe("scanPersonal: third-person phrasing", () => {
+  for (const [category, sentences] of Object.entries(THIRD_PERSON)) {
+    describe(category, () => {
+      for (const s of sentences) it(`refuses: ${s}`, () => expect(scanPersonal(s)).toEqual(restricted(category)));
+    });
+  }
+  for (const [category, sentences] of Object.entries(THIRD_PERSON_CANDID)) {
+    for (const s of sentences) it(`flags: ${s}`, () => expect(scanPersonal(s)).toEqual({ tier: "candid", category }));
+  }
+  for (const s of THIRD_PERSON_WORK_FACTS) it(`passes: ${s}`, () => expect(scanPersonal(s)).toBeNull());
+});
+
 describe("scanPersonal: restricted tiers", () => {
   for (const [category, sentences] of Object.entries(POSITIVE)) {
     describe(category, () => {

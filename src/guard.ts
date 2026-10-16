@@ -16,7 +16,8 @@ export type PersonalHit =
   | { tier: "candid"; category: "candid" | "about_others" };
 
 // Restricted tiers favor recall: refusing a harmless fact is acceptable, leaking a personal one is not.
-// Most rules need a first-person frame ("my …", "I …") so ordinary work text with the same words passes.
+// Most rules need a first-person frame ("my …", "I …") so ordinary work text with the same words passes; text about
+// "the user" is rewritten to the first person first (see firstPerson below).
 // Rules run in order; the first match wins. Text is matched after NFKC + format-character stripping.
 
 const HEALTH_TERMS =
@@ -29,7 +30,7 @@ const FINANCE_TERMS =
 const HOUSEHOLD_FINANCE_TERMS = "401\\(?k\\)?|mortgage|savings|tax returns?|bank account|household (?:budget|income|bills)|family budget|rent(?! (?:service|api|table|module|endpoint))";
 
 const FAMILY_TERMS =
-  "kids?|child(?:ren)?|sons?|daughters?|wife|husband|spouse|mother|father|mom|mum|dad|parents|brothers?|sisters?|siblings?|baby|grand(?:mother|father|parents|ma|pa)|girlfriend|boyfriend|fianc\\w+|family|wedding|in-laws?";
+  "kids?|child(?:ren)?|sons?|daughters?|wife|husband|spouse|partners?(?!\\s+(?:api|apis|portal|integrations?|programs?|compan(?:y|ies)|orgs?|agenc(?:y|ies)|teams?|network|accounts?|keys?|ids?|sdk|tier))|mother|father|mom|mum|dad|parents|brothers?|sisters?|siblings?|baby|grand(?:mother|father|parents|ma|pa)|girlfriend|boyfriend|fianc\\w+|family|wedding|in-laws?";
 
 const LOCATION_TERMS =
   "home|house|apartment|flat|neighbou?rhood|street|hometown|zip code|postcode|(?:mailing|postal|street|current|new) address";
@@ -40,7 +41,7 @@ const PRIVATE_LIFE =
 // A single word that is not a function word, determiner, pronoun or common work noun. Matched case-insensitively
 // (not everyone capitalizes names), so the stoplist is what keeps "the server is ..." and "it earns ..." out.
 const NOT_A_NAME =
-  "the|a|an|this|that|these|those|our|their|my|your|his|her|its|i|we|you|it|they|he|she|me|us|them|who|which|what|there|here|and|or|but|so|if|when|then|also|still|not|never|just|now|recently|currently|is|was|are|were|be|been|being|has|had|have|do|does|did|will|would|can|could|should|may|might|to|of|in|on|for|with|by|from|as|at|about|after|before|while|because|since|than|very|more|most|all|some|any|each|every|no|one|two|new|old|other|another|such|only|even|both|either|many|much|few|own|same|server|servers|service|services|api|apis|app|apps|process|processes|job|jobs|team|teams|system|systems|module|modules|function|functions|client|clients|company|project|org|repo|database|db|worker|workers|queue|cache|pipeline|build|test|tests|code|data|user|users|customer|customers|vendor|contractor|investor|manager|boss|owner|management|leadership|colleague|coworker|ceo|cto|cfo|founder|founders|friend|contact|neighbor|neighbour|landlord";
+  "the|a|an|this|that|these|those|our|their|my|your|his|her|its|i|we|you|it|they|he|she|me|us|them|who|which|what|there|here|and|or|but|so|if|when|then|also|still|not|never|just|now|recently|currently|is|was|are|were|be|been|being|has|had|have|do|does|did|will|would|can|could|should|may|might|to|of|in|on|for|with|by|from|as|at|about|after|before|while|because|since|than|very|more|most|all|some|any|each|every|no|one|two|new|old|other|another|such|only|even|both|either|many|much|few|own|same|am|server|servers|service|services|api|apis|app|apps|process|processes|job|jobs|team|teams|system|systems|module|modules|function|functions|client|clients|company|project|org|repo|database|db|worker|workers|queue|cache|pipeline|build|test|tests|code|data|user|users|customer|customers|vendor|contractor|investor|manager|boss|owner|management|leadership|colleague|coworker|ceo|cto|cfo|founder|founders|friend|contact|neighbor|neighbour|landlord";
 const NAME = `(?!(?:${NOT_A_NAME})\\b)[a-z]{2,}`;
 
 // Destinations after "moved to" / "live in" that are tools or things, not places.
@@ -50,10 +51,10 @@ const DEST_ARTICLE = "a|an|the|new|my|our|this|that|one|another|each|every|some|
 const LEAD = "(?:(?:is|was|has|had|are|just|recently|currently|now|been|got|have|will be)\\s+){0,3}";
 const ROLE_NOUN =
   "(?:client|customer|founders?|ceo|cto|cfo|boss|manager|colleagues?|coworkers?|co-workers?|vendor|contractor|investors?|management|leadership|owner|team lead)";
-const PERSON_ROLE = `(?:the|my|our)\\s+${ROLE_NOUN}(?:'s)?`;
+const PERSON_ROLE = `(?:the|my|our|[a-z]+'s)\\s+${ROLE_NOUN}(?:'s)?`;
 const PERSON_ANY = `(?:their|his|her|${PERSON_ROLE}|(?:he|she|they))`;
 const NEG =
-  "(?:weak|bad|terrible|awful|stupid|dumb|incompetent|inept|useless|doomed|hopeless|lazy|dishonest|unprofessional|mediocre|toxic|clueless|shady|sloppy|idiotic|unreliable|disorganized|amateurish|pathetic|a joke|garbage|greedy|arrogant|manipulative|delusional|unethical|corrupt|rude|incapable)";
+  "(?:weak|bad|terrible|awful|stupid|dumb|incompetent|inept|useless|doomed|hopeless|lazy|dishonest|unprofessional|mediocre|toxic|clueless|shady|sloppy|idiotic|unreliable|disorganized|amateurish|pathetic|a joke|garbage|half-baked|(?:badly|poorly) thought (?:out|through)|out of (?:his|her|their) depth|greedy|arrogant|manipulative|delusional|unethical|corrupt|rude|incapable)";
 
 // "<Place>, <Region>" (US state, Canadian province, country, or a postal code) is a place even when the first
 // word is also a tool name ("Postgres, Tennessee"). Names match case-insensitively; two-letter codes must be capitalized.
@@ -79,7 +80,7 @@ const RESTRICTED_RULES: [RestrictedCategory, RegExp][] = [
   ...PLACE_RULES,
   [
     "sexuality",
-    /\b(?:sexual orientation|sex life|my gender (?:identity|transition)|(?:i|i'm|i am)\b[^.!?\n]{0,25}\b(?:gay|lesbian|bisexual|transgender|nonbinary|non-binary|asexual|pansexual)|i came out)\b/i,
+    /\b(?:sexual orientation|sex life|my gender (?:identity|transition)|(?:i|i'm|i am)\b[^.!?\n]{0,25}\b(?:gay|lesbian|bisexual|queer|transgender|nonbinary|non-binary|asexual|pansexual)|i came out)\b/i,
   ],
   ["health", new RegExp(`\\b(?:my|i)\\b(?!/)[^.!?\\n]{0,40}?\\b(?:${HEALTH_TERMS})\\b(?![-/])`, "i")],
   ["legal", /\bmy\s+(?:\w+\s+){0,2}(?:lawsuit|lawyer|attorney|solicitor|visa|green card|immigration|citizenship|asylum|court (?:date|case|hearing)|custody|divorce|restraining order|criminal record|arrest|probation|parole|legal (?:case|troubles?|issues?))\b/i],
@@ -90,6 +91,7 @@ const RESTRICTED_RULES: [RestrictedCategory, RegExp][] = [
   ["finances", /\bi\s+(?:owe|earn|earned|inherited)\b|\bi(?:'m| am)\s+(?:in debt|broke)\b/i],
   ["family", new RegExp(`\\bmy\\s+(?:\\w+\\s+)?(?:${FAMILY_TERMS})\\b`, "i")],
   ["family", /\b(?:i'?m|i am)\s+(?:getting\s+(?:married|divorced)|engaged|expecting)\b|\bour baby\b/i],
+  ["family", /\bi(?:'m| am| was|'ve| have| had)?\s+(?:(?:just|recently|now|currently|been|being)\s+)*(?:going through (?:a |an )?(?:divorce|separation|breakup)|getting (?:a )?divorced?|divorced|separated)\b/i],
   ["location", new RegExp(`\\bmy\\s+(?:\\w+\\s+){0,2}(?:${LOCATION_TERMS})\\b(?!\\s*(?:dir|directory|folder|network|server|lab|router|assistant|page|screen|config|office|machine|setup|nas|wifi|wi-fi))`, "i")],
   ["location", /\bmy\s+(?:home\s+)?address\s+is\b/i],
   ["location", new RegExp(`\\bwe\\s+live\\s+(?:in|near|on|at)\\s+(?!(?:${DEST_TECH}|${DEST_ARTICLE})\\b)[a-z]`, "i")],
@@ -129,6 +131,10 @@ const CANDID_RULES: [PersonalHit & { tier: "candid" }, RegExp][] = [
   ],
   [
     { tier: "candid", category: "candid" },
+    new RegExp(`\\bmy\\s+(?:honest\\s+|candid\\s+|personal\\s+|own\\s+)?(?:opinion|view|take|impression)\\b[^.!?\\n]{0,40}?(?:\\b${PERSON_ANY}|\\b[a-z]+'s)\\b[^.!?\\n]{0,40}?\\b${NEG}\\b`, "i"),
+  ],
+  [
+    { tier: "candid", category: "candid" },
     new RegExp(`\\bi\\s+(?:(?:can't|cannot|can not|don't|do not)\\s+(?:stand|trust|respect)|despise|loathe|distrust|resent|dislike|hate)\\s+(?:working with\\s+)?${PERSON_ROLE}`, "i"),
   ],
   [{ tier: "candid", category: "about_others" }, new RegExp(`\\b${NAME}(?:'s)?\\s+${LEAD}${PRIVATE_LIFE}`, "i")],
@@ -140,8 +146,43 @@ const CANDID_RULES: [PersonalHit & { tier: "candid" }, RegExp][] = [
   ],
 ];
 
+// Memories are usually written about the user ("The user lives in Lyon"), so third-person text about the user is
+// rewritten to the first person before matching, and every first-person rule reads it too. Only "the user"/"the
+// developer", or "User" opening a sentence, counts as the subject; "each user's", "the current user", "a user" and
+// "if/when the user" are the app-user sense and stay as they are, and so do "the user's <noun> field/table/…" and
+// "the user invoices endpoint".
+const SCHEMA_NOUN =
+  "fields?|columns?|tables?|models?|records?|objects?|propert(?:y|ies)|attributes?|schemas?|entit(?:y|ies)|dtos?|types?|structs?|rows?|keys?|ids?|endpoints?|pages?|screens?|forms?|tabs?|components?|directory|directories|dir|dirs|folders?|sessions?|tokens?|profiles?|settings|preferences|data|input|interface|ui|list|limits?|apis?|roles?|accounts?|stor(?:y|ies)|flows?|journeys?|groups?|config|cache|modules?|services?|docs|counts?|query|queries|path|paths|env|environment";
+// "If/when the user …" describes app behavior, not the user.
+const SUBJECT = "(?:(?<!\\b(?:if|when|whenever|once|unless|until|after|before|while|let|lets|so that)\\s+)\\bthe\\s+(?:user|developer)|(?:^|(?<=[.!?;:\\n]\\s*))user)";
+const KEEP_VERBS =
+  "was|wasn't|had|hadn't|will|won't|would|'ll|can|can't|cannot|could|should|did|didn't|moved|relocated|lived|owed|earned|inherited|charged|billed|invoiced|voted|prayed|went|attended|found|thought|felt|believed|got|came|grew|sued|travell?ed|flew|commuted|stayed|visited|negotiated|recently|just|also|still|now|never|currently|often|usually|always|sometimes";
+const S_VERBS =
+  "lives|moves|relocates|owes|earns|charges|bills|invoices|votes|prays|attends|finds|thinks|feels|believes|reckons|suspects|dislikes|hates|despises|loathes|distrusts|resents|wakes|travels|commutes|drives|visits|stays|negotiates|sues";
+const IRREGULAR: Record<string, string> = { is: "am", "isn't": "am not", has: "have", "hasn't": "haven't", does: "do", "doesn't": "don't", goes: "go", flies: "fly" };
+const SUBJ_POSS_RE = new RegExp(`${SUBJECT}'s\\b(?!\\s+(?:[\\w-]+\\s+){0,2}(?:${SCHEMA_NOUN})\\b)`, "gi");
+const SUBJ_VERB_RE = new RegExp(`${SUBJECT}\\s+(${Object.keys(IRREGULAR).join("|")}|${S_VERBS}|${KEEP_VERBS})\\b(?!\\s+(?:${SCHEMA_NOUN})\\b)`, "gi");
+const PAYS_USER_RE = /\b(owes?|owed|pays?|paying|paid)\s+the\s+user\b/gi;
+
+function firstPerson(t: string): string {
+  return t.split(/(?<=[.!?\n])/).map((sentence) => {
+    let hit = false;
+    let out = sentence
+      .replace(SUBJ_POSS_RE, () => { hit = true; return "my"; })
+      .replace(SUBJ_VERB_RE, (_m, verb: string) => {
+        hit = true;
+        const v = verb.toLowerCase();
+        return `I ${IRREGULAR[v] ?? (new RegExp(`^(?:${S_VERBS})$`).test(v) ? v.slice(0, -1) : v)}`;
+      })
+      .replace(PAYS_USER_RE, (_m, verb: string) => { hit = true; return `${verb} me`; });
+    // In a sentence about the user, "their" is the user's ("the user is moving their IRA").
+    if (hit) out = out.replace(/\btheir\b/gi, "my");
+    return out;
+  }).join("");
+}
+
 export function scanPersonal(text: string): PersonalHit | null {
-  const t = normalizeForMatch(text).replace(/[‘’ʼ]/g, "'");
+  const t = firstPerson(normalizeForMatch(text).replace(/[‘’ʼ]/g, "'"));
   for (const [category, re] of RESTRICTED_RULES) if (re.test(t)) return { tier: "restricted", category };
   for (const [hit, re] of CANDID_RULES) if (re.test(t)) return hit;
   return null;
