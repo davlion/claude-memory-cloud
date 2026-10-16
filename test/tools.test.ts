@@ -338,6 +338,12 @@ describe("instructions tier rule (personal memory guard)", () => {
     }
   });
 
+  it("in chat, candid or about-others facts go to built-in memory, general only on explicit request", () => {
+    const candid = INSTRUCTIONS.slice(INSTRUCTIONS.indexOf("Candid opinions"));
+    expect(candid).toMatch(/^Candid opinions[^.]*: in chat use built-in memory \(general only if explicitly asked\); elsewhere don't save/);
+    expect(INSTRUCTIONS).toContain("claude.ai chat (web, Desktop, mobile)");
+  });
+
   it("puts the tier rule right after the save rules, ahead of source and errors", () => {
     const t = instructionsFor({ general: "dav/mem", acme: "a/b" });
     expect(t.indexOf("built-in memory")).toBeGreaterThan(t.indexOf("Save lasting facts"));
@@ -364,6 +370,7 @@ describe("instructionsFor (Level 4 H6 findings)", () => {
     const t = instructionsFor({ general: "dav/mem", acme: "acme-org/claude-memory" });
     expect(t).toContain('This user\'s scopes: "general", client "acme", and "project" (one per codebase).');
     expect(t).toContain("could belong to more than one of these");
+    expect(t).toContain('(for example "we …" could mean the user or a client)');
     expect(t).toContain("ask in one line before saving");
   });
 
