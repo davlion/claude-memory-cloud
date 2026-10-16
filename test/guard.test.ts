@@ -52,6 +52,9 @@ const POSITIVE: Record<string, string[]> = {
     "we're relocating to denver",
     "we live in portland",
     "we live in a small town",
+    "I'm moving to Postgres, Tennessee",
+    "It's just down the road from Paris, Texas",
+    "we relocated to Springfield, IL",
   ],
   schedule: [
     "I'll be away from 3 to 20 November",
@@ -62,6 +65,11 @@ const POSITIVE: Record<string, string[]> = {
     "my flight leaves on the 2nd",
     "I'm in Paris 3-10 Dec",
     "I'll be on parental leave in March",
+    "I can't wait to travel to Postgres, Tennessee",
+    "I'm flying to Kubernetes next week",
+    "my trip to Docker, Ontario",
+    "i'm heading to berlin on friday",
+    "we travel to client sites every month",
   ],
   business_terms: [
     "my rate for this client is $150/hour",
@@ -150,6 +158,11 @@ const WORK_FACTS = [
   "we live in a monorepo",
   "we moved to postgres last year",
   "i'm moving to typescript",
+  "I'm moving to Postgres",
+  "the Paris, Texas office handles billing",
+  "Postgres, or MySQL, backs the billing service",
+  "I wrote the travel booking service",
+  "my travel plans module needs tests",
 ];
 
 describe("scanPersonal: restricted tiers", () => {

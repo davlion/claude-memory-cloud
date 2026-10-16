@@ -52,7 +52,28 @@ const PERSON_ANY = `(?:their|his|her|${PERSON_ROLE}|(?:he|she|they))`;
 const NEG =
   "(?:weak|bad|terrible|awful|stupid|dumb|incompetent|inept|useless|doomed|hopeless|lazy|dishonest|unprofessional|mediocre|toxic|clueless|shady|sloppy|idiotic|unreliable|disorganized|amateurish|pathetic|a joke|garbage|greedy|arrogant|manipulative|delusional|unethical|corrupt|rude|incapable)";
 
+// "<Place>, <Region>" (US state, Canadian province, country, or a postal code) is a place even when the first
+// word is also a tool name ("Postgres, Tennessee"). Names match case-insensitively; two-letter codes must be capitalized.
+const REGION_NAMES =
+  "alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming|ontario|quebec|british columbia|alberta|manitoba|saskatchewan|nova scotia|new brunswick|newfoundland|prince edward island|usa|united states|uk|united kingdom|england|scotland|wales|ireland|canada|mexico|brazil|argentina|chile|colombia|peru|france|germany|spain|portugal|italy|netherlands|belgium|switzerland|austria|sweden|norway|denmark|finland|poland|czechia|czech republic|greece|turkey|israel|egypt|south africa|nigeria|kenya|morocco|india|pakistan|china|japan|south korea|korea|vietnam|thailand|indonesia|philippines|singapore|malaysia|australia|new zealand|uae|russia|ukraine";
+const REGION_CODES =
+  "AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC|ON|QC|BC|AB|MB|SK|NS|NB|NL|PE";
+const PLACE_WORDS = "[a-z][a-z.'-]*(?:\\s+[a-z][a-z.'-]*)?";
+/** Two rules (names, then capitalized codes) for `prefix` followed by "<Place>, <Region>". */
+const withPlace = (prefix: string, category: RestrictedCategory): [RestrictedCategory, RegExp][] => [
+  [category, new RegExp(`${prefix}${PLACE_WORDS},\\s*(?:${REGION_NAMES})\\b`, "i")],
+  [category, new RegExp(`${prefix}${PLACE_WORDS.replace(/a-z/g, "A-Za-z")},\\s*(?:${REGION_CODES})\\b`)],
+];
+const PLACE_PREP = "\\b(?:in|to|from|near|at|around|outside|by)\\s+";
+const FIRST_PERSON = "\\b(?:i|we|my)\\b[^.!?\\n]{0,40}?\\b";
+const PLACE_RULES: [RestrictedCategory, RegExp][] = [
+  ...withPlace(`${FIRST_PERSON}(?:mov(?:e|ed|ing)|relocat\\w+|live[sd]?|living|stay\\w*|grew|born|based|commut\\w+|home|house|family|drive|driving|visit\\w*)\\b[^.!?\\n]{0,30}?${PLACE_PREP}`, "location"),
+  ...withPlace(`${FIRST_PERSON}(?:travel\\w*|trip|fly|flying|flew|flight|head\\w*)\\b[^.!?\\n]{0,30}?${PLACE_PREP}`, "schedule"),
+  ...withPlace("\\b(?:down the road from|a short drive from|(?:minutes|miles|hours) (?:away )?from)\\s+", "location"),
+];
+
 const RESTRICTED_RULES: [RestrictedCategory, RegExp][] = [
+  ...PLACE_RULES,
   [
     "sexuality",
     /\b(?:sexual orientation|sex life|my gender (?:identity|transition)|(?:i|i'm|i am)\b[^.!?\n]{0,25}\b(?:gay|lesbian|bisexual|transgender|nonbinary|non-binary|asexual|pansexual)|i came out)\b/i,
@@ -76,7 +97,9 @@ const RESTRICTED_RULES: [RestrictedCategory, RegExp][] = [
   ["location", /\b(?:i|we)(?:'ve| have)?\s+(?:moved|moving|relocated|relocating)\s+(?:in)?to\s+(?:a|an|the|my|our)\s+(?:\w+\s+)?(?:house|apartment|flat|home|town|city|suburb|neighbou?rhood|condo)\b/i],
   ["schedule", /\bi(?:'ll| will|'m| am)\s+(?:be\s+)?(?:away|unavailable|offline|out of (?:the )?office|on (?:\w+\s+)?(?:vacation|holiday|leave|pto)|out (?:from|until|on|next|this|all|for)|off (?:on|from|until|next|this|for)|(?:travell?ing|flying)\s+(?:to|on|next|from))\b/i],
   ["schedule", /\b[Ii](?:'ll| will|'m| am)\s+(?:be\s+)?in\s+[A-Z]\w+(?:\s+[A-Z]\w+)?\s+(?:(?:on|from|until|for|between|the)\s+)?\d/],
-  ["schedule", /\bmy\s+(?:\w+\s+){0,2}(?:vacation|holidays?|days? off|day off|trip|flight|travel plans|routine|gym|bedtime|commute|sabbatical|time off|pto)\b/i],
+  ["schedule", /\bmy\s+(?:\w+\s+){0,2}(?:vacation|holidays?|days? off|day off|trip|flight|travel plans(?!\s+(?:module|service|api|page|feature|endpoint|component|table|screen))|routine|gym|bedtime|commute|sabbatical|time off|pto)\b/i],
+  ["schedule", /\b(?:i|we)\b[^.!?\n]{0,30}?\b(?:travel\w*|fly|flying|flew)\s+to\s+\w/i],
+  ["schedule", /\b(?:i|we)(?:'m|'ll|'re| am| will| are)?\s+(?:be\s+)?heading\s+(?:out\s+)?to\s+\S+(?:\s+\S+)?\s+(?:on|next|for)\b/i],
   ["schedule", /\bi\s+(?:wake up|go to bed|go to the gym)\b/i],
   ["business_terms", /\bmy\s+(?:\w+\s+){0,2}(?:rates?\b(?!\s+limit)|fees?\b|retainer|invoices?\b|contract(?!s?\s+tests?)\b|pricing|billing rate)/i],
   ["business_terms", /\b(?:i|i'm|we)\s+(?:charge|charged|invoice|invoiced|invoicing|bill|billed)\b/i],
