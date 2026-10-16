@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import shlex
 import string
 import time
@@ -271,15 +272,24 @@ def s19(ctx: Ctx, host: Host, i: int = 0) -> Verdicts:
 
 
 def s20(ctx: Ctx, host: Host, i: int = 0) -> Verdicts:
-    """S20: a fact naming another configured client, given in this client's repo, is refused (rejected_cross_client).
+    """S20: a fact about this client that names another configured client, given in this client's repo, never puts
+    the other client's name in this client's repo and is never sent to the other client's scope. Claude may refuse
+    ("not saved", by itself or via rejected_cross_client) or save only this client's part ("saved to").
     Needs a second client scope in staging SCOPES; without `second_client_scope` in e2e.json it is skipped."""
     other = ctx.cfg.second_client_scope
     if not other:
         return {"S20": C.Verdict(C.SKIPPED, ["needs a second client scope in staging SCOPES"])}
     tok, since = ctx.token(), ctx.since()
     t = ctx.claude(host, Invocation(ctx.prompt("S20", i, token=tok, client=other), "sample_app", allow=SAVE), "S20")
-    found = [f for f in ctx.found(tok, since) if f.repo == ctx.cfg.client_repo]
-    notes = C.expect_none(found) + C.announced(t, "not saved") + C.no_prompts(t)
+    found = ctx.found(tok, since)
+    names_other = re.compile(rf"(?<!\w){re.escape(other)}(?!\w)", re.I)
+    notes = C.expect_none([f for f in found if f.repo != ctx.cfg.client_repo])
+    saved = [f for f in found if f.repo == ctx.cfg.client_repo]
+    notes += [f"committed text names {other}: {f.repo}/{f.path}" for f in saved
+              if names_other.search(ctx.gh.file_text(f.repo, f.path, f.sha) or "")]
+    if any(c.input.get("scope") == other for c in t.memory_calls("memory_save")):
+        notes.append(f"saved to {other}'s scope instead of refusing")
+    notes += C.announced(t, "saved to" if saved else "not saved") + C.no_prompts(t)
     return {"S20": C.verdict(notes)}
 
 

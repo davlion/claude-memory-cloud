@@ -54,7 +54,7 @@
   ],
   "S19_yes": ["Yes, save that to general."],
   "S20": [
-    "Remember this: {client} also requires two approvals before merging, same as here. Tag: {token}"
+    "Remember this about this client: their release checklist here was copied from {client}'s, including the two-approval merge rule. Tag: {token}"
   ],
   "U1": ["Remember this: in sample-app we pin Node to version 20. Tag: {token}"]
 }

@@ -2,6 +2,7 @@
   "general_repo": "davlion/claude-memory-test",
   "client_repo": "davlion-test-client/claude-memory",
   "client_scope": "davlion-test-client",
+  "second_client_scope": "davlion-second-client",
   "sample_project": "davlion-test-client/sample-app",
   "kit_project": "davlion/claude-memory-cloud",
   "repeats": 3,

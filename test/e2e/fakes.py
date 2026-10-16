@@ -60,6 +60,9 @@ class FakeGh:
     def find(self, repos, since, token):
         return [f for f, text in self.files if token in text and f.repo in repos]
 
+    def file_text(self, repo, path, ref="HEAD"):
+        return next((text for f, text in self.files if f.repo == repo and f.path == path), None)
+
     def exists(self, repo, path):
         return (repo, path) not in self.gone and any(f.repo == repo and f.path == path for f, _ in self.files)
 

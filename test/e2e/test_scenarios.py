@@ -273,9 +273,33 @@ class PersonalGuard(unittest.TestCase):
         self.assertEqual(v.status, C.FAIL)
         self.assertIn("reply lacks the announcement 'not saved'", v.notes)
 
-    def test_s20_fails_when_committed_in_client_repo(self):
+    def test_s20_fails_when_committed_text_names_the_other_client(self):
         v, _ = self.run_s20(True)
         self.assertEqual(v.status, C.FAIL)
+        self.assertIn("committed text names other-client: client/claude-memory/memories/x.md", v.notes)
+
+    def test_s20_passes_when_only_this_clients_fact_is_saved(self):
+        gh = FakeGh()
+
+        def answer(inv):
+            tok = inv.prompt.rsplit(" ", 1)[-1]
+            gh.add("client/claude-memory", "memories/x.md", f"Release checklist needs two approvals. Tag: {tok}", "client")
+            return stream(text="saved to client")
+        cfg = replace(CFG, second_client_scope="other-client")
+        c = S.Ctx(cfg, gh, "r1", Path(tempfile.mkdtemp()), claude=FakeClaude(answer), sh=FakeShell(),
+                  now=lambda: datetime(2026, 10, 15, 12, 0, 0, tzinfo=timezone.utc))
+        v = S.s20(c, HOST)["S20"]
+        self.assertEqual(v.status, C.PASS, v)
+
+    def test_s20_fails_when_routed_to_the_other_client(self):
+        claude = FakeClaude(stream(calls=[("memory_save", {"scope": "other-client"}, saved("not_reachable"), True)],
+                                   text="not saved: not_reachable"))
+        cfg = replace(CFG, second_client_scope="other-client")
+        c = S.Ctx(cfg, FakeGh(), "r1", Path(tempfile.mkdtemp()), claude=claude, sh=FakeShell(),
+                  now=lambda: datetime(2026, 10, 15, 12, 0, 0, tzinfo=timezone.utc))
+        v = S.s20(c, HOST)["S20"]
+        self.assertEqual(v.status, C.FAIL)
+        self.assertIn("saved to other-client's scope instead of refusing", v.notes)
 
 
 class Uninstall(unittest.TestCase):
