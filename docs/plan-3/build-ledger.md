@@ -112,3 +112,4 @@ Whole-branch review b0cb0af..6d78dc3: "with fixes", no Critical. Fixed:
 - Minor 3, 4: e2e cleanup deletes only files the run added (reports others); commit listing pages past 100 (dd9a51a).
 - Minor 5, 6, 7, 9: docs count three hooks; snapshot made 0600 before rewrite and the hook never creates the cache dir; MIN_HOOK_VERSION 0.1.2; 0.1.1 → 0.1.2 → uninstall round-trip test.
 - Ruling: Minor 8 (this Mac's CLAUDE.md still the 0.1.1 rule) rejected — the file on disk is 0.1.2; the reviewer saw the copy loaded at this session's start — none.
+- User decision on personal memories: build options 1 + 3 (personal facts stay in claude.ai memory; `general` is for work preferences; a server guard refuses clearly personal content), document option 2 (no connector in claude.ai) as a user choice, defer 4 (encrypted personal scope), reject 5 (separate store).
