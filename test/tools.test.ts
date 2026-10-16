@@ -3,7 +3,7 @@ import { GitHub, GitHubError } from "../src/github";
 import { serializeMemory } from "../src/memory";
 import { saveMemory } from "../src/operations";
 import { resolveTarget } from "../src/scopes";
-import { callTool, createServer, type ToolDeps } from "../src/tools";
+import { callTool, createServer, guardContext, type ToolDeps } from "../src/tools";
 import { INSTRUCTIONS, instructionsFor } from "../src/instructions";
 import { FakeStore } from "./fake-store";
 import { json, mockFetch } from "./setup";
@@ -242,7 +242,7 @@ describe("since map", () => {
     const since = sinceOf((await callTool(deps, "memory_index", { project: "acme-org/billing" })).text);
     expect((await callTool(deps, "memory_read", { scope: "general", names: ["x"], since })).notes).toBeUndefined();
 
-    await saveMemory(store, resolveTarget(cfg, "general"), { name: "from-elsewhere", description: "deploys freeze on fridays", type: "project", body: "b\n", source: "other" });
+    await saveMemory(store, resolveTarget(cfg, "general"), { name: "from-elsewhere", description: "deploys freeze on fridays", type: "project", body: "b\n", source: "other" }, new Date(), { kind: "general", others: [] });
 
     const r = await callTool(deps, "memory_read", { scope: "general", names: ["x"], since });
     expect(r.text).toContain('name="x" error="not_found"');
@@ -273,7 +273,7 @@ describe("since map", () => {
   });
 
   it("one failing key doesn't hide another key's change", async () => {
-    await saveMemory(store, resolveTarget(cfg, "general"), { name: "fresh", description: "brand new fact", type: "user", body: "b\n", source: "o" });
+    await saveMemory(store, resolveTarget(cfg, "general"), { name: "fresh", description: "brand new fact", type: "user", body: "b\n", source: "o" }, new Date(), { kind: "general", others: [] });
     const real = store.snapshot.bind(store);
     store.snapshot = async (repo, prefix) => {
       if (repo === "acme-org/claude-memory") throw new GitHubError("boom", 502, "unavailable");
@@ -406,7 +406,7 @@ describe("resilience, outage and leak guards", () => {
   });
 
   it("memory_search defaults to the same context; scopes widens it", async () => {
-    await saveMemory(store, resolveTarget(cfg, "acme"), { name: "acme-fact", description: "acme deploys fridays", type: "project", body: "fridays\n", source: "t" });
+    await saveMemory(store, resolveTarget(cfg, "acme"), { name: "acme-fact", description: "acme deploys fridays", type: "project", body: "fridays\n", source: "t" }, new Date(), { kind: "general", others: [] });
     healthyGitHub();
     expect((await callTool(deps, "memory_search", { query: "fridays" })).text).toContain("No matching memories.");
     healthyGitHub();
@@ -473,7 +473,7 @@ describe("nonce discipline and untrusted text", () => {
   it("memory_save with a change notice: preamble, Health-style nonce and notes all share one nonce", async () => {
     healthyGitHub();
     const since = sinceOf((await callTool(deps, "memory_index", {})).text);
-    await saveMemory(store, resolveTarget(cfg, "general"), { name: "elsewhere", description: "changed elsewhere", type: "project", body: "b\n", source: "o" });
+    await saveMemory(store, resolveTarget(cfg, "general"), { name: "elsewhere", description: "changed elsewhere", type: "project", body: "b\n", source: "o" }, new Date(), { kind: "general", others: [] });
     const r = await save({ name: "mine", description: "wholly unrelated zebra", since });
     expect(r.text.startsWith("claude-memory response.")).toBe(true);
     expect(r.notes).toContain(`## Memory changed since your index [server:${nonceOf(r.text)}]`);
@@ -484,7 +484,7 @@ describe("nonce discipline and untrusted text", () => {
   it("memory_read notes share the preamble's nonce", async () => {
     healthyGitHub();
     const since = sinceOf((await callTool(deps, "memory_index", {})).text);
-    await saveMemory(store, resolveTarget(cfg, "general"), { name: "elsewhere", description: "changed elsewhere", type: "project", body: "b\n", source: "o" });
+    await saveMemory(store, resolveTarget(cfg, "general"), { name: "elsewhere", description: "changed elsewhere", type: "project", body: "b\n", source: "o" }, new Date(), { kind: "general", others: [] });
     const r = await callTool(deps, "memory_read", { scope: "general", names: ["x"], since });
     expect(r.notes).toContain(`## Since [server:${nonceOf(r.text)}]`);
     expect(r.notes).toContain(`## Memory changed since your index [server:${nonceOf(r.text)}]`);
@@ -617,5 +617,27 @@ describe("memory:// resources", () => {
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).not.toContain("ghu_secret");
     expect((err as Error).message).toContain("GitHub unreachable (network error)");
+  });
+});
+
+describe("memory_save guard wiring", () => {
+  const cfg3 = { general: "dav/mem", acme: "acme-org/claude-memory", globex: "globex-org/claude-memory" };
+  const candid = "I think their business plan is weak\n";
+
+  it("guardContext: general has no others; clients and their projects exclude general and their own scope", () => {
+    expect(guardContext(cfg3, resolveTarget(cfg3, "general"))).toEqual({ kind: "general", others: [] });
+    expect(guardContext(cfg3, resolveTarget(cfg3, "acme"))).toEqual({ kind: "client", others: [{ scope: "globex", owner: "globex-org" }] });
+    expect(guardContext(cfg3, resolveTarget(cfg3, "project", "acme-org/billing"))).toEqual({ kind: "project", others: [{ scope: "globex", owner: "globex-org" }] });
+    expect(guardContext(cfg3, resolveTarget(cfg3, "project", "dav/app"))).toEqual({ kind: "project", others: [] });
+  });
+
+  it("candid needs confirmed: true in general, and confirmed never helps in a client scope", async () => {
+    expect(jsonOf((await save({ name: "c", body: candid })).text)).toMatchObject({ status: "needs_confirmation", category: "candid" });
+    expect(jsonOf((await save({ name: "c", body: candid, confirmed: true })).text).status).toBe("created");
+    expect(jsonOf((await save({ name: "d", scope: "acme", body: candid, confirmed: true })).text)).toMatchObject({ status: "rejected_personal" });
+  });
+
+  it("restricted text is refused through the tool", async () => {
+    expect(jsonOf((await save({ name: "r", body: "my mortgage is 6%\n", force: true })).text)).toMatchObject({ status: "rejected_personal", category: "finances" });
   });
 });

@@ -1,5 +1,6 @@
 import { OpError, RETRYABLE, type ErrorCode } from "./errors";
 import { toOpError } from "./github";
+import { scanCrossClient, scanPersonal } from "./guard";
 import {
   buildIndex, cleanDescription, conflictPath, findSimilar, isValidName, MAX_BODY, MAX_DESCRIPTION, memoryPath, MemoryFormatError,
   parseMemory, parseMemoryPath, serializeMemory, type IndexEntry, type Memory,
@@ -12,10 +13,12 @@ export const MAX_ATTEMPTS = 3;
 const UNREADABLE_MESSAGE = "This file is binary, truncated or otherwise can't be read as text by the memory server.";
 const TYPES = ["user", "feedback", "project", "reference"];
 
-export interface SaveInput { name: string; description: string; type: string; body: string; version?: string; force?: boolean; source?: string }
+export interface SaveInput { name: string; description: string; type: string; body: string; version?: string; force?: boolean; confirmed?: boolean; source?: string }
+/** Where a save lands, for the personal/cross-client guard. `others` are the other clients' scope names and owner logins. */
+export interface GuardContext { kind: "general" | "client" | "project"; others: { scope: string; owner: string }[] }
 export interface OpResult {
-  status: "created" | "updated" | "conflict" | "exists" | "similar_found" | "rejected_secret" | "invalid" | "not_found" | "deleted";
-  name: string; scope: string; commit_url?: string; similar?: IndexEntry[]; conflict_file?: string; pattern?: string; version?: string; message?: string;
+  status: "created" | "updated" | "conflict" | "exists" | "similar_found" | "rejected_secret" | "rejected_personal" | "needs_confirmation" | "rejected_cross_client" | "invalid" | "not_found" | "deleted";
+  name: string; scope: string; commit_url?: string; similar?: IndexEntry[]; conflict_file?: string; pattern?: string; category?: string; client?: string; version?: string; message?: string;
 }
 
 export interface SearchHit { scope: string; name: string; description: string; snippet: string }
@@ -81,7 +84,7 @@ async function withRetry(
   throw new OpError("unavailable", `could not commit after ${MAX_ATTEMPTS} attempts (concurrent writes)`, "Try again in a moment.");
 }
 
-export async function saveMemory(store: Store, t: Target, input: SaveInput, now = new Date()): Promise<OpResult> {
+export async function saveMemory(store: Store, t: Target, input: SaveInput, now: Date, guard: GuardContext): Promise<OpResult> {
   const r = (status: OpResult["status"], extra: Partial<OpResult> = {}): OpResult => ({ status, name: input.name, scope: t.displayLabel, ...extra });
   const description = (input.description ?? "").replace(/\s+/g, " ").trim();
   if (!isValidName(input.name)) return r("invalid", { message: "name must match ^[a-z0-9][a-z0-9-]{0,63}$" });
@@ -92,6 +95,22 @@ export async function saveMemory(store: Store, t: Target, input: SaveInput, now 
   if (input.body.length > MAX_BODY) return r("invalid", { message: `body must be at most ${MAX_BODY} characters; split it into several memories` });
   const pattern = scanForSecrets(`${input.name}\n${description}\n${input.body}\n${input.source ?? ""}`);
   if (pattern) return r("rejected_secret", { pattern, message: "Remove the credential and save again." });
+
+  // Runs on every write (create, update, conflict copy); `force` does not bypass it. Results carry a category, never the matched text.
+  const scanned = `${input.name}\n${description}\n${input.body}`;
+  const hit = scanPersonal(scanned);
+  if (hit) {
+    if (hit.tier === "restricted" || guard.kind !== "general") {
+      return r("rejected_personal", { category: hit.category, message: "Personal facts aren't stored on GitHub; keep it in claude.ai memory." });
+    }
+    if (!input.confirmed) {
+      return r("needs_confirmation", { category: hit.category, message: "Ask the user; save again with confirmed: true only if they explicitly want it kept in general." });
+    }
+  }
+  if (guard.kind !== "general" && guard.others.length) {
+    const client = scanCrossClient(scanned, guard.others);
+    if (client) return r("rejected_cross_client", { client, message: `This names another client (${client}); memories stay within their own client's scope.` });
+  }
 
   const mem: Memory = { name: input.name, description, type: input.type as Memory["type"], body: input.body };
   let content: string;

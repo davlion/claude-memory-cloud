@@ -6,7 +6,7 @@ import { GitHub, toOpError } from "./github";
 import { formatHealth, KV_WRITE_CHECK, notReachableAction, provenanceChecks, runHealth, scopeReachability, type Check, type ScopeReach } from "./health";
 import { instructionsFor } from "./instructions";
 import {
-  deleteMemory, getIndex, getIndexVersioned, readMemories, saveMemory, scopeFailure, searchMemories, type OpResult, type ScopeFailure,
+  deleteMemory, getIndex, getIndexVersioned, readMemories, saveMemory, scopeFailure, searchMemories, type GuardContext, type OpResult, type ScopeFailure,
 } from "./operations";
 import { dataBlock, newNonce, preamble, serverHeading } from "./render";
 import { contextScopes, resolveTarget, type ScopeConfig, type Target } from "./scopes";
@@ -175,6 +175,18 @@ async function memorySearch(d: ToolDeps, a: Record<string, unknown>, nonce: stri
  * Save and delete results: the preamble, then the JSON status object (machine-readable fields unchanged; `similar`
  * lists names only), then each similar memory's description in an escaped data block. Descriptions are memory text.
  */
+/** Guard inputs for a save: the target's kind, and the other clients (never general, never the scope owning this repo) to keep text from. */
+export function guardContext(cfg: ScopeConfig, t: Target): GuardContext {
+  const own = Object.entries(cfg).find(([, repo]) => repo === t.repo)?.[0];
+  const kind = t.scopeLabel.startsWith("project:") ? "project" : t.scopeLabel === "general" ? "general" : "client";
+  // The general scope's repo holds the user's own projects: no other-client check there.
+  if (own === "general" || kind === "general") return { kind, others: [] };
+  const others = Object.entries(cfg)
+    .filter(([name, repo]) => name !== "general" && repo !== t.repo)
+    .map(([scope, repo]) => ({ scope, owner: repo.split("/")[0]! }));
+  return { kind, others };
+}
+
 function framedResult(res: OpResult, nonce: string): string {
   const { similar, ...status } = res;
   const parts = [preamble(nonce), JSON.stringify(similar ? { ...status, similar: similar.map((x) => ({ name: x.name })) } : status, null, 2)];
@@ -204,11 +216,13 @@ async function dispatch(d: ToolDeps, name: string, a: Record<string, unknown>, n
         return ok(await memoryRead(d, a, nonce));
       case "memory_search":
         return ok(await memorySearch(d, a, nonce));
-      case "memory_save":
-        return ok(framedResult(await saveMemory(d.store, resolveTarget(d.cfg, scope, project), {
+      case "memory_save": {
+        const target = resolveTarget(d.cfg, scope, project);
+        return ok(framedResult(await saveMemory(d.store, target, {
           name: String(a.name ?? ""), description: String(a.description ?? ""), type: String(a.type ?? ""), body: String(a.body ?? ""),
-          version: a.version as string | undefined, force: Boolean(a.force), source: a.source as string | undefined,
-        }, now), nonce));
+          version: a.version as string | undefined, force: Boolean(a.force), confirmed: a.confirmed === true, source: a.source as string | undefined,
+        }, now, guardContext(d.cfg, target)), nonce));
+      }
       case "memory_delete":
         return ok(framedResult(await deleteMemory(d.store, resolveTarget(d.cfg, scope, project), String(a.name ?? ""), a.version as string | undefined, a.source as string | undefined, now), nonce));
       default:
@@ -267,7 +281,9 @@ export function createServer(d: ToolDeps): McpServer {
   reg("memory_save", "Create a memory (no version) or update one (pass version from memory_read). scope is required.", {
     scope: requiredScopeArg, project: projectArg, name: z.string(), description: z.string().describe("One line, at most 200 characters."),
     type: z.enum(["user", "feedback", "project", "reference"]), body: z.string(),
-    version: z.string().optional(), force: z.boolean().optional(), source: sourceArg, since: sinceArg },
+    version: z.string().optional(), force: z.boolean().optional(),
+    confirmed: z.boolean().optional().describe("Only after the user explicitly asks to keep a candid or about-someone fact in general."),
+    source: sourceArg, since: sinceArg },
     { readOnlyHint: false, destructiveHint: false });
   reg("memory_delete", "Delete a memory or a conflict copy (name = filename without .md). scope is required. Pass version to avoid deleting a changed memory.", {
     scope: requiredScopeArg, project: projectArg, name: z.string(), version: z.string().optional(), source: sourceArg, since: sinceArg },
