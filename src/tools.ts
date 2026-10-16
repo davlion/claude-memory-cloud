@@ -240,10 +240,12 @@ async function dispatch(d: ToolDeps, name: string, a: Record<string, unknown>, n
 
 const scopeArg = z.string().optional().describe('"general", a client scope name, or "project". Default "general".');
 const requiredScopeArg = z.string().describe('Required. "general", a client scope name, or "project" (then pass project).');
-const projectArg = z.string().optional().describe("Git origin remote URL or owner/repo. Required when scope is \"project\".");
+const projectArg = z.string().optional().describe("Git origin remote URL or owner/repo. Required when scope is \"project\". " +
+  "Without a GitHub origin (for example a session made with claude --cloud), omit it; before a project save, ask the user for its owner/repo.");
 const scopesArg = z.array(z.string()).optional().describe("Client scopes to add to this context's default set.");
 const sourceArg = z.string().optional().describe('Where you are running, e.g. "claude-code on earsvm", "claude.ai chat".');
-const sinceArg = z.record(z.string(), z.string()).optional().describe("The Since map from memory_index (or from the latest change notice).");
+const sinceArg = z.record(z.string(), z.string()).optional().describe("Pass the latest Since map: memory_index's, until a result has a " +
+  "\"Memory changed since your index\" block with that result's server marker; then its indexes replace your copies for those scopes and its new Since map replaces yours.");
 
 function framedIndex(t: Target, text: string): string {
   const nonce = newNonce();
@@ -277,13 +279,15 @@ export function createServer(d: ToolDeps): McpServer {
   reg("memory_scopes", "List your memory scopes and whether you can reach and write them.", {});
   reg("memory_health", "Check memory health for this context (sign-in, scopes, project, rate limit). Each problem includes an action for the user.", {
     project: projectArg, scopes: scopesArg });
-  reg("memory_index", "Call at conversation start. Health, then the memory index for this context: general; with project, also the client scope that owns it and the project. scopes adds named client scopes.", {
+  reg("memory_index", "Call at conversation start. Health, then the memory index for this context: general; with project, also the client scope that owns it and the project. scopes adds named client scopes. " +
+    "If it lists Conflicts, offer to reconcile them: read both files, save the merged content to the original with its version, then memory_delete the conflict copy (its name is the filename without .md).", {
     scopes: scopesArg, project: projectArg });
   reg("memory_read", "Read memories in full. Returns each memory's version for safe updates.", {
     scope: scopeArg, project: projectArg, names: z.array(z.string()).min(1).max(20), since: sinceArg });
   reg("memory_search", "Search memories (all terms must match) in the same scopes memory_index loads; scopes adds named client scopes.", {
     query: z.string().min(1), scopes: scopesArg, project: projectArg, since: sinceArg });
-  reg("memory_save", "Create a memory (no version) or update one (pass version from memory_read). scope is required.", {
+  reg("memory_save", "Create a memory (no version) or update one (pass version from memory_read). scope is required. " +
+    "If it returns similar_found or exists, update instead unless the user wants a separate memory.", {
     scope: requiredScopeArg, project: projectArg, name: z.string(), description: z.string().describe("One line, at most 200 characters."),
     type: z.enum(["user", "feedback", "project", "reference"]), body: z.string(),
     version: z.string().optional(), force: z.boolean().optional(),

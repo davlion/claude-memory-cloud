@@ -328,6 +328,37 @@ describe("createServer", () => {
   });
 });
 
+const LAST_SENTENCE = "If an index lists Conflicts, offer to reconcile them as the memory_index description says.";
+
+describe("instructions tier rule (personal memory guard)", () => {
+  it("routes personal facts to built-in memory, candid facts to confirmed general, and asks about infrastructure", () => {
+    for (const s of ["built-in memory", "not saved: personal — keep it in claude.ai memory", "confirmed: true", "never a client scope",
+      "infrastructure", "another client's scope", "rejected_personal", "needs_confirmation", "rejected_cross_client"]) {
+      expect(INSTRUCTIONS).toContain(s);
+    }
+  });
+
+  it("puts the tier rule right after the save rules, ahead of source and errors", () => {
+    const t = instructionsFor({ general: "dav/mem", acme: "a/b" });
+    expect(t.indexOf("built-in memory")).toBeGreaterThan(t.indexOf("Save lasting facts"));
+    expect(t.indexOf("built-in memory")).toBeLessThan(t.indexOf("Always pass source"));
+  });
+
+  it("keeps operational detail in tool and argument descriptions", async () => {
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "t", version: "0" });
+    await Promise.all([createServer(deps).connect(st), client.connect(ct)]);
+    const tools = (await client.listTools()).tools;
+    const tool = (n: string) => tools.find((x) => x.name === n)!;
+    const arg = (n: string, a: string) => String((tool(n).inputSchema.properties as Record<string, { description?: string }>)[a]!.description);
+    expect(tool("memory_index").description).toContain("save the merged content to the original with its version, then memory_delete the conflict copy");
+    expect(arg("memory_read", "since")).toContain("Pass the latest Since map");
+    expect(arg("memory_save", "since")).toContain("Memory changed since your index");
+    expect(arg("memory_index", "project")).toContain("Without a GitHub origin");
+    expect(arg("memory_index", "project")).toContain("ask the user for its owner/repo");
+  });
+});
+
 describe("instructionsFor (Level 4 H6 findings)", () => {
   it("names the user's client scopes and says to ask when a fact could fit more than one", () => {
     const t = instructionsFor({ general: "dav/mem", acme: "acme-org/claude-memory" });
@@ -346,15 +377,18 @@ describe("instructionsFor (Level 4 H6 findings)", () => {
     expect(t).toContain('client "acme"');
   });
 
-  it("asks for owner/repo without a remote", () => {
-    expect(INSTRUCTIONS).toContain("Without a GitHub origin");
-    expect(INSTRUCTIONS).toContain("ask the user for its owner/repo");
-  });
-
   it("fits Claude Code's 4096-character cap on server instructions, with room to spare", () => {
     const t = instructionsFor({ general: "dav/mem", "acme-corporation": "a/b", "globex-industries": "c/d", "initech-consulting": "e/f" });
     expect(t.length).toBeLessThanOrEqual(4000);
-    expect(t.endsWith("(its name is the filename without .md).")).toBe(true);
+    expect(t.endsWith(LAST_SENTENCE)).toBe(true);
+  });
+
+  it("lists three 17-character client names in full within the cap", () => {
+    const names = ["acme-corporation1", "globex-industries", "initech-consultin"];
+    const t = instructionsFor({ general: "dav/mem", ...Object.fromEntries(names.map((n) => [n, "o/r"])) });
+    expect(t.length).toBeLessThanOrEqual(4000);
+    for (const n of names) expect(t).toContain(`client "${n}"`);
+    expect(t).not.toContain("more (memory_scopes lists them)");
   });
 
   it("stays under the cap with many long client names: lists what fits, then says how many more", () => {
@@ -363,7 +397,7 @@ describe("instructionsFor (Level 4 H6 findings)", () => {
     const t = instructionsFor(cfg);
     expect(t.length).toBeLessThanOrEqual(4000);
     expect(t).toMatch(/(and \d+ more|12 client scopes) \(memory_scopes lists them\)/);
-    expect(t.endsWith("(its name is the filename without .md).")).toBe(true);
+    expect(t.endsWith(LAST_SENTENCE)).toBe(true);
   });
 
   it("puts the scope line with the save rules, ahead of the less important text", () => {
