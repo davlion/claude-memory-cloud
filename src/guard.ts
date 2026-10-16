@@ -22,8 +22,11 @@ export type PersonalHit =
 const HEALTH_TERMS =
   "doctor|physician|cardiolog\\w*|oncolog\\w*|dermatolog\\w*|neurolog\\w*|psychiatr\\w*|psycholog\\w*|therap(?:y|ist|ists)|dentist|orthodont\\w*|surgery|surgeon|diagnosed with|diagnosis|cancer|tumou?rs?|hospital\\w*|illness|diseases?|sick|adhd|autis\\w*|medications?|prescriptions?|antidepressants?|migraines?|blood pressure|cholesterol|anxiety|depression|allerg\\w+|diabet\\w+|asthma|back pain|injur(?:y|ies)|chemo\\w*|pregnan\\w+|physio\\w*|mental health|sick leave|eating disorder|panic attacks?";
 
+// "tech debt" and "our crypto module" are engineering vocabulary; "crypto" alone (or the currency) is money.
 const FINANCE_TERMS =
-  "401\\(?k\\)?|mortgage|savings|salary|debts?|credit (?:score|card)s?|net worth|tax(?:es| returns?)|retirement|pension|investments?|portfolio|bank account|brokerage|loans?|stocks?|crypto\\w*|income|paycheck|bonus|rent";
+  "401\\(?k\\)?|mortgage|savings|salary|(?<!\\b(?:tech|technical|code|design|architectural)\\s)debts?|credit (?:score|card)s?|net worth|tax(?:es| returns?)|retirement|pension|investments?|portfolio|bank account|brokerage|loans?|stocks?|crypto(?:currency|currencies)?\\b(?!\\s+(?:module|modules|library|lib|libs|helpers?|keys?|signing|code|utils?|package|primitives?|api|service|layer|functions?))|bitcoin|income|paycheck|bonus|rent";
+// "our" is usually the team or the client in work text ("our loans service"), so it only frames household money.
+const HOUSEHOLD_FINANCE_TERMS = "401\\(?k\\)?|mortgage|savings|tax returns?|bank account|household (?:budget|income|bills)|family budget|rent(?! (?:service|api|table|module|endpoint))";
 
 const FAMILY_TERMS =
   "kids?|child(?:ren)?|sons?|daughters?|wife|husband|spouse|mother|father|mom|mum|dad|parents|brothers?|sisters?|siblings?|baby|grand(?:mother|father|parents|ma|pa)|girlfriend|boyfriend|fianc\\w+|family|wedding|in-laws?";
@@ -81,7 +84,8 @@ const RESTRICTED_RULES: [RestrictedCategory, RegExp][] = [
   ["health", new RegExp(`\\b(?:my|i)\\b(?!/)[^.!?\\n]{0,40}?\\b(?:${HEALTH_TERMS})\\b(?![-/])`, "i")],
   ["legal", /\bmy\s+(?:\w+\s+){0,2}(?:lawsuit|lawyer|attorney|solicitor|visa|green card|immigration|citizenship|asylum|court (?:date|case|hearing)|custody|divorce|restraining order|criminal record|arrest|probation|parole|legal (?:case|troubles?|issues?))\b/i],
   ["legal", /\bi(?:'m| am| was| got| have been| had been)\s+(?:being\s+)?(?:suing|sued|arrested|charged with|detained|deported|convicted)\b/i],
-  ["finances", new RegExp(`\\b(?:my|our)\\s+(?:[\\w$]+\\s+){0,2}(?:${FINANCE_TERMS})\\b`, "i")],
+  ["finances", new RegExp(`\\bmy\\s+(?:[\\w$]+\\s+){0,2}(?:${FINANCE_TERMS})\\b`, "i")],
+  ["finances", new RegExp(`\\bour\\s+(?:[\\w$]+\\s+){0,2}(?:${HOUSEHOLD_FINANCE_TERMS})\\b`, "i")],
   ["finances", /\b(?:my|our)\s+(?:\w+\s+){0,2}(?:IRA|Roth)\b/],
   ["finances", /\bi\s+(?:owe|earn|earned|inherited)\b|\bi(?:'m| am)\s+(?:in debt|broke)\b/i],
   ["family", new RegExp(`\\bmy\\s+(?:\\w+\\s+)?(?:${FAMILY_TERMS})\\b`, "i")],
@@ -102,10 +106,12 @@ const RESTRICTED_RULES: [RestrictedCategory, RegExp][] = [
   ["schedule", /\b(?:i|we)(?:'m|'ll|'re| am| will| are)?\s+(?:be\s+)?heading\s+(?:out\s+)?to\s+\S+(?:\s+\S+)?\s+(?:on|next|for)\b/i],
   ["schedule", /\bi\s+(?:wake up|go to bed|go to the gym)\b/i],
   ["business_terms", /\bmy\s+(?:\w+\s+){0,2}(?:rates?\b(?!\s+limit)|fees?\b|retainer|invoices?\b|contract(?!s?\s+tests?)\b|pricing|billing rate)/i],
-  ["business_terms", /\b(?:i|i'm|we)\s+(?:charge|charged|invoice|invoiced|invoicing|bill|billed)\b/i],
+  // "we invoice customers through Coupa" is how a team runs billing (a work fact); "I invoice" is the user's own.
+  ["business_terms", /\b(?:i|i'm)\s+(?:charge|charged|invoice|invoiced|invoicing|bill|billed)\b/i],
   ["business_terms", /\b(?:owes?|owed|pays?|paying|paid)\s+me\b|\bi(?:'m| am)\s+owed\b/i],
   ["business_terms", /\b(?:i|i'm|we|we're|my)\b[^.!?\n]{0,25}\bnegotiat\w*\s+(?:\w+\s+){0,2}(?:rates?|fees?|contract|terms|retainer|raise|price|pricing|deal|salary)\b/i],
-  ["business_terms", /\b(?:payment|invoice|billing|fee) disputes?\b/i],
+  // A dispute somebody is in ("a payment dispute over/with …", "my billing dispute"), not the "payment disputes" webhook.
+  ["business_terms", /\b(?:a|an|the|my|our|this|that)\s+(?:\w+\s+)?(?:payment|invoice|billing|fee) dispute\s+(?:over|with|about|regarding|against)\b|\b(?:my|i|i'm|i've)\b[^.!?\n]{0,30}?\b(?:payment|invoice|billing|fee) disputes?\b/i],
   ["business_terms", /\bi\b[^.!?\n]{0,30}\$\s?\d[\d,.]*k?\s*(?:\/|per\s+)(?:h|hr|hour|day|week|month)\b/i],
   ["beliefs", /\bi\s+(?:vote|voted|pray)\b|\bi(?:'ll| will| plan to)\s+vote\b/i],
   ["beliefs", /\bmy\s+(?:\w+\s+){0,2}(?:religio\w*|faith|political|politics|party affiliation|church|prayers?)\b/i],

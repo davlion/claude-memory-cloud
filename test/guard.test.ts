@@ -29,6 +29,10 @@ const POSITIVE: Record<string, string[]> = {
     "I owe about $12k on my credit card",
     "my savings are in a brokerage account",
     "I earn $90k a year",
+    "our mortgage payment is due on the 1st",
+    "my crypto is on Coinbase",
+    "my cryptocurrency wallet",
+    "my student debt",
   ],
   family: [
     "my kids' school pickup",
@@ -80,6 +84,8 @@ const POSITIVE: Record<string, string[]> = {
     "I charge double for weekend work",
     "there is a payment dispute over the last milestone",
     "my contract with them ends in May",
+    "I'm in a payment dispute with Acme",
+    "I invoiced them twice for March",
   ],
   beliefs: [
     "I vote for the green party",
@@ -163,6 +169,22 @@ const WORK_FACTS = [
   "Postgres, or MySQL, backs the billing service",
   "I wrote the travel booking service",
   "my travel plans module needs tests",
+  // "our"/"we" is the team or the client in work text (owner's line: how the client runs billing is a work fact)
+  "Our tech debt list lives in Linear",
+  "Track our technical debt in DEBT.md",
+  "my tech debt list is in Linear",
+  "our cryptography helpers live in src/crypto",
+  "We use our crypto module for signing",
+  "my crypto module wraps WebCrypto",
+  "Stripe opens a payment dispute for each chargeback",
+  "our loans service is written in Go",
+  "our income column is nullable",
+  "Our stocks ticker feed comes from IEX",
+  "our v1 retirement plan",
+  "We invoice customers through Coupa",
+  "We bill monthly via Stripe",
+  "The payment disputes webhook is flaky",
+  "Stripe fee disputes are handled by the billing service",
 ];
 
 describe("scanPersonal: restricted tiers", () => {
