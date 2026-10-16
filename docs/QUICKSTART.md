@@ -205,7 +205,7 @@ The script:
 - keeps a timestamped backup of each file it changes (`settings.json.bak-<time>`, `CLAUDE.md.memkit-backup-<time>`)
 - prints a health report: one line per problem, with what to do about it
 
-**What goes where:** GitHub memory holds facts about work. Candid opinions and facts about other people are declined unless you explicitly ask for `general`; intimate and personal matters (health, finances, family, home and travel, your rates and contracts, beliefs, legal matters) are refused everywhere and belong in claude.ai's built-in memory; machine names and addresses are saved only after Claude asks. A client's information never goes into another client's scope. The server enforces this on every save. See "What should never go in GitHub memory?" in the [FAQ](FAQ.md).
+**What goes where:** GitHub memory holds facts about work. Candid opinions and facts about other people are declined unless you explicitly ask for `general`; intimate and personal matters (health, finances, family, home and travel, your rates and contracts, beliefs, legal matters) are refused everywhere and belong in claude.ai's built-in memory; machine names and addresses are saved only after Claude asks. A client's information never goes into another client's scope. The server checks every save as a backstop: it refuses personal and cross-client text it recognizes, but it matches patterns, so unusual wording can pass. See "What should never go in GitHub memory?" in the [FAQ](FAQ.md).
 
 **Machine names in commits:** each commit records where Claude ran, e.g. "claude-code on <hostname>", which a client can see in their repo. Add `--neutral-source` to `./setup.sh` to record just "claude-code" (`--no-neutral-source` undoes it; the choice is kept on reinstall).
 
