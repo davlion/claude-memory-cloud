@@ -308,7 +308,6 @@ describe("createServer", () => {
 describe("instructionsFor (Level 4 H6 findings)", () => {
   it("names the user's client scopes and says to ask when a fact could fit more than one", () => {
     const t = instructionsFor({ general: "dav/mem", acme: "acme-org/claude-memory" });
-    expect(t.startsWith(INSTRUCTIONS)).toBe(true);
     expect(t).toContain('This user\'s scopes: "general", client "acme", and "project" (one per codebase).');
     expect(t).toContain("could belong to more than one of these");
     expect(t).toContain("ask in one line before saving");
@@ -324,10 +323,21 @@ describe("instructionsFor (Level 4 H6 findings)", () => {
     expect(t).toContain('client "acme"');
   });
 
-  it("prefers the connector over a host's built-in memory, and asks for owner/repo without a remote", () => {
-    expect(INSTRUCTIONS).toContain("Save memories with these tools, not with a host's built-in memory");
-    expect(INSTRUCTIONS).toContain("no GitHub origin");
-    expect(INSTRUCTIONS).toContain("ask the user for its GitHub owner/repo");
+  it("asks for owner/repo without a remote", () => {
+    expect(INSTRUCTIONS).toContain("Without a GitHub origin");
+    expect(INSTRUCTIONS).toContain("ask the user for its owner/repo");
+  });
+
+  it("fits Claude Code's 4096-character cap on server instructions, with room to spare", () => {
+    const t = instructionsFor({ general: "dav/mem", "acme-corporation": "a/b", "globex-industries": "c/d", "initech-consulting": "e/f" });
+    expect(t.length).toBeLessThanOrEqual(4000);
+    expect(t.endsWith("(its name is the filename without .md).")).toBe(true);
+  });
+
+  it("puts the scope line with the save rules, ahead of the less important text", () => {
+    const t = instructionsFor({ general: "dav/mem", acme: "a/b" });
+    expect(t.indexOf("This user's scopes")).toBeLessThan(t.indexOf("Always pass source"));
+    expect(t.indexOf("This user's scopes")).toBeGreaterThan(t.indexOf("Save lasting facts"));
   });
 });
 

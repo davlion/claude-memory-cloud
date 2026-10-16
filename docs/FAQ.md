@@ -126,7 +126,7 @@ Yes. They're plain Markdown files in your repo. The index is rebuilt from the fi
 The setup script turns it off, so memories don't end up in two places. Your existing local memory files are left in place as a backup.
 
 ### What about claude.ai's built-in memory?
-claude.ai chat (web, Desktop and mobile) has its own memory, and it competes with the connector: with both on, "remember this" can land in claude.ai's memory instead of your repo. The connector tells Claude to use it unless you name the built-in feature, but the reliable fix is to turn claude.ai's memory off in claude.ai Settings. The setup script can't do that for you.
+claude.ai chat (web, Desktop and mobile) has its own memory, and it competes with the connector: with both on, "remember this" can land in claude.ai's memory instead of your repo. The reliable fix is to turn claude.ai's memory off in claude.ai Settings. The setup script can't do that for you.
 
 Move what it holds first, because nothing exports it automatically:
 
