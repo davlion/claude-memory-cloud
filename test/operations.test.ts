@@ -272,6 +272,14 @@ describe("index rebuilt from frontmatter (never the stored MEMORY.md)", () => {
     expect(after.text).toContain("Edited by hand elsewhere");
     expect(after.version).not.toBe(before.version);
   });
+  it("runs the personal audit only when asked for (kind given), so since-checks stay cheap", async () => {
+    store.put("dav/mem", "memories/lawyer-note.md", serializeMemory({ name: "lawyer-note", description: "Legal", type: "user", body: "my lawyer says to wait\n" }));
+    const plain = await getIndexVersioned(store, T);
+    const audited = await getIndexVersioned(store, T, "general");
+    expect(plain.flagged).toEqual([]);
+    expect(audited.flagged).toEqual(["lawyer-note"]);
+    expect(plain.version).toBe(audited.version);
+  });
   it("returns the head commit for provenance checks", async () => {
     await saveMemory(store, T, { name: "a", ...base }, NOW, G);
     expect((await getIndexVersioned(store, T)).head?.message).toContain("Memory-Source: test");

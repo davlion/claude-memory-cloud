@@ -73,7 +73,7 @@ async function changesSince(d: ToolDeps, since: Record<string, string>, nonce: s
       let t: Target;
       try { t = targetForKey(d.cfg, key); } catch { delete next[key]; continue; }
       try {
-        const cur = await getIndexVersioned(d.store, t, guardContext(d.cfg, t).kind);
+        const cur = await getIndexVersioned(d.store, t);
         if (cur.version !== version) { parts.push(indexBlock(t, cur.text, nonce)); next[key] = cur.version; }
       } catch { /* keep this key's old version */ }
     }

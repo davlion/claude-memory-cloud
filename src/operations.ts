@@ -22,7 +22,7 @@ export interface OpResult {
 }
 
 export interface SearchHit { scope: string; name: string; description: string; snippet: string }
-export interface IndexResult { text: string; version: string; head: HeadCommit | null; /** Names of memories that look personal (restricted, or candid in a client/project scope). Names only. */ flagged: string[] }
+export interface IndexResult { text: string; version: string; head: HeadCommit | null; /** Names of memories that look personal (restricted, or candid in a client/project scope). Names only; empty unless an audit kind was passed. */ flagged: string[] }
 export interface ScopeFailure { scope: string; error: ErrorCode; message: string; action?: string; retryable: boolean }
 
 export function scopeFailure(scope: string, e: unknown): ScopeFailure {
@@ -184,11 +184,12 @@ export async function readMemories(store: Store, t: Target, names: string[]) {
  * (spec §10b: a hand edit can't inject text). The version is the SHA-1 of the rebuilt text, so a hand-edited
  * memory changes it even when MEMORY.md is untouched ("none" for a set with no memories).
  */
-export async function getIndexVersioned(store: Store, t: Target, kind: GuardContext["kind"] = "general"): Promise<IndexResult> {
+export async function getIndexVersioned(store: Store, t: Target, audit?: GuardContext["kind"]): Promise<IndexResult> {
   const snap = await store.snapshot(t.repo, t.prefix);
   const { list, conflicts } = entries(snap);
   const text = buildIndex(t.displayLabel, list, conflicts);
-  return { text, version: snap.files.size === 0 ? "none" : await sha1Hex(text), head: snap.head, flagged: flaggedNames(snap, kind) };
+  // The personal audit scans every memory, so it runs only for callers that report it (memory_index / memory_health).
+  return { text, version: snap.files.size === 0 ? "none" : await sha1Hex(text), head: snap.head, flagged: audit ? flaggedNames(snap, audit) : [] };
 }
 
 async function sha1Hex(s: string): Promise<string> {
