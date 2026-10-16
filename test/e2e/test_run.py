@@ -19,5 +19,13 @@ class Guarded(unittest.TestCase):
         self.assertIs(run.guarded("S1", lambda *a: v, None), v)
 
 
+class HostLabel(unittest.TestCase):
+    def test_manual_hosts_have_labels_and_pairs_join(self):
+        cfg = type("Cfg", (), {"hosts": {"H1": type("H", (), {"label": "Mac CLI"})()}})()
+        self.assertEqual(run.host_label(cfg, "H6"), "web chat")
+        self.assertEqual(run.host_label(cfg, "H1+H2"), "Mac CLI+Desktop")
+        self.assertEqual(run.host_label(cfg, "H9"), "H9")
+
+
 if __name__ == "__main__":
     unittest.main()

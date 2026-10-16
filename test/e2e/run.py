@@ -32,6 +32,7 @@ from e2elib.launch import Invocation, shell            # noqa: E402
 HERE = Path(__file__).resolve().parent
 RAW = HERE / "results" / "raw"
 PROMPT_HINT_OFF = {"CLAUDE_MEMORY_KIT_PROMPT_HINT": "off"}
+MANUAL_LABELS = {"H2": "Desktop", "H5": "cloud", "H6": "web chat", "H7": "mobile"}   # not in e2e.json: no SSH
 MANUAL_EXPECT = {"S2": "general", "S3": "client", "S4": "project", "S4n": "none", "S8": "none", "S11d": "none"}
 
 
@@ -163,11 +164,15 @@ def cmd_verify(cfg, args) -> int:
     return 0 if save(meta, args.host, {args.scenario: C.verdict(notes)}) else 1
 
 
+def host_label(cfg, host: str) -> str:
+    return "+".join(cfg.hosts[x].label if x in cfg.hosts else MANUAL_LABELS.get(x, x) for x in host.split("+"))
+
+
 def cmd_report(cfg, args) -> int:
     meta = open_run(args.run_id or latest_run(), False)
     recs = results.load(RAW / meta["run_id"])
     hosts = sorted({r["host"] for r in recs}, key=lambda h: (len(h), h))
-    labels = [(h, "+".join(cfg.hosts[x].label if x in cfg.hosts else x for x in h.split("+"))) for h in hosts]
+    labels = [(h, host_label(cfg, h)) for h in hosts]
     out = HERE / "results" / f"{meta['started'][:10]}-{meta['run_id']}.md"
     out.write_text(results.render(meta["run_id"], recs, labels), encoding="utf-8")
     print(out)
