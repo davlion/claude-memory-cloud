@@ -126,13 +126,32 @@ Yes. They're plain Markdown files in your repo. The index is rebuilt from the fi
 The setup script turns it off, so memories don't end up in two places. Your existing local memory files are left in place as a backup.
 
 ### What about claude.ai's built-in memory?
-claude.ai chat (web, Desktop and mobile) has its own memory, and it competes with the connector: with both on, "remember this" can land in claude.ai's memory instead of your repo. The reliable fix is to turn claude.ai's memory off in claude.ai Settings. The setup script can't do that for you.
+Keep it on. claude.ai chat (web, Desktop and mobile) has its own memory, and it is the right home for personal facts that must not go to GitHub (see "What should never go in GitHub memory?"). In chat, the connector's instructions tell Claude to send those facts to built-in memory and to use the connector for facts about work. Claude Code has no built-in memory (the setup script turns it off), so there a personal fact is declined: "not saved: personal, keep it in claude.ai memory".
 
-Move what it holds first, because nothing exports it automatically:
+The two stores don't sync. A work fact said in chat may land in either one if Claude guesses wrong; say "save it to claude-memory" to be explicit. If you earlier turned claude.ai's memory off and moved things into the connector, anything personal in your repos can be found with the Health line `personal:<scope>` and moved back by hand (see "What should never go in GitHub memory?").
 
-1. Copy it out: claude.ai's memory settings show what it remembers, or ask a chat (with it still on): *"List everything you remember about me, one item per line, verbatim."*
-2. In a chat with the connector on, paste the list: *"Save each of these to claude-memory. Ask me about the scope for any that could be general or client-specific."*
-3. Turn claude.ai's memory off.
+### Can I keep memory out of claude.ai entirely?
+Yes, as a choice. Don't add the connector in claude.ai; run the memory server for Claude Code through a local MCP server instead, so chat has only its built-in memory and never touches your repos. The cost: cloud sessions, claude.ai web and mobile lose your code memories, because those surfaces reach the server only through the claude.ai connector. Choose this if the exposure of chat to your repos matters more to you than having memory everywhere.
+
+### What should never go in GitHub memory?
+A memory repo is durable, copyable and keeps history, and a client scope is readable by that client's people. So the rule is: GitHub holds facts about work, never candid opinions and never personal or intimate matters. Every save is sorted into one tier:
+
+| Tier | Examples | What happens |
+|---|---|---|
+| Work facts | how you code, a client's processes ("deploys on Tuesdays"), repo setup | saved to the right scope |
+| Infrastructure | machine names, IP addresses, internal URLs, network layout | Claude asks first, offering `general` or the client's scope |
+| Candid or about others | your candid opinion of anyone or anything; non-work facts about other people (health, family, pay) | declined; saved to `general` only if you explicitly ask; never to a client scope |
+| Intimate | sexuality, health, money and personal finances, family | refused everywhere, no override |
+| Personal or restricted | home address, travel dates, absences, routines; your rates, contract terms, invoices and disputes; political or religious views; legal matters | refused everywhere, no override |
+
+A person's role or work preferences ("Alice owns the billing service") are ordinary work facts. How a client runs things, even invoices or contracts, is a work fact; your own money and terms are not. When a fact fits two tiers, the stricter wins. A client's information never goes into another client's scope; limited facts such as when you work with them may go in `general`.
+
+Three layers enforce this. The instructions (server and routing rule) tell Claude how to sort. The server's guard checks every write (creates, updates and conflict copies) and returns `rejected_personal` (never stored; `force` doesn't bypass it), `needs_confirmation` (candid or about others: save again with `confirmed: true` only when you've explicitly asked, accepted only in `general`) or `rejected_cross_client` (a client scope naming another of your clients). And the Health block flags existing memories that look personal: "⚠ personal:<scope> — N memories look personal → move them to claude.ai memory and delete them". Such a memory can still be read and deleted, but not edited until the personal text is gone.
+
+The guard is keyword-based and best effort: it can miss a paraphrase, and it can't tell that a description of a client avoids naming them. It is a backstop to Claude's judgment, not a replacement.
+
+### Does the commit history show my machine names?
+Yes, by default. Every commit carries `Memory-Source: <source>`, and local Claude Code passes "claude-code on <hostname>", so a client's repo history can show your machine names. That is an infrastructure fact, harmless if your machines are per client. To avoid it, run `./setup.sh --neutral-source` (and `--no-neutral-source` to turn it back off): Claude then passes just "claude-code". The choice is kept when you rerun setup.
 
 ### Why does the kit live in `~/.claude-memory-cloud` and not `~/.claude`?
 
