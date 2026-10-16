@@ -103,3 +103,12 @@ Task 10: ~/e2e-s12-backup deleted (user OK).
 - The "use these tools, not a host's built-in memory" instruction was removed before going live (`2ee6f49`).
 - Claude Code truncates server instructions at 4096 characters; a test holds them to ≤ 4000.
 - Unverified: whether `readOnlyHint` stops cloud sessions prompting for `memory_read`.
+
+## Final review (2026-10-16)
+
+Whole-branch review b0cb0af..6d78dc3: "with fixes", no Critical. Fixed:
+- Important 1: the snapshot hook stored an outage index (Health failures, empty Since map) over the last good one → now requires a non-empty Since map and no ✗ Health line (8e4ee7b).
+- Important 2: the scope line grew past Claude Code's 4096-character cut with ~8 clients → budget-based: lists the client names that fit in 4000, counts the rest (6cf2eea).
+- Minor 3, 4: e2e cleanup deletes only files the run added (reports others); commit listing pages past 100 (dd9a51a).
+- Minor 5, 6, 7, 9: docs count three hooks; snapshot made 0600 before rewrite and the hook never creates the cache dir; MIN_HOOK_VERSION 0.1.2; 0.1.1 → 0.1.2 → uninstall round-trip test.
+- Ruling: Minor 8 (this Mac's CLAUDE.md still the 0.1.1 rule) rejected — the file on disk is 0.1.2; the reviewer saw the copy loaded at this session's start — none.
