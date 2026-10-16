@@ -177,7 +177,7 @@ def _copy_kit(src: Path, dst: Path) -> None:
 
 
 def install(paths: KitPaths, *, worker_url: str, scope_map: Dict[str, Any], python: str, src_kit: Path,
-            mcp_servers: Tuple[str, ...] = (), dry_run: bool = False, out: Out = print,
+            mcp_servers: Tuple[str, ...] = (), neutral_source: Optional[bool] = None, dry_run: bool = False, out: Out = print,
             now: Optional[datetime] = None) -> int:
     """0 on success, 1 when installed but preflight found problems. Raises SettingsError / MarkerError (before any
     write) when settings.json or CLAUDE.md can't be edited safely."""
@@ -193,6 +193,9 @@ def install(paths: KitPaths, *, worker_url: str, scope_map: Dict[str, Any], pyth
         if n not in names:
             names.append(n)
     allow = allow_rules(cmds["memkit"], tuple(names))
+    if neutral_source is None:      # not given: keep the stored choice
+        neutral_source = stored_cfg.get("neutral_source") is True
+    source = "claude-code" if neutral_source else "claude-code on <hostname>"
     # 1. plan (pure)
     settings, style, settings_text = load_settings(paths.settings)
     new_settings, info = install_with_info(settings, session_cmd=cmds["session"], prompt_cmd=cmds["prompt"],
@@ -200,7 +203,7 @@ def install(paths: KitPaths, *, worker_url: str, scope_map: Dict[str, Any], pyth
     new_settings_text = dumps(new_settings, style)
     md_text = _read(paths.claude_md)
     template = (src_kit / "templates" / "routing-rule.md").read_text(encoding="utf-8")
-    block = render_rule(template, outbox_dir=paths.outbox, memkit_cmd=cmds["memkit"])
+    block = render_rule(template, outbox_dir=paths.outbox, memkit_cmd=cmds["memkit"], source=source)
     new_md, sep = upsert_block(md_text or "", block)
 
     stored = _load_state(paths)
@@ -247,9 +250,11 @@ def install(paths: KitPaths, *, worker_url: str, scope_map: Dict[str, Any], pyth
     if state != stored:
         _write_private(paths.state, json.dumps(state, indent=2) + "\n")
     _copy_kit(src_kit, paths.kit)
-    _write_private(paths.config, json.dumps({"worker_url": worker_url, "hook_version": HOOK_VERSION,
-                                             "python": python,
-                                             "mcp_servers": names}, indent=2) + "\n")
+    cfg_out: Dict[str, Any] = {"worker_url": worker_url, "hook_version": HOOK_VERSION, "python": python,
+                               "mcp_servers": names}
+    if neutral_source:
+        cfg_out["neutral_source"] = True
+    _write_private(paths.config, json.dumps(cfg_out, indent=2) + "\n")
     _write_private(paths.scopes, json.dumps(scope_map, indent=2) + "\n")
     for d in (paths.outbox, paths.cache, paths.export):
         d.mkdir(mode=0o700, exist_ok=True)
@@ -536,6 +541,10 @@ def main(argv: Optional[List[str]] = None, src_kit: Optional[Path] = None) -> in
     ap.add_argument("--scope", action="append", default=[], metavar="NAME=OWNER/REPO")
     ap.add_argument("--mcp-server", action="append", default=[], metavar="NAME",
                     help="name of the memory MCP server as shown by /mcp (repeatable; detected from ~/.claude.json too)")
+    ns = ap.add_mutually_exclusive_group()
+    ns.add_argument("--neutral-source", dest="neutral_source", action="store_const", const=True,
+                    help='pass source "claude-code" instead of "claude-code on <hostname>" (kept on reinstall)')
+    ns.add_argument("--no-neutral-source", dest="neutral_source", action="store_const", const=False)
     ap.add_argument("--dry-run", action="store_true", help="print the planned changes (diffs) and write nothing")
     ap.add_argument("--force", action="store_true")
     cache = ap.add_mutually_exclusive_group()
@@ -551,6 +560,8 @@ def main(argv: Optional[List[str]] = None, src_kit: Optional[Path] = None) -> in
         ap.error(f"--mcp-server {bad[0]!r}: use only letters, digits, '_' and '-'")
     if a.mcp_server and (a.uninstall or a.export_local):
         ap.error("--mcp-server only applies to install")
+    if a.neutral_source is not None and (a.uninstall or a.export_local):
+        ap.error("--neutral-source only applies to install")
     if a.finish and not a.export_local:
         ap.error("--finish only applies to --export-local")
     paths = kit_paths()
@@ -586,7 +597,7 @@ def main(argv: Optional[List[str]] = None, src_kit: Optional[Path] = None) -> in
             print("setup: pass --worker-url https://<worker>.workers.dev (no path).", file=sys.stderr)
             return 2
         return install(paths, worker_url=worker_url, scope_map=scope_map, python=python, src_kit=src_kit,
-                       mcp_servers=tuple(a.mcp_server), dry_run=a.dry_run)
+                       mcp_servers=tuple(a.mcp_server), neutral_source=a.neutral_source, dry_run=a.dry_run)
     except (SettingsError, MarkerError) as e:
         print(f"setup: {e}", file=sys.stderr)
         print("Nothing was changed.", file=sys.stderr)

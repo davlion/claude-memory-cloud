@@ -40,6 +40,7 @@ class OutboxEntry:
     project: str = ""       # owner/repo, when scope is project
     version: str = ""       # blob sha the edit was based on; empty for a create
     body: str = ""          # save only
+    confirmed: bool = False  # save only: the user explicitly asked to keep a candid/about-someone fact in general
 
 
 def parse_ts(s: str) -> datetime:
@@ -123,6 +124,7 @@ def parse_entry(text: str) -> OutboxEntry:
         queued_at=ob.get("queued_at", ""), host=ob.get("host", ""),
         description=str(top.get("description", "")), type=md.get("type", ""),
         project=ob.get("project", ""), version=ob.get("version", ""), body=body,
+        confirmed=ob.get("confirmed", "") == "true",
     )
     validate_entry(e)
     return e
@@ -144,6 +146,8 @@ def format_entry(e: OutboxEntry) -> str:
         lines.append(f"  project: {_q(e.project)}")
     if e.version:
         lines.append(f"  version: {_q(e.version)}")
+    if e.confirmed:
+        lines.append("  confirmed: true")
     lines.append(f"  queued_at: {e.queued_at}")
     if e.host:
         lines.append(f"  host: {_q(e.host)}")

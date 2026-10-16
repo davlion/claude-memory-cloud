@@ -26,7 +26,8 @@ class Block(unittest.TestCase):
     def test_render_rule_fills_placeholders(self):
         tpl = (KIT / "templates" / "routing-rule.md").read_text()
         out = render_rule(tpl, outbox_dir="/h/.claude-memory-cloud/outbox",
-                          memkit_cmd="/usr/bin/python3 -I -S /h/.claude-memory-cloud/kit/bin/memkit.py")
+                          memkit_cmd="/usr/bin/python3 -I -S /h/.claude-memory-cloud/kit/bin/memkit.py",
+                          source="claude-code on <hostname>")
         self.assertTrue(out.startswith(BEGIN + "\n") and out.endswith("\n" + END))
         self.assertNotIn("{{", out)
         self.assertNotIn("/cache", out)     # the PostToolUse hook writes the snapshot; Claude never does
@@ -73,7 +74,8 @@ class Block(unittest.TestCase):
     def test_rule_uses_write_tool_for_outbox_only(self):
         tpl = (KIT / "templates" / "routing-rule.md").read_text()
         out = render_rule(tpl, outbox_dir="/h/.claude-memory-cloud/outbox",
-                          memkit_cmd="/usr/bin/python3 -I -S /h/.claude-memory-cloud/kit/bin/memkit.py")
+                          memkit_cmd="/usr/bin/python3 -I -S /h/.claude-memory-cloud/kit/bin/memkit.py",
+                          source="claude-code on <hostname>")
         snap = next(l for l in out.splitlines() if l.startswith("- **Snapshot:**"))
         box = next(l for l in out.splitlines() if l.startswith("- **Outbox:**"))
         self.assertIn("with the Write tool (never shell redirection, heredocs or `mkdir`", box)
@@ -90,6 +92,26 @@ class Block(unittest.TestCase):
         flush = tpl[tpl.index("- **Flushing:**"):]
         self.assertIn("`not_reachable`", flush)
         self.assertIn("`unsupported_remote`", flush)
+
+    def test_rule_personal_tiers_and_flush_keep_list(self):
+        tpl = (KIT / "templates" / "routing-rule.md").read_text()
+        out = render_rule(tpl, outbox_dir="/h/o", memkit_cmd="m", source="claude-code on <hostname>")
+        self.assertIn("not saved: personal — keep it in claude.ai memory", out)
+        self.assertIn("confirmed: true", out)
+        self.assertIn("never in a client scope", out)
+        flush = out[out.index("- **Flushing:**"):]
+        for word in ["rejected_personal", "needs_confirmation", "rejected_cross_client"]:
+            self.assertIn(f"`{word}`", flush)
+        self.assertIn("plus `confirmed: true` when the entry has it", flush)
+        box = next(l for l in out.splitlines() if l.startswith("- **Outbox:**"))
+        self.assertIn("add `confirmed: true` under `outbox:`", box)
+
+    def test_render_rule_source(self):
+        tpl = (KIT / "templates" / "routing-rule.md").read_text()
+        out = render_rule(tpl, outbox_dir="/h/o", memkit_cmd="m", source="claude-code")
+        self.assertIn('`source` ("claude-code")', out)
+        self.assertIn('`source` = "claude-code (outbox)"', out)
+        self.assertNotIn("{{", out)
 
 
 if __name__ == "__main__":

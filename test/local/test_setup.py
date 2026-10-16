@@ -265,6 +265,23 @@ class SetupSafety(unittest.TestCase):
         self.assertNotIn("--mcp-server <name>", r.stdout)
         self.assertEqual([x for x in self.allow() if x.startswith("mcp__")], self.mcp_rules("mine", "mine_2", "found"))
 
+    def test_neutral_source(self):
+        self.install()
+        rule = self.claude_md.read_text()
+        self.assertIn('`source` ("claude-code on <hostname>")', rule)
+        self.assertNotIn("neutral_source", json.loads((self.root / "config.json").read_text()))
+        self.install("--neutral-source")
+        rule = self.claude_md.read_text()
+        self.assertIn('`source` ("claude-code")', rule)
+        self.assertIn('`source` = "claude-code (outbox)"', rule)
+        self.assertIs(json.loads((self.root / "config.json").read_text())["neutral_source"], True)
+        self.install()                                   # reinstall keeps the choice
+        self.assertIn('`source` ("claude-code")', self.claude_md.read_text())
+        self.assertIs(json.loads((self.root / "config.json").read_text())["neutral_source"], True)
+        self.install("--no-neutral-source")
+        self.assertIn('`source` ("claude-code on <hostname>")', self.claude_md.read_text())
+        self.assertNotIn("neutral_source", json.loads((self.root / "config.json").read_text()))
+
     def test_dry_run_shows_mcp_rules(self):
         self.write_claude_json({"mcpServers": {"found": {"url": self.worker.url + "/mcp"}}})
         r = self.install("--dry-run", "--mcp-server", "mine")

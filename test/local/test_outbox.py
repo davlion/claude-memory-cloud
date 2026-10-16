@@ -27,6 +27,16 @@ class EntryFormat(unittest.TestCase):
         self.assertEqual(example, fixture)
         self.assertEqual(parse_entry(example).project, "acme-org/billing")
 
+    def test_confirmed_round_trip(self):
+        e = OutboxEntry(name="x", op="save", scope="general", queued_at="2026-10-13T18:04:00Z",
+                        description="d", type="feedback", body="b\n", confirmed=True)
+        text = format_entry(e)
+        self.assertIn("  confirmed: true\n", text)
+        self.assertTrue(parse_entry(text).confirmed)
+        e.confirmed = False
+        self.assertNotIn("confirmed", format_entry(e))
+        self.assertFalse(parse_entry(format_entry(e)).confirmed)
+
     def test_quoting_and_comments(self):
         e = OutboxEntry(name="x", op="save", scope="general", queued_at="2026-10-13T18:04:00Z",
                         description="Measure first: then fix # not a comment", type="feedback", body="b\n")

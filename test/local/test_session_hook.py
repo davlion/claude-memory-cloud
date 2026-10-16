@@ -182,7 +182,7 @@ class SessionHook(unittest.TestCase):
 
     def test_hook_older_than_min_hook_version(self):
         self.worker.mode = "old"
-        self.assert_one_problem("Memory hooks are out of date (installed 0.1.2, server needs 9.0.0); rerun the setup script.")
+        self.assert_one_problem("Memory hooks are out of date (installed 0.1.3, server needs 9.0.0); rerun the setup script.")
 
     def test_open_dir_reported_files_healed(self):
         f = self.root / "cache" / "_none.md"
