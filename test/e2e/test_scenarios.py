@@ -1,6 +1,7 @@
 """Scenario logic against scripted transcripts and a fake repo set (no network, no claude)."""
 import tempfile
 import unittest
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -180,6 +181,91 @@ class Move(unittest.TestCase):
     def test_missing_announcement_fails(self):
         v, _ = self.run_s17(text="Moved it.")
         self.assertIn("reply lacks the announcement 'saved to project'", v.notes)
+
+
+class PersonalGuard(unittest.TestCase):
+    """S18-S20: the server refuses personal facts, asks before candid opinions, refuses cross-client facts."""
+
+    def test_s18_passes_when_nothing_committed_and_not_saved_announced(self):
+        claude = FakeClaude(stream(calls=[("memory_save", {"scope": "general"}, saved("rejected_personal"), True)],
+                                   text="not saved: personal"))
+        v = S.s18(ctx(claude), HOST)["S18"]
+        self.assertEqual(v.status, C.PASS, v)
+        self.assertIn("e2e-r1-01", claude.invocations[0].prompt)
+        self.assertEqual(claude.invocations[0].cwd, "sample_app")
+
+    def test_s18_fails_on_commit_or_missing_announcement(self):
+        gh = FakeGh()
+
+        def answer(inv):
+            gh.add("me/claude-memory-test", "memories/x.md", inv.prompt, "general")
+            return stream(text="Done.")
+        v = S.s18(ctx(FakeClaude(answer), gh), HOST)["S18"]
+        self.assertEqual(v.status, C.FAIL)
+        self.assertEqual(len(v.notes), 2, v.notes)
+
+    def run_s19(self, confirm_repo="me/claude-memory-test", confirm_scope="general", first_commits=False):
+        gh = FakeGh()
+        state = {}
+
+        def first(inv):
+            state["tok"] = inv.prompt.split("Tag: ")[1].split()[0]
+            if first_commits:
+                gh.add("me/claude-memory-test", "memories/early.md", state["tok"], "general")
+            return stream(calls=[("memory_save", {"scope": "general"}, saved("needs_confirmation"), False)],
+                          text="Shall I save that to general?")
+
+        def second(inv):
+            gh.add(confirm_repo, "memories/x.md", state["tok"], confirm_scope)
+            return stream(calls=[("memory_save", {"scope": "general", "confirmed": True}, saved(), False)],
+                          text="saved to general")
+        claude = FakeClaude(first, second)
+        return S.s19(ctx(claude, gh), HOST)["S19"], claude
+
+    def test_s19_passes_and_resumes_same_session(self):
+        v, claude = self.run_s19()
+        self.assertEqual(v.status, C.PASS, v)
+        a, b = claude.invocations
+        self.assertEqual(b.resume, a.session_id)
+        self.assertEqual(b.allow, ("memory_save",))
+        self.assertIn("general", b.prompt)
+
+    def test_s19_fails_when_saved_before_confirmation(self):
+        v, _ = self.run_s19(first_commits=True)
+        self.assertEqual(v.status, C.FAIL)
+
+    def test_s19_fails_when_saved_in_client_scope(self):
+        v, _ = self.run_s19(confirm_repo="client/claude-memory", confirm_scope="client")
+        self.assertEqual(v.status, C.FAIL)
+
+    def test_s20_skipped_without_second_client_scope(self):
+        claude = FakeClaude()
+        v = S.s20(ctx(claude), HOST)["S20"]
+        self.assertEqual(v.status, C.SKIPPED)
+        self.assertEqual(v.notes, ["needs a second client scope in staging SCOPES"])
+        self.assertEqual(claude.invocations, [])
+
+    def run_s20(self, commit):
+        gh = FakeGh()
+
+        def answer(inv):
+            if commit:
+                gh.add("client/claude-memory", "memories/x.md", inv.prompt, "client")
+            return stream(text="not saved: names another client")
+        claude = FakeClaude(answer)
+        cfg = replace(CFG, second_client_scope="other-client")
+        c = S.Ctx(cfg, gh, "r1", Path(tempfile.mkdtemp()), claude=claude, sh=FakeShell(),
+                  now=lambda: datetime(2026, 10, 15, 12, 0, 0, tzinfo=timezone.utc))
+        return S.s20(c, HOST)["S20"], claude
+
+    def test_s20_passes_when_nothing_committed(self):
+        v, claude = self.run_s20(False)
+        self.assertEqual(v.status, C.PASS, v)
+        self.assertIn("other-client", claude.invocations[0].prompt)
+
+    def test_s20_fails_when_committed_in_client_repo(self):
+        v, _ = self.run_s20(True)
+        self.assertEqual(v.status, C.FAIL)
 
 
 class Uninstall(unittest.TestCase):

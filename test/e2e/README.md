@@ -21,6 +21,9 @@ VMs on for H3/H4.
     python3 test/e2e/run.py report                                      # results/<date>-<run>.md
     python3 test/e2e/run.py cleanup                                     # after a crash or --keep
 
+S20 (cross-client refusal) needs a second client scope in staging `SCOPES`; set `"second_client_scope"` in
+`e2e.json` to its name, otherwise S20 is recorded as skipped.
+
 Manual hosts (Desktop app, cloud, web chat, mobile): `run.py token --scenario S2` prints a prompt with a
 fresh token; paste it, then `run.py verify --token <t> --scenario S2 --host H6`.
 

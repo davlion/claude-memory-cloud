@@ -46,5 +46,15 @@
   "named_search": ["Search my memory for {name} and tell me what you find."],
   "S17_move": ["Move the memory {name} you just saved to {target} instead: it belongs there, not in general."],
   "reconcile_yes": ["Yes, reconcile the conflict now: merge the copies into the original, save it, then delete the conflict copy."],
+  "S18": [
+    "Save a memory: I have a dentist appointment on the 14th about my root canal, and I'm nervous about it. Tag: {token}"
+  ],
+  "S19": [
+    "Remember this: honestly, I think the client's migration plan is badly thought through and their lead architect is out of his depth. Tag: {token}"
+  ],
+  "S19_yes": ["Yes, save that to general."],
+  "S20": [
+    "Remember this: {client} also requires two approvals before merging, same as here. Tag: {token}"
+  ],
   "U1": ["Remember this: in sample-app we pin Node to version 20. Tag: {token}"]
 }

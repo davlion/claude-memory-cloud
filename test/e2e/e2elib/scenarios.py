@@ -250,6 +250,39 @@ def s17(ctx: Ctx, host: Host, i: int = 0) -> Verdicts:
     return {"S17": C.verdict(notes)}
 
 
+def s18(ctx: Ctx, host: Host, i: int = 0) -> Verdicts:
+    """S18: a clearly personal fact is refused (rejected_personal): nothing committed anywhere, "not saved"."""
+    tok, since = ctx.token(), ctx.since()
+    t = ctx.claude(host, Invocation(ctx.prompt("S18", i, token=tok), "sample_app", allow=SAVE), "S18")
+    notes = C.expect_none(ctx.found(tok, since)) + C.announced(t, "not saved") + C.no_prompts(t)
+    return {"S18": C.verdict(notes)}
+
+
+def s19(ctx: Ctx, host: Host, i: int = 0) -> Verdicts:
+    """S19: a candid opinion is not saved until the user says so (needs_confirmation); then exactly one memory in
+    general and none in the client repo."""
+    tok, since, sid = ctx.token(), ctx.since(), str(uuid.uuid4())
+    ctx.claude(host, Invocation(ctx.prompt("S19", i, token=tok), "sample_app", allow=SAVE, session_id=sid), "S19a")
+    notes = [f"saved before the user confirmed: {n}" for n in C.expect_none(ctx.found(tok, since))]
+    t = ctx.claude(host, Invocation(ctx.prompt("S19_yes"), "sample_app", allow=SAVE, resume=sid), "S19b")
+    notes += C.expect_one(ctx.found(tok, since), repo=ctx.cfg.general_repo, project=None, scope="general")
+    notes += C.announced(t, "saved to general") + C.no_prompts(t)
+    return {"S19": C.verdict(notes)}
+
+
+def s20(ctx: Ctx, host: Host, i: int = 0) -> Verdicts:
+    """S20: a fact naming another configured client, given in this client's repo, is refused (rejected_cross_client).
+    Needs a second client scope in staging SCOPES; without `second_client_scope` in e2e.json it is skipped."""
+    other = ctx.cfg.second_client_scope
+    if not other:
+        return {"S20": C.Verdict(C.SKIPPED, ["needs a second client scope in staging SCOPES"])}
+    tok, since = ctx.token(), ctx.since()
+    t = ctx.claude(host, Invocation(ctx.prompt("S20", i, token=tok, client=other), "sample_app", allow=SAVE), "S20")
+    found = [f for f in ctx.found(tok, since) if f.repo == ctx.cfg.client_repo]
+    notes = C.expect_none(found) + C.no_prompts(t)
+    return {"S20": C.verdict(notes)}
+
+
 # ---------- two-host scenarios (a: the Mac, b: a VM)
 
 def _save_named(ctx: Ctx, host: Host, name: str, body: str, label: str) -> Transcript:
@@ -346,7 +379,7 @@ def u1(ctx: Ctx, host: Host, i: int = 0) -> Verdicts:
 
 
 SINGLE = {"S1": s1_s12h, "S2": s2, "S3": s3, "S4": s4, "S4n": s4n, "S5": s5, "S8": s8,
-          "S11": s11_chain, "S14": s14_s7, "S16": s16, "S17": s17, "U1": u1}
+          "S11": s11_chain, "S14": s14_s7, "S16": s16, "S17": s17, "S18": s18, "S19": s19, "S20": s20, "U1": u1}
 PAIR = {"S6": s6, "S6p": lambda ctx, a, b: {"S6p": s6(ctx, a, b, project=True)["S6"]},
         "S9": s9, "S11c": s11c, "S13": s13}
 REPEATED = ("S2", "S4", "S5")   # spec: routing prompts run 3x per host; all runs must pass

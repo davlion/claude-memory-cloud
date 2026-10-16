@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from .launch import Host
 
@@ -21,6 +21,7 @@ class Config:
     repeats: int             # runs per routing prompt per host (spec: 3)
     hosts: Dict[str, Host]
     prompts: Dict[str, List[str]]
+    second_client_scope: Optional[str] = None   # a second configured client scope; S20 is skipped without it
 
     @property
     def repos(self) -> List[str]:
@@ -35,4 +36,5 @@ def load(config_path: Path = HERE / "e2e.json", prompts_path: Path = HERE / "pro
     prompts = json.loads(Path(prompts_path).read_text(encoding="utf-8"))
     return Config(general_repo=d["general_repo"], client_repo=d["client_repo"], client_scope=d["client_scope"],
                   sample_project=d["sample_project"], kit_project=d["kit_project"], repeats=int(d["repeats"]),
-                  hosts=hosts, prompts={k: v for k, v in prompts.items() if not k.startswith("_")})
+                  hosts=hosts, prompts={k: v for k, v in prompts.items() if not k.startswith("_")},
+                  second_client_scope=d.get("second_client_scope"))
