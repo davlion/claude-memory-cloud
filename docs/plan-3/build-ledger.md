@@ -12,11 +12,11 @@ Pre-flight (Interfaces):
 - T5→T6: Ctx(…, env=), SINGLE/PAIR/REPEATED, fake_secret — match.
 - T1(V5)→T6 cleanup: conditional fallback — handled by ruling above.
 - Task 2: Ruling: Step 6 (redeploy + V6) deferred into Task 1 — VMs off — cost if wrong: none.
-Task 2: complete (commits b0cb0af..076f954, tests: python3 -m unittest discover -s test/local → OK)
-Task 3: complete (commits 076f954..c6e3bd4, tests: /usr/bin/python3 -m unittest discover -s test/e2e → OK)
-Task 4: complete (commits c6e3bd4..a4492bc, tests: /usr/bin/python3 -m unittest discover -s test/e2e → OK)
-Task 5: complete (commits a4492bc..5b107a5, tests: /usr/bin/python3 -m unittest discover -s test/e2e → OK)
-Task 6: complete (commits 5b107a5..2b715c6, tests: /usr/bin/python3 -m unittest discover -s test/e2e → OK)
+Task 2: complete (commits 1765b91..6cbc246, tests: python3 -m unittest discover -s test/local → OK)
+Task 3: complete (commits 6cbc246..6de7c2d, tests: /usr/bin/python3 -m unittest discover -s test/e2e → OK)
+Task 4: complete (commits 6de7c2d..c6072b0, tests: /usr/bin/python3 -m unittest discover -s test/e2e → OK)
+Task 5: complete (commits c6072b0..289fe19, tests: /usr/bin/python3 -m unittest discover -s test/e2e → OK)
+Task 6: complete (commits 289fe19..50cbc69, tests: /usr/bin/python3 -m unittest discover -s test/e2e → OK)
 Task 1: Step 1 Mac: 3 test repos private=true. Step 2 Mac: cloned ~/src/sample-app (origin git@github.com:davlion-test-client/sample-app.git), ~/e2e-no-remote (no remote). Step 3 dry run: adds exactly 3 mcp__claude_ai_claude-memory-staging__memory_{index,read,search} rules; CLAUDE.md no change. Awaiting user approval + VMs on.
 Task 1: SSH to VMs failed 'No route to host' (all LAN, internet ok) = macOS Local Network privacy after iTerm update; user toggled it; works. earsvm claude 2.1.301, lume 2.1.300. Mac setup installed (user OK): exit 0, 3 claude_ai read-only rules, kit 0.1.1, preflight passed.
 - Task 1: Ruling: VMs have no GitHub creds (clone fails; lume gh login expired) — rsync the Mac's sample-app clone (origin intact) instead of adding credentials — cost if wrong: VM checkout can't pull; never needed by the runner.
@@ -58,7 +58,7 @@ Task 10: S15 pre-check: claude-memory-test history = 208 commits, almost all tes
 Task 10: complete (S12 6/6 incl. revoke + missing repo, S10 PASS, S12h after every undo PASS; S15 skipped). Backup ~/e2e-s12-backup still present — ask the user before deleting.
 Task 10: ~/e2e-s12-backup deleted (user OK).
 == CHECKPOINT (2026-10-15 16:35 PDT) — user paused. State:
-- Branch plan-3-e2e @ c6516e6, 15 commits ahead of main, clean, NOT pushed/merged. Suites: e2e 53 OK, kit 163 OK.
+- Branch plan-3-e2e @ 19bde16, 15 commits ahead of main, clean, NOT pushed/merged. Suites: e2e 53 OK, kit 163 OK.
 - DONE: Tasks 1–8, 10, 11. Grids: test/e2e/results/2026-10-15-xdgroe.md (run 1, A+C), 2026-10-15-b7r2qx.md (run 2 + U1 + S10/S12; S15 skipped).
 - Kit 0.1.1 installed on Mac (both MCP names), earsvm, lume. sample-app at ~/src/sample-app on all hosts (VMs: rsynced copy).
 - NEXT: Task 9 (manual hosts H2 Desktop, H5 cloud, H6 web chat, H7 mobile) — with the user, use run id b7r2qx (`run.py --run-id b7r2qx token/verify`). Then Task 12 (fold into spec + build rulings + FAQ; commit the S16 spec row and the plan file in claude-memory-mcp), then final whole-branch review, then finishing-a-development-branch.
@@ -72,9 +72,9 @@ Task 10: ~/e2e-s12-backup deleted (user OK).
 == RESUMED 2026-10-16. Session start: memory_index ok, all hosts reachable.
 - User: the snapshot Write shows as transcript noise (auto-memory has none) → move snapshot writing into a hook. Probe (throwaway PostToolUse hook, Mac): tool_response = full memory_index text (list of {type:text}), byte-identical to Claude's Write; tool_input.project and cwd present.
 - Kit 0.1.2: PostToolUse hook kit/hooks/post_tool_use.py (matcher mcp__.*__memory_index) writes cache/<key>.md 0600 only for a successful index (Since block) of the session's own context (key from cwd origin == call's project; no scopes). Routing rule: Snapshot bullet now only the fallback; "except the outbox below". SessionStart footer ("overwrite … with its full result") removed. Edit(cache/**) dropped from new installs' allow rules (old installs keep it until uninstall). TDD: test_snapshot_hook (10) RED→GREEN; settings/setup/claudemd/snapshot tests updated RED→GREEN; kit suite 176 OK, e2e suite OK.
-- Deployed 0.1.2 to Mac, earsvm, lume (dry run first; VMs also picked up the DNS sentence from 0a5bc48). Mac live check: tool calls = ToolSearch + memory_index only, snapshot mtime updated, mode 600.
+- Deployed 0.1.2 to Mac, earsvm, lume (dry run first; VMs also picked up the DNS sentence from 62a7a84). Mac live check: tool calls = ToolSearch + memory_index only, snapshot mtime updated, mode 600.
 - Ruling: Edit(~/.claude-memory-cloud/cache/**) removed from allow_rules — Claude no longer writes there (least privilege) — cost if wrong: one prompt if Claude ever writes the cache by hand.
-- Commit 7ed60d3 (kit 0.1.2). Regression run jqdpnf (A+B+C): S1, S12h, S11f, S11, S11e, S11b PASS on H1, H3, H4 (18/18). Spec §7 G needs the hook design in Task 12. NEXT: Task 9 (H2 first; token e2e-b7r2qx-m165 already issued for S2).
+- Commit 493811a (kit 0.1.2). Regression run jqdpnf (A+B+C): S1, S12h, S11f, S11, S11e, S11b PASS on H1, H3, H4 (18/18). Spec §7 G needs the hook design in Task 12. NEXT: Task 9 (H2 first; token e2e-b7r2qx-m165 already issued for S2).
 - Task 9 H2 (Desktop, entrypoint claude-desktop, permissionMode auto): S0–S4 PASS. FINDING: Desktop names connector tools mcp__<uuid>__memory_*; snapshot hook matcher still matches (cache written); allow rules don't match but auto mode never prompted. S2: Claude updated the iTerm-saved memory (m165→m135) instead of duplicating.
 - Task 9 H5 (claude --cloud from ~/src/sample-app): S1, S2 PASS. FINDING: memory_index ran without a prompt but memory_read prompted (no repo .claude settings; server tools carry no MCP annotations) — candidate fix: readOnlyHint on index/read/search.
 - Task 9 H5: S0, S3 PASS; S4 FAIL — claude --cloud (local upload) checkout has no remote (git remote -v empty, no repo env var); index loads general only; Claude says not saved + asks owner/repo. Also seen: first reply said 'no memory' while connector pending (same as earsvm V1).
@@ -87,10 +87,10 @@ Task 10: ~/e2e-s12-backup deleted (user OK).
 - Task 9 H6: S11d PASS (esperanto attempt after per-chat toggle off; m656 had saved before toggle). H6 tally: S6, S2(off), S8, S11d PASS; S1, S5, S2(on) FAIL.
 - Task 9 H7: S1 FAIL (hi -> no tools), S2 PASS (connector on; first try had connector off in + menu — possibly carried over from the H6 per-chat toggle; row dropped).
 - Task 9 H7: S2 PASS by hand — mobile upper-cased the tag; CLEANUP NOTE: memories/answer-structure-conclusion-first.md holds E2E-B7R2QX-M421 (upper case) — token-scoped cleanup will miss it; delete by hand.
-- Task 9 complete: cleanup b7r2qx (7 by prefix + 1 upper-case by hand, index verified clean), grid regenerated with manual host labels (host_label, TDD), commit 6c8e305.
-- Fixes 1-5 (user: do before review): server instructionsFor(cfg) names scopes + ask rule; built-in-memory line; no-remote owner/repo line; readOnlyHint on scopes/health/index/read/search, save destructive=false, delete destructive=true; FAQ/QUICKSTART. TDD: tools.test (4) + auth.test (init per-user, annotations) RED->GREEN; vitest 401 OK, tsc clean. Commit 95aeb28. Staging deploy pending user OK.
+- Task 9 complete: cleanup b7r2qx (7 by prefix + 1 upper-case by hand, index verified clean), grid regenerated with manual host labels (host_label, TDD), commit b81d74f.
+- Fixes 1-5 (user: do before review): server instructionsFor(cfg) names scopes + ask rule; built-in-memory line; no-remote owner/repo line; readOnlyHint on scopes/health/index/read/search, save destructive=false, delete destructive=true; FAQ/QUICKSTART. TDD: tools.test (4) + auth.test (init per-user, annotations) RED->GREEN; vitest 401 OK, tsc clean. Commit 41d7ee8. Staging deploy pending user OK.
 - User (deferred to final review): personal memories on GitHub are an unnecessary risk; may keep claude.ai built-in memory for chat. Need >=3 solutions at final review. Recorded in .superpowers/sdd/2026-10-16-final-review-items.md. Staging deploy still pending (Workers Paid confirmation).
-- Commit 2ee6f49 + staging deploy 4f563090: instructions 3912 chars live, scope line + full tail confirmed in a fresh claude -p. Fix 2 removed (review item). Running S5 x3 hosts (run jqdpnf).
+- Commit 0ac516a + staging deploy 4f563090: instructions 3912 chars live, scope line + full tail confirmed in a fresh claude -p. Fix 2 removed (review item). Running S5 x3 hosts (run jqdpnf).
 - S5 after scope line: Claude Code 9/9 PASS (jqdpnf). Web chat S5 retest FAIL: routed to built-in memory (off), no connector call — logged for final review.
 - Cloud readOnlyHint check: not done (user's reply came from web chat) — unverified, in review items. m928 went to claude.ai memory; user asked to delete it.
 - Web chat: 'remember that we …' -> built-in memory (failed), claimed success then corrected; logged for review.
@@ -100,16 +100,16 @@ Task 10: ~/e2e-s12-backup deleted (user OK).
 ## For the final review
 
 - Personal memories on GitHub: the user may want claude.ai chat (web, Desktop, mobile) to keep using claude.ai's built-in memory, since putting personal memories in a GitHub repo is an unnecessary risk. The review must propose at least three solutions. It decides chat routing between built-in memory and the connector, which Level 4 showed is inconsistent today, and whether the docs keep advising to turn claude.ai memory off.
-- The "use these tools, not a host's built-in memory" instruction was removed before going live (`2ee6f49`).
+- The "use these tools, not a host's built-in memory" instruction was removed before going live (`0ac516a`).
 - Claude Code truncates server instructions at 4096 characters; a test holds them to ≤ 4000.
 - Unverified: whether `readOnlyHint` stops cloud sessions prompting for `memory_read`.
 
 ## Final review (2026-10-16)
 
-Whole-branch review b0cb0af..6d78dc3: "with fixes", no Critical. Fixed:
-- Important 1: the snapshot hook stored an outage index (Health failures, empty Since map) over the last good one → now requires a non-empty Since map and no ✗ Health line (8e4ee7b).
-- Important 2: the scope line grew past Claude Code's 4096-character cut with ~8 clients → budget-based: lists the client names that fit in 4000, counts the rest (6cf2eea).
-- Minor 3, 4: e2e cleanup deletes only files the run added (reports others); commit listing pages past 100 (dd9a51a).
+Whole-branch review 1765b91..fc2ac9f: "with fixes", no Critical. Fixed:
+- Important 1: the snapshot hook stored an outage index (Health failures, empty Since map) over the last good one → now requires a non-empty Since map and no ✗ Health line (87ae146).
+- Important 2: the scope line grew past Claude Code's 4096-character cut with ~8 clients → budget-based: lists the client names that fit in 4000, counts the rest (a7c5bdf).
+- Minor 3, 4: e2e cleanup deletes only files the run added (reports others); commit listing pages past 100 (bec4d84).
 - Minor 5, 6, 7, 9: docs count three hooks; snapshot made 0600 before rewrite and the hook never creates the cache dir; MIN_HOOK_VERSION 0.1.2; 0.1.1 → 0.1.2 → uninstall round-trip test.
 - Ruling: Minor 8 (this Mac's CLAUDE.md still the 0.1.1 rule) rejected — the file on disk is 0.1.2; the reviewer saw the copy loaded at this session's start — none.
 - User decision on personal memories: build options 1 + 3 (personal facts stay in claude.ai memory; `general` is for work preferences; a server guard refuses clearly personal content), document option 2 (no connector in claude.ai) as a user choice, defer 4 (encrypted personal scope), reject 5 (separate store).

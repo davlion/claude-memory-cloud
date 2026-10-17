@@ -1,6 +1,6 @@
 # Final whole-branch review: Plan 2 (local kit)
 
-Branch `plan-2-local-kit`, 060162d..37eec4f (22 commits), repo /Users/dav/src/claude-memory-cloud.
+Branch `plan-2-local-kit`, cba02a4..fb42cd4 (22 commits), repo /Users/dav/src/claude-memory-cloud.
 Reviewer: Opus 5.5, read-only. I read every non-test source file at HEAD in full (install.py, settings_edit.py,
 session.py, preflight.py, health.py, outbox.py, snapshot.py, remote.py, prompt.py, claudemd.py, scopemap.py,
 paths.py, both hooks, memkit.py, memkit_setup.py, setup.sh, routing-rule.md), the docs diff (README, FAQ,
@@ -46,7 +46,7 @@ None.
 ### Important
 
 1. **The hook's authoritative "Memory project" line is wrong for repos whose origin uses `url.<base>.insteadOf`.**
-   This only shows up across tasks: T2 deliberately left insteadOf unhandled, and T13 fix 2 (37eec4f) made the
+   This only shows up across tasks: T2 deliberately left insteadOf unhandled, and T13 fix 2 (fb42cd4) made the
    hook's line authoritative.
    - Files: `kit/memory_kit/session.py:98`, `kit/memory_kit/prompt.py:53-66`, and
      `kit/templates/routing-rule.md:5` ("Run `git remote get-url origin` yourself only if the hook gave no
@@ -56,7 +56,7 @@ None.
      temporary HOME: origin `gh:Acme/Billing` with `url.git@github.com:.insteadOf gh:`.
      `git remote get-url origin` prints `git@github.com:Acme/Billing`, but `session_report(...).project` is
      `None`. The hook therefore says "none (no GitHub origin; omit project)".
-   - Why it matters: before 37eec4f, Claude ran git itself and got the expanded URL. Now, in such repos:
+   - Why it matters: before fb42cd4, Claude ran git itself and got the expanded URL. Now, in such repos:
      - Claude is told to omit `project`, so project and client memories silently don't load.
      - The snapshot is written to `_none`.
      - Project saves are refused ("with no git remote, project-specific facts can't be saved").
@@ -142,7 +142,7 @@ None.
 | T13 fix | Snapshot bullet has two "with" clauses | OK: wording only |
 | T13 fix 2 | "none" project line also emitted on git timeout | OK on its own. Cheap to fold into Important #1 (same lines) |
 | T13 fix 2 | UNINSTALL.md "pre-existing rule left alone" true only with state.json | OK: the no-state path is documented a few lines below it |
-| T13 fix 2 | Commit 07f7c3a alone fails test_setup.py:762 | OK: one intermediate red commit on a local branch, and HEAD is green. Squash it into 37eec4f only if bisectability matters to you (controller's call) |
+| T13 fix 2 | Commit 9efdec4 alone fails test_setup.py:762 | OK: one intermediate red commit on a local branch, and HEAD is green. Squash it into fb42cd4 only if bisectability matters to you (controller's call) |
 | T13 fix 2 | Stale `mcp_servers` names persist in config.json | OK: they only add extra read-only allow rules, and uninstall removes them |
 | T13 fix 2 | Saving bullet says "origin remote" while the hook says owner/repo | OK: the server normalizes either form |
 | T14 | Kit dir 0775 on Linux | OK: the 0700 kit home blocks other users. Setting explicit modes in `_copy_kit` is optional hardening |
@@ -166,4 +166,4 @@ None.
 
 - Fix Important #1, including the optional "unknown" line, add the insteadOf test, and rerun the suite on
   both interpreters.
-- Before merging, decide whether to squash 07f7c3a into 37eec4f (bisect).
+- Before merging, decide whether to squash 9efdec4 into fb42cd4 (bisect).
