@@ -90,13 +90,15 @@ const RESTRICTED_RULES: [RestrictedCategory, RegExp][] = [
   ["finances", /\b(?:my|our)\s+(?:\w+\s+){0,2}(?:IRA|Roth)\b/],
   ["finances", /\bi\s+(?:owe|earn|earned|inherited)\b|\bi(?:'m| am)\s+(?:in debt|broke)\b/i],
   ["family", new RegExp(`\\bmy\\s+(?:\\w+\\s+)?(?:${FAMILY_TERMS})\\b`, "i")],
-  ["family", /\b(?:i'?m|i am)\s+(?:getting\s+(?:married|divorced)|engaged|expecting)\b|\bour baby\b/i],
+  ["family", /\b(?:i'?m|i am)\s+(?:getting\s+(?:married|divorced)|married|engaged|expecting)\b|\bour baby\b/i],
+  // "I have a child process" and "two child nodes" are code.
+  ["family", /\bi\s+(?:have|had|'ve got|have got)\s+(?:[\w-]+\s+){0,2}?(?:kids?|child(?:ren)?|sons?|daughters?|wife|husband|spouse|bab(?:y|ies)|twins|grand(?:children|kids))\b(?!\s+(?:process\w*|nodes?|elements?|components?|threads?|tasks?|spans?|class\w*|tables?|rows?|records?|issues?|tickets?|pages?|routes?|workers?|jobs?|branch\w*|windows?|items?))/i],
   ["family", /\bi(?:'m| am| was|'ve| have| had)?\s+(?:(?:just|recently|now|currently|been|being)\s+)*(?:going through (?:a |an )?(?:divorce|separation|breakup)|getting (?:a )?divorced?|divorced|separated)\b/i],
   ["location", new RegExp(`\\bmy\\s+(?:\\w+\\s+){0,2}(?:${LOCATION_TERMS})\\b(?!\\s*(?:dir|directory|folder|network|server|lab|router|assistant|page|screen|config|office|machine|setup|nas|wifi|wi-fi))`, "i")],
   ["location", /\bmy\s+(?:home\s+)?address\s+is\b/i],
   ["location", new RegExp(`\\bwe\\s+live\\s+(?:in|near|on|at)\\s+(?!(?:${DEST_TECH}|${DEST_ARTICLE})\\b)[a-z]`, "i")],
-  ["location", new RegExp(`\\b(?:i|we)(?:'re|'m| am| are|'ve| have)?\\s+(?:relocating|relocated)\\s+to\\s+(?!(?:${DEST_TECH}|${DEST_ARTICLE})\\b)[a-z]`, "i")],
-  ["location", new RegExp(`\\bi(?:'m| am|'ve| have)?\\s+(?:moving|moved)\\s+to\\s+(?!(?:${DEST_TECH}|${DEST_ARTICLE})\\b)[a-z]`, "i")],
+  ["location", new RegExp(`\\b(?:i|we)(?:'re|'m| am| are|'ve| have)?\\s+(?:relocate|relocating|relocated)\\s+to\\s+(?!(?:${DEST_TECH}|${DEST_ARTICLE})\\b)[a-z]`, "i")],
+  ["location", new RegExp(`\\bi(?:'m| am|'ve| have)?\\s+(?:move|moving|moved)\\s+to\\s+(?!(?:${DEST_TECH}|${DEST_ARTICLE})\\b)[a-z]`, "i")],
   ["location", new RegExp(`\\bi\\s+live\\s+(?:in|on|at|near)\\s+(?!(?:${DEST_TECH})\\b)[a-z]`, "i")],
   ["location", /\bi\s+live\s+(?:with|next|by|just)\b/i],
   ["location", /\bwe\s+live\s+in\s+(?:a|an|the)\s+(?:\w+\s+)?(?:house|apartment|flat|town|city|village|suburb|neighbou?rhood|condo)\b/i],
@@ -154,14 +156,16 @@ const CANDID_RULES: [PersonalHit & { tier: "candid" }, RegExp][] = [
 const SCHEMA_NOUN =
   "fields?|columns?|tables?|models?|records?|objects?|propert(?:y|ies)|attributes?|schemas?|entit(?:y|ies)|dtos?|types?|structs?|rows?|keys?|ids?|endpoints?|pages?|screens?|forms?|tabs?|components?|directory|directories|dir|dirs|folders?|sessions?|tokens?|profiles?|settings|preferences|data|input|interface|ui|list|limits?|apis?|roles?|accounts?|stor(?:y|ies)|flows?|journeys?|groups?|config|cache|modules?|services?|docs|counts?|query|queries|path|paths|env|environment";
 // "If/when the user …" describes app behavior, not the user.
-const SUBJECT = "(?:(?<!\\b(?:if|when|whenever|once|unless|until|after|before|while|let|lets|so that)\\s+)\\bthe\\s+(?:user|developer)|(?:^|(?<=[.!?;:\\n]\\s*))user)";
+const SUBJECT = "(?:(?<!\\b(?:if|when|whenever|once|unless|until|after|before|while|let|lets|so that)\\s+)\\bthe\\s+(?:user|developer)|(?<=(?:^|[.!?;:\\n])\\s*)user)";
 const KEEP_VERBS =
   "was|wasn't|had|hadn't|will|won't|would|'ll|can|can't|cannot|could|should|did|didn't|moved|relocated|lived|owed|earned|inherited|charged|billed|invoiced|voted|prayed|went|attended|found|thought|felt|believed|got|came|grew|sued|travell?ed|flew|commuted|stayed|visited|negotiated|recently|just|also|still|now|never|currently|often|usually|always|sometimes";
-const S_VERBS =
-  "lives|moves|relocates|owes|earns|charges|bills|invoices|votes|prays|attends|finds|thinks|feels|believes|reckons|suspects|dislikes|hates|despises|loathes|distrusts|resents|wakes|travels|commutes|drives|visits|stays|negotiates|sues";
+// Any other third-person verb ("takes", "sees", "watches"); a word ending in "ss" ("access", "class") isn't one.
+const S_VERB = `(?!(?:${SCHEMA_NOUN})\\b)[a-z]*[^\\Ws]s`;
+const stem = (v: string) => v.replace(/ies$/, "y").replace(/(ss|sh|ch|x|o)es$/, "$1").replace(/s$/, "");
 const IRREGULAR: Record<string, string> = { is: "am", "isn't": "am not", has: "have", "hasn't": "haven't", does: "do", "doesn't": "don't", goes: "go", flies: "fly" };
+const KEEP_VERB_RE = new RegExp(`^(?:${KEEP_VERBS})$`);
 const SUBJ_POSS_RE = new RegExp(`${SUBJECT}'s\\b(?!\\s+(?:[\\w-]+\\s+){0,2}(?:${SCHEMA_NOUN})\\b)`, "gi");
-const SUBJ_VERB_RE = new RegExp(`${SUBJECT}\\s+(${Object.keys(IRREGULAR).join("|")}|${S_VERBS}|${KEEP_VERBS})\\b(?!\\s+(?:${SCHEMA_NOUN})\\b)`, "gi");
+const SUBJ_VERB_RE = new RegExp(`${SUBJECT}\\s+(${Object.keys(IRREGULAR).join("|")}|${KEEP_VERBS}|${S_VERB})\\b(?!\\s+(?:${SCHEMA_NOUN})\\b)`, "gi");
 const PAYS_USER_RE = /\b(owes?|owed|pays?|paying|paid)\s+the\s+user\b/gi;
 
 function firstPerson(t: string): string {
@@ -172,7 +176,7 @@ function firstPerson(t: string): string {
       .replace(SUBJ_VERB_RE, (_m, verb: string) => {
         hit = true;
         const v = verb.toLowerCase();
-        return `I ${IRREGULAR[v] ?? (new RegExp(`^(?:${S_VERBS})$`).test(v) ? v.slice(0, -1) : v)}`;
+        return `I ${IRREGULAR[v] ?? (KEEP_VERB_RE.test(v) ? v : stem(v))}`;
       })
       .replace(PAYS_USER_RE, (_m, verb: string) => { hit = true; return `${verb} me`; });
     // In a sentence about the user, "their" is the user's ("the user is moving their IRA").

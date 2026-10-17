@@ -65,6 +65,13 @@ describe("memory_save / memory_delete", () => {
     expect(jsonOf(r.text)).toMatchObject({ status: "created", scope: "project billing" });
     expect(store.repo("acme-org/claude-memory").has("projects/billing/memories/b.md")).toBe(true);
   });
+  it("an empty or null version is no version", async () => {
+    expect(jsonOf((await save({ name: "a", version: "" })).text)).toMatchObject({ status: "created" });
+    expect(jsonOf((await save({ name: "b", description: "Ship small", version: null })).text)).toMatchObject({ status: "created" });
+    const del = (name: string, version: unknown) => callTool(deps, "memory_delete", { scope: "general", name, version, source: "test" });
+    expect(jsonOf((await del("a", "")).text)).toMatchObject({ status: "deleted" });
+    expect(jsonOf((await del("b", null)).text)).toMatchObject({ status: "deleted" });
+  });
 });
 
 describe("memory_index", () => {

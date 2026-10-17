@@ -40,6 +40,8 @@ const POSITIVE: Record<string, string[]> = {
     "I'm getting married in June",
     "my mother needs help moving",
     "my daughter has a recital",
+    "I have two kids and a wife",
+    "I'm married",
   ],
   location: [
     "my home is on Elm Street",
@@ -185,6 +187,8 @@ const WORK_FACTS = [
   "We bill monthly via Stripe",
   "The payment disputes webhook is flaky",
   "Stripe fee disputes are handled by the billing service",
+  "I have a child process that leaks memory",
+  "I have two child nodes under the root",
 ];
 
 // Memories are usually written about the user ("The user prefers …"), so the backstop must read that form too.
@@ -198,6 +202,8 @@ const THIRD_PERSON: Record<string, string[]> = {
     "the user has ADHD",
     "my partner is sick",
     "the user is pregnant",
+    "The user takes antidepressants",
+    "The user sees a therapist on Fridays",
   ],
   finances: [
     "The user's mortgage rate went up",
@@ -211,12 +217,17 @@ const THIRD_PERSON: Record<string, string[]> = {
     "The user is getting married in June",
     "User's kids have a recital",
     "the user's partner is expecting",
+    "The user has two kids",
+    "The user is married to Sam",
   ],
   location: [
     "The user lives in Lyon, France",
     "the user's home is on Elm Street",
     "User moved to Lisbon",
     "The user lives in a small town near the coast",
+    "The user works on billing. User lives in Lyon, France",
+    "The user moves to Berlin in May",
+    "The user relocates to Berlin in May",
   ],
   schedule: [
     "The user will be away from 3 to 20 November",
@@ -265,6 +276,10 @@ const THIRD_PERSON_WORK_FACTS = [
   "If the user is on vacation, pause the digest emails",
   "when the user's invoice is overdue, show a banner",
   "Once the user moves to the new plan, bill them monthly",
+  "the user sees a 404 page after login",
+  "the user takes the short path through onboarding",
+  "the user settings page loads slowly",
+  "The user works on billing. User prefers small commits.",
 ];
 
 describe("scanPersonal: third-person phrasing", () => {

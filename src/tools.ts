@@ -84,6 +84,9 @@ async function changesSince(d: ToolDeps, since: Record<string, string>, nonce: s
   }
 }
 
+/** An empty or null version means none was given. */
+const versionArg = (v: unknown) => (v === null || v === "" ? undefined : (v as string | undefined));
+
 export async function callTool(d: ToolDeps, name: string, a: Record<string, unknown>): Promise<ToolResult> {
   const nonce = newNonce();
   const r = await dispatch(d, name, a, nonce);
@@ -225,11 +228,11 @@ async function dispatch(d: ToolDeps, name: string, a: Record<string, unknown>, n
         const target = resolveTarget(d.cfg, scope, project);
         return ok(framedResult(await saveMemory(d.store, target, {
           name: String(a.name ?? ""), description: String(a.description ?? ""), type: String(a.type ?? ""), body: String(a.body ?? ""),
-          version: a.version as string | undefined, force: Boolean(a.force), confirmed: a.confirmed === true, source: a.source as string | undefined,
+          version: versionArg(a.version), force: Boolean(a.force), confirmed: a.confirmed === true, source: a.source as string | undefined,
         }, now, guardContext(d.cfg, target)), nonce));
       }
       case "memory_delete":
-        return ok(framedResult(await deleteMemory(d.store, resolveTarget(d.cfg, scope, project), String(a.name ?? ""), a.version as string | undefined, a.source as string | undefined, now), nonce));
+        return ok(framedResult(await deleteMemory(d.store, resolveTarget(d.cfg, scope, project), String(a.name ?? ""), versionArg(a.version), a.source as string | undefined), nonce));
       default:
         return { text: JSON.stringify({ error: "invalid", message: `unknown tool ${name}` }), isError: true };
     }

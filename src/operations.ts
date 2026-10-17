@@ -157,8 +157,8 @@ export async function saveMemory(store: Store, t: Target, input: SaveInput, now:
   });
 }
 
-export async function deleteMemory(store: Store, t: Target, name: string, version?: string, source?: string, _now = new Date()): Promise<OpResult> {
-  const path = `memories/${name}.md`;
+export async function deleteMemory(store: Store, t: Target, name: string, version?: string, source?: string): Promise<OpResult> {
+  const path = memoryPath(name);
   const r = (status: OpResult["status"], extra: Partial<OpResult> = {}): OpResult => ({ status, name, scope: t.displayLabel, ...extra });
   if (!parseMemoryPath(path)) return r("invalid", { message: "invalid memory name" });
   return withRetry(store, t, (snap) => {
@@ -172,7 +172,7 @@ export async function deleteMemory(store: Store, t: Target, name: string, versio
 export async function readMemories(store: Store, t: Target, names: string[]) {
   const snap = await store.snapshot(t.repo, t.prefix);
   return names.map((name) => {
-    const f = snap.files.get(`memories/${name}.md`);
+    const f = snap.files.get(memoryPath(name));
     if (!f) return { name, error: "not_found" as const };
     if (f.unreadable) return { name, error: "unreadable" as const, message: UNREADABLE_MESSAGE };
     return { name, content: f.content, version: f.sha };

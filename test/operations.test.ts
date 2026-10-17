@@ -185,7 +185,7 @@ describe("deleteMemory", () => {
   it("deletes with matching version and updates index", async () => {
     await saveMemory(store, T, { name: "a", ...base }, NOW, G);
     const [read] = await readMemories(store, T, ["a"]);
-    const r = await deleteMemory(store, T, "a", (read as { version: string }).version, "test", NOW);
+    const r = await deleteMemory(store, T, "a", (read as { version: string }).version, "test");
     expect(r.status).toBe("deleted");
     expect(store.repo("dav/mem").has("memories/a.md")).toBe(false);
     expect(store.repo("dav/mem").get("MEMORY.md")).toContain("(no memories yet)");
@@ -193,16 +193,16 @@ describe("deleteMemory", () => {
   });
   it("stale version → conflict, nothing deleted", async () => {
     await saveMemory(store, T, { name: "a", ...base }, NOW, G);
-    expect((await deleteMemory(store, T, "a", "deadbeef", "test", NOW)).status).toBe("conflict");
+    expect((await deleteMemory(store, T, "a", "deadbeef", "test")).status).toBe("conflict");
     expect(store.repo("dav/mem").has("memories/a.md")).toBe(true);
   });
   it("can delete a conflict file by its name", async () => {
     store.put("dav/mem", "memories/a.conflict-20261013T180405Z.md", "x");
-    const r = await deleteMemory(store, T, "a.conflict-20261013T180405Z", undefined, "test", NOW);
+    const r = await deleteMemory(store, T, "a.conflict-20261013T180405Z", undefined, "test");
     expect(r.status).toBe("deleted");
   });
   it("missing → not_found", async () => {
-    expect((await deleteMemory(store, T, "nope", undefined, "test", NOW)).status).toBe("not_found");
+    expect((await deleteMemory(store, T, "nope", undefined, "test")).status).toBe("not_found");
   });
 });
 

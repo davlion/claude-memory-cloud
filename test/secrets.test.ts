@@ -24,6 +24,10 @@ const POSITIVE: [string, string][] = [
   ["generic-assignment", '"password": "hunter2hunter2hunter2"'],
   ["generic-assignment", "api_key: 'abcd1234efgh5678ijkl'"],
   ["generic-assignment", 'client_secret_v2 = "Zq8xW2vB9nM4kL7pR3tY"'],
+  ["generic-assignment", "DB_PASSWORD=Tr0ub4dor&3x"],
+  ["generic-assignment", "password = hunter2hunt"],
+  ["github-token", "ｇｈｐ_" + "a".repeat(36)],
+  ["github-token", "ghp_" + "a".repeat(18) + "\u200b" + "a".repeat(18)],
 ];
 
 const NEGATIVE = [
@@ -45,6 +49,10 @@ const NEGATIVE = [
   "password: ${DB_PASSWORD}",
   "secret: process.env.SECRET_VALUE",
   "token_endpoint: https://example.com/oauth/token",
+  "password: required",
+  "password_min_length = 12",
+  "PASSWORD_ROUNDS=12345678",
+  "password_reset_path: /reset/:token",
 ];
 
 describe("scanForSecrets", () => {
