@@ -83,7 +83,7 @@ Something like this (adapt as needed):
 > **What I'd ask of you.** Keep write access to `<org>/claude-memory` limited to the people who need it, because what's written there is read by my assistant. Keep the repo private, and limit visibility changes to org owners. Install the app on that repo only.
 
 ### Can friends use my server?
-Yes, up to about five people. `SCOPES` lists who may sign in and which repos each person's memories live in; nobody sees anyone else's scopes. See "Letting a friend use your server" in the Quickstart.
+Yes, up to about five people. `SCOPES` lists who may sign in and which repos each person's memories live in; nobody sees anyone else's scopes. See "Letting a friend use your server" in the Quickstart; your friend follows [QUICKSTART-FRIEND.md](QUICKSTART-FRIEND.md).
 
 ### Why does memory in claude.ai chat show only my general memories?
 Loading follows context. In a Claude Code session inside a repo you get general + the client that owns the repo + that project. Without a repo (chat) you get general only, so one client's notes don't show up in unrelated conversations. Name the client ("what do we know about acme?") and Claude loads that scope too.

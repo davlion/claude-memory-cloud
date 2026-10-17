@@ -267,11 +267,11 @@ Memories about the client's codebases go to `<client-org>/claude-memory` under `
 
 ## Letting a friend use your server
 
-Up to about five people can share one server, each with their own repos. Nobody sees anyone else's scopes.
+Up to about five people can share one server, each with their own repos. Nobody sees anyone else's scopes. Your friend follows [QUICKSTART-FRIEND.md](QUICKSTART-FRIEND.md); your side is:
 
-1. Your friend creates their own private `<friend>/claude-memory` and installs **your** GitHub App on it (Part 4, using your app's link). Your app must be public first, because a private app can be installed only by its owner account: see "Adding a client organization", step 2 ("Make public").
-2. You add them to `scopes.production.json`: `{"<you>": {…}, "<friend>": {"general": "<friend>/claude-memory"}}`, then rerun `node scripts/check-scopes.mjs scopes.production.json && scripts/wrangler.sh secret put SCOPES --env production < scopes.production.json`.
-3. They add the connector in claude.ai with your server's URL (Part 6).
+1. Make sure your app is public, because a private app can be installed only by its owner account: see "Adding a client organization", step 2 ("Make public").
+2. Send your friend the server address `https://claude-memory.<sub>.workers.dev`, your app's `<slug>`, and access to this repo for the local kit (if it's private, add them as a collaborator with **Read** access).
+3. When they send you their GitHub username, add them to `scopes.production.json`: `{"<you>": {…}, "<friend>": {"general": "<friend>/claude-memory"}}`, then rerun `node scripts/check-scopes.mjs scopes.production.json && scripts/wrangler.sh secret put SCOPES --env production < scopes.production.json`. Tell them when it's done.
 
 The server pins each login to its numeric GitHub ID at first sign-in. If someone deletes and recreates their GitHub account under the same name, sign-in is refused until you delete the pin: `npx wrangler kv key delete --binding OAUTH_KV --env production --remote "allowlist:github-id:<login, lower-case>"` (with a scoped token, this KV command needs the temporary login described at the end of Part 5, step 7). Existing grants with the old ID are refused until that user reconnects.
 
