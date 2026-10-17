@@ -15,7 +15,8 @@
     "deploy:staging": "scripts/wrangler.sh deploy --env=\"\"",
     "predeploy:production": "node scripts/confirm-paid-plan.mjs",
     "deploy:production": "scripts/wrangler.sh deploy --env production",
-    "wrangler": "scripts/wrangler.sh"
+    "wrangler": "scripts/wrangler.sh",
+    "friend": "node scripts/friend.mjs"
   },
   "keywords": [],
   "author": "",

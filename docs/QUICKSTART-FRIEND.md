@@ -49,7 +49,7 @@ Send your host your exact GitHub username `<you>` and the repo name `<you>/claud
 
 Wait until they confirm before Part 4. Until then, connecting shows "This GitHub account isn't on this memory server".
 
-> **For the host:** add `"<you>": {"general": "<you>/claude-memory"}` to `scopes.production.json`, then run `node scripts/check-scopes.mjs scopes.production.json && scripts/wrangler.sh secret put SCOPES --env production < scopes.production.json`. No redeploy is needed. See "Letting a friend use your server" in [QUICKSTART.md](QUICKSTART.md).
+> **For the host:** run `npm run friend -- add <you>`. No redeploy is needed. See "Letting a friend use your server" in [QUICKSTART.md](QUICKSTART.md).
 
 ---
 

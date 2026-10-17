@@ -269,6 +269,10 @@ Memories about the client's codebases go to `<client-org>/claude-memory` under `
 
 Up to about five people can share one server, each with their own repos. Nobody sees anyone else's scopes. Your friend follows [QUICKSTART-FRIEND.md](QUICKSTART-FRIEND.md); your side is:
 
+**The quick way** (needs the GitHub CLI, `gh`, signed in): `npm run friend -- info` prints a message to send them, with your server address, app name, links and setup command filled in. When they send you their GitHub username, `npm run friend -- add <login>` adds them to `SCOPES`, uploads it, invites them to read this repo, and prints the message again with their login filled in. `npm run friend -- remove <login>` undoes both; `npm run friend -- list` shows who's on the server. `--no-invite` skips the repo invitation (e.g. if you'll send them a copy instead).
+
+**By hand:**
+
 1. Make sure your app is public, because a private app can be installed only by its owner account: see "Adding a client organization", step 2 ("Make public").
 2. Send your friend the server address `https://claude-memory.<sub>.workers.dev`, your app's `<slug>`, and access to this repo for the local kit (if it's private, add them as a collaborator with **Read** access).
 3. When they send you their GitHub username, add them to `scopes.production.json`: `{"<you>": {…}, "<friend>": {"general": "<friend>/claude-memory"}}`, then rerun `node scripts/check-scopes.mjs scopes.production.json && scripts/wrangler.sh secret put SCOPES --env production < scopes.production.json`. Tell them when it's done.
