@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory Path: Gates</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&family=Patrick+Hand&display=swap">
+<style>
+/* Layout: two framed treatments in one column. The gates drawing scrolls sideways on narrow screens; the cartoon panels wrap. */
+:root {
+  --bg: #f4f6f2; --fg: #1d2320; --muted: #57625b; --line: #cfd6ce; --panel: #ffffff;
+  --g-track: #8a958d; --g-gate: #2c3a33; --g-ok: #2f7d4f; --g-stop: #b8402f; --g-ask: #a8701a; --g-out: #2f6690; --g-mem: #7a4bb0;
+  --c-sky: #def0fa; --c-ground: #c8e6b6; --c-ink: #22252a; --c-memo: #ffd84d; --c-pink: #ff9fc0; --c-claude: #f08a4b;
+  --c-card: #fff6e2; --c-rule-red: #e06a6a; --c-rule-blue: #8fb3e0; --c-pen: #2c4a8a;
+  --c-dog: #b57d4b; --c-dog-far: #8f5f34; --c-robot: #aeb8c2; --c-vault: #6c7985; --c-mem: #9a7bd2;
+  --c-bubble: #ffffff; --c-bubble-ink: #22252a; --c-book: #3a76b2;
+  --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --hand: "Patrick Hand", "Comic Sans MS", cursive;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141916; --fg: #e5ebe5; --muted: #9ba69e; --line: #333f38; --panel: #1c231f;
+  --g-track: #6f7b73; --g-gate: #d4dcd5; --g-ok: #62c088; --g-stop: #ec7d6b; --g-ask: #e3ad55; --g-out: #6ea9d9; --g-mem: #b897e6;
+  --c-sky: #1b2a36; --c-ground: #23362a; --c-ink: #0d0f12; --c-claude: #f39a63;
+  --c-dog: #b88456; --c-dog-far: #8a5f3a; --c-robot: #95a1ad; --c-vault: #5a6672; --c-mem: #8669bd; --c-bubble: #f3f3ee;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #141916; --fg: #e5ebe5; --muted: #9ba69e; --line: #333f38; --panel: #1c231f;
+  --g-track: #6f7b73; --g-gate: #d4dcd5; --g-ok: #62c088; --g-stop: #ec7d6b; --g-ask: #e3ad55; --g-out: #6ea9d9; --g-mem: #b897e6;
+  --c-sky: #1b2a36; --c-ground: #23362a; --c-ink: #0d0f12; --c-claude: #f39a63;
+  --c-dog: #b88456; --c-dog-far: #8a5f3a; --c-robot: #95a1ad; --c-vault: #5a6672; --c-mem: #8669bd; --c-bubble: #f3f3ee;
+  color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font: 16px/1.55 var(--sans); }
+.wrap { max-width: 1200px; margin: 0 auto; padding-block: 40px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 56px; }
+header { display: grid; gap: 12px; max-width: 68ch; }
+h1 { font-size: clamp(28px, 4vw, 40px); line-height: 1.15; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font-size: 22px; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.lede { color: var(--muted); }
+.lede a { color: var(--fg); }
+nav { display: flex; flex-wrap: wrap; gap: 8px; }
+nav a { color: var(--fg); text-decoration: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 14px; font-size: 14px; }
+nav a:hover, nav a:focus-visible { border-color: var(--fg); outline: none; }
+section { display: grid; gap: 16px; }
+.head { display: grid; gap: 4px; max-width: 72ch; }
+.tag { font: 500 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.scroll svg { display: block; width: 100%; min-width: 1000px; height: auto; }
+.note { color: var(--muted); font-size: 14px; max-width: 72ch; }
+
+/* A · gates */
+.g-track { stroke: var(--g-track); stroke-width: 6; stroke-linecap: round; fill: none; }
+.g-memtrack { stroke: var(--g-mem); stroke-width: 5; stroke-linecap: round; fill: none; }
+.g-post { fill: var(--g-gate); }
+.g-drop { stroke: var(--g-stop); stroke-width: 2; stroke-dasharray: 5 5; fill: none; }
+.g-drop.mem { stroke: var(--g-mem); }
+.g-flow { fill: var(--muted); font: 600 13px var(--sans); }
+.g-flow.mem { fill: var(--g-mem); }
+.g-loop { stroke: var(--g-out); stroke-width: 3; stroke-dasharray: 6 5; fill: none; }
+.g-src { fill: var(--panel); stroke: var(--g-gate); stroke-width: 2; }
+.g-slot { fill: var(--g-gate); font: 500 11px var(--mono); }
+.g-dest { fill: var(--panel); stroke-width: 4; }
+.g-dest.ok { stroke: var(--g-ok); } .g-dest.mem { stroke: var(--g-mem); }
+.g-icon-ok { fill: none; stroke: var(--g-ok); stroke-width: 3; }
+.g-icon-mem { fill: none; stroke: var(--g-mem); stroke-width: 3; stroke-linejoin: round; }
+.g-dest-t { fill: var(--fg); font: 600 17px var(--sans); }
+.g-dest-s { fill: var(--muted); font: 500 11px var(--mono); }
+.fo { font: 13px/1.4 var(--sans); color: var(--fg); }
+.fo b { display: block; font-size: 15px; margin-bottom: 4px; }
+.fo .sub { color: var(--muted); }
+.fo .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.chip { font: 500 11px var(--mono); padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.chip.ask { color: var(--g-ask); border-color: var(--g-ask); }
+.chip.ok { color: var(--g-ok); border-color: var(--g-ok); }
+.fo ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.fo li { padding-left: 12px; border-left: 3px solid var(--g-stop); }
+.fo li.ask { border-color: var(--g-ask); }
+.fo li.mem { border-color: var(--g-mem); }
+.fo code { font: 12px var(--mono); }
+.fo .out-t { color: var(--g-out); }
+.fo .mem-t { color: var(--g-mem); }
+.fo .aside { color: var(--muted); font-style: italic; }
+
+/* B · cartoon */
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.panel { margin: 0; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.panel svg { display: block; width: 100%; height: auto; border: 3px solid var(--fg); border-radius: 6px; background: var(--c-sky); }
+.panel figcaption { font: 20px/1.25 var(--hand); }
+.c-ground { fill: var(--c-ground); }
+.c-ol { stroke: var(--c-ink); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+.c-line { stroke: var(--c-ink); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.c-ink { fill: var(--c-ink); }
+.c-memo { fill: var(--c-memo); } .c-pink { fill: var(--c-pink); } .c-card { fill: var(--c-card); }
+.c-rule-red { stroke: var(--c-rule-red); stroke-width: 2; } .c-rule-blue { stroke: var(--c-rule-blue); stroke-width: 1.5; }
+.c-pen { fill: var(--c-pen); font: 11px var(--hand); } .c-claude { fill: var(--c-claude); }
+.c-dog { fill: var(--c-dog); } .c-dog-far { fill: var(--c-dog-far); }
+.c-robot { fill: var(--c-robot); } .c-vault { fill: var(--c-vault); } .c-mem { fill: var(--c-mem); } .c-book { fill: var(--c-book); }
+.c-white { fill: var(--c-bubble); }
+.c-bubble { fill: var(--c-bubble); stroke: var(--c-ink); stroke-width: 2.5; }
+.c-say { fill: var(--c-bubble-ink); font: 17px var(--hand); }
+.c-label { fill: var(--c-bubble); font: 13px var(--hand); }
+.c-sign { fill: var(--c-bubble-ink); font: 15px var(--hand); }
+.c-ground-t { fill: var(--fg); font: 16px var(--hand); }
+.wob { filter: url(#wobble); }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="wobble"><feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="4"/><feDisplacementMap in="SourceGraphic" scale="2.2"/></filter>
+    <marker id="g-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--g-stop)"/></marker>
+    <marker id="g-arrow-out" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--g-out)"/></marker>
+    <marker id="g-arrow-mem" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--g-mem)"/></marker>
+    <marker id="g-arrow-mem-sm" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--g-mem)"/></marker>
+    <!-- Memo, the sticky note, standing with arms up. Origin is its top-left corner; fill comes from the <use>. -->
+    <g id="memo-body">
+      <path class="c-ol" d="M0 0 h48 l12 12 v50 h-60 z"/><path class="c-line" d="M48 0 v12 h12"/>
+      <circle class="c-ink" cx="18" cy="24" r="4"/><circle class="c-ink" cx="40" cy="24" r="4"/><path class="c-line" d="M18 38 q11 9 22 0"/>
+      <line class="c-line" x1="18" y1="62" x2="14" y2="80"/><line class="c-line" x1="42" y1="62" x2="46" y2="80"/>
+      <line class="c-line" x1="0" y1="32" x2="-14" y2="12"/><line class="c-line" x1="60" y1="32" x2="74" y2="12"/>
+    </g>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <span class="tag">claude-memory-cloud · the gates</span>
+    <h1>Where a memory goes</h1>
+    <p class="lede">A fact you tell Claude, in chat or in Claude Code on any machine, the checks it meets, and the two places it can end up. See also <a href="memory-path-cartoon.html">the cartoon version</a>.</p>
+  </header>
+
+  <!-- A -->
+  <section id="gates">
+    <div class="head">
+      <span class="tag">Plain and exact</span>
+      <h2>The gates</h2>
+      <p class="note">Two lanes, one for chat and one for Claude Code, travel left to right. Personal facts turn off to claude.ai's built-in memory; work facts go through the Worker's guard to GitHub. Refusals drop out below each gate.</p>
+    </div>
+    <div class="scroll">
+      <svg viewBox="0 0 1200 800" role="img" aria-label="Chat on any device and Claude Code on any machine both pass Claude's judgment. Personal facts in chat go to claude.ai's built-in memory. Claude Code also passes an auto-mode check and can queue in a per-machine outbox. Both lanes meet at the Worker's guard on Cloudflare before work facts are committed to a GitHub repo.">
+        <!-- tracks -->
+        <path class="g-track" d="M196 190 H600 C 690 190, 690 470, 780 470"/>
+        <line class="g-track" x1="196" y1="470" x2="1010" y2="470"/>
+        <path class="g-memtrack" d="M345 190 C 385 190, 385 82, 425 82 H998" marker-end="url(#g-arrow-mem)"/>
+
+        <!-- sources -->
+        <foreignObject x="16" y="96" width="190" height="40"><div class="fo"><b>You say a fact</b></div></foreignObject>
+        <rect class="g-src" x="16" y="146" width="180" height="88" rx="10"/>
+        <foreignObject x="28" y="156" width="160" height="72"><div class="fo"><b>claude.ai chat</b><span class="sub">web · desktop · phone</span></div></foreignObject>
+        <rect class="g-src" x="34" y="408" width="172" height="92" rx="10"/>
+        <rect class="g-src" x="25" y="418" width="172" height="92" rx="10"/>
+        <rect class="g-src" x="16" y="428" width="172" height="92" rx="10"/>
+        <foreignObject x="28" y="438" width="152" height="76"><div class="fo"><b>Claude Code</b><span class="sub">your Mac · VMs · other machines</span></div></foreignObject>
+        <foreignObject x="16" y="532" width="180" height="90"><div class="fo aside">Each machine has its own auto-mode check and its own outbox.</div></foreignObject>
+
+        <!-- gate 1, on both lanes -->
+        <rect class="g-post" x="282" y="140" width="12" height="100" rx="2"/><rect class="g-post" x="326" y="140" width="12" height="100" rx="2"/><rect class="g-post" x="272" y="128" width="76" height="14" rx="3"/>
+        <rect class="g-post" x="282" y="420" width="12" height="100" rx="2"/><rect class="g-post" x="326" y="420" width="12" height="100" rx="2"/><rect class="g-post" x="272" y="408" width="76" height="14" rx="3"/>
+        <!-- gate 2, Claude Code only -->
+        <rect class="g-post" x="502" y="420" width="12" height="100" rx="2"/><rect class="g-post" x="546" y="420" width="12" height="100" rx="2"/><rect class="g-post" x="492" y="408" width="76" height="14" rx="3"/>
+        <!-- outbox detour -->
+        <path class="g-loop" d="M612 474 C 612 540, 700 540, 700 476" marker-end="url(#g-arrow-out)"/>
+        <!-- gate 3: three slots, where both lanes meet -->
+        <rect class="g-post" x="800" y="420" width="12" height="100" rx="2"/><rect class="g-post" x="846" y="420" width="12" height="100" rx="2"/><rect class="g-post" x="892" y="420" width="12" height="100" rx="2"/><rect class="g-post" x="938" y="420" width="12" height="100" rx="2"/>
+        <rect class="g-post" x="790" y="408" width="170" height="14" rx="3"/>
+        <text class="g-slot" x="829" y="400" text-anchor="middle" style="font-size:10px">secret</text><text class="g-slot" x="875" y="400" text-anchor="middle" style="font-size:10px">personal</text><text class="g-slot" x="921" y="400" text-anchor="middle" style="font-size:10px">client</text>
+
+        <!-- destination: claude.ai memory -->
+        <rect class="g-dest mem" x="1010" y="12" width="178" height="140" rx="12"/>
+        <path class="g-icon-mem" d="M1081 36 h36 a8 8 0 0 1 8 8 v18 a8 8 0 0 1 -8 8 h-20 l-10 9 v-9 h-6 a8 8 0 0 1 -8 -8 v-18 a8 8 0 0 1 8 -8 z"/>
+        <path class="g-icon-mem" d="M1099 61 c-6 -5 -11 -8 -8 -13 c2 -3 6 -3 8 1 c2 -4 6 -4 8 -1 c3 5 -2 8 -8 13 z"/>
+        <text class="g-dest-t" x="1099" y="104" text-anchor="middle">claude.ai memory</text>
+        <text class="g-dest-s" x="1099" y="126" text-anchor="middle">built in · personal</text>
+        <!-- destination: GitHub repo -->
+        <rect class="g-dest ok" x="1010" y="400" width="178" height="140" rx="12"/>
+        <line class="g-icon-ok" x1="1088" y1="429" x2="1088" y2="451"/><path class="g-icon-ok" d="M1110 429 v4 q0 10 -22 18"/>
+        <circle class="g-icon-ok" cx="1088" cy="424" r="5"/><circle class="g-icon-ok" cx="1088" cy="456" r="5"/><circle class="g-icon-ok" cx="1110" cy="424" r="5"/>
+        <text class="g-dest-t" x="1099" y="492" text-anchor="middle">GitHub repo</text>
+        <text class="g-dest-s" x="1099" y="514" text-anchor="middle">claude-memory · work</text>
+
+        <!-- drops -->
+        <line class="g-drop mem" x1="298" y1="522" x2="298" y2="540" marker-end="url(#g-arrow-mem-sm)"/>
+        <line class="g-drop" x1="322" y1="522" x2="322" y2="540" marker-end="url(#g-arrow)"/>
+        <line class="g-drop" x1="530" y1="522" x2="530" y2="540" marker-end="url(#g-arrow)"/>
+        <line class="g-drop" x1="875" y1="522" x2="875" y2="540" marker-end="url(#g-arrow)"/>
+
+        <!-- labels -->
+        <foreignObject x="440" y="28" width="540" height="50"><div class="fo mem-t"><b>Personal fact in chat? Claude saves it to claude.ai's built-in memory, never to GitHub.</b></div></foreignObject>
+        <text class="g-flow" x="440" y="176">Work fact</text>
+        <text class="g-flow" x="352" y="456">Work fact</text>
+        <foreignObject x="205" y="252" width="240" height="150"><div class="fo"><b>1 · Claude's judgment</b><div class="chips"><span class="chip">every surface</span><span class="chip">runs in the model</span><span class="chip ask">can be talked round</span></div>Follows the server's instructions everywhere, plus your CLAUDE.md in Claude Code.</div></foreignObject>
+        <foreignObject x="460" y="252" width="150" height="150"><div class="fo"><b>2 · Auto-mode check</b><div class="chips"><span class="chip ask">Claude Code only</span><span class="chip">each machine</span></div>Judges the call before it leaves.</div></foreignObject>
+        <foreignObject x="770" y="252" width="235" height="150"><div class="fo"><b>3 · The Worker's guard</b><div class="chips"><span class="chip">one Worker, Cloudflare</span><span class="chip">every surface</span><span class="chip ok">can't be skipped</span></div>Regular expressions, same answer every time. <code>force</code> doesn't get past it.</div></foreignObject>
+        <foreignObject x="1010" y="162" width="182" height="200"><div class="fo">Personal facts, and in chat your opinions about people. Chat saves them here itself. Claude Code can't reach it: it says “not saved: personal” and you add it in chat.</div></foreignObject>
+        <foreignObject x="1010" y="550" width="182" height="200"><div class="fo">Work facts, in general (you), a client's repo, or <code>projects/&lt;repo&gt;/</code>. Chat and every machine read the same repo.</div></foreignObject>
+
+        <!-- exits below -->
+        <foreignObject x="205" y="548" width="240" height="240"><div class="fo"><ul>
+          <li class="mem">Personal fact: to claude.ai memory in chat; “not saved: personal” in Claude Code</li>
+          <li class="ask">Opinion about a person: ask first; general only</li>
+          <li class="ask">Machine names, IPs: ask which scope</li>
+          <li>Secret: never saved</li>
+        </ul></div></foreignObject>
+        <foreignObject x="460" y="548" width="145" height="200"><div class="fo"><ul>
+          <li>Blocked before it leaves the machine. It stopped our live test of the guard.</li>
+        </ul></div></foreignObject>
+        <foreignObject x="612" y="548" width="150" height="200"><div class="fo out-t"><b>Outbox</b>Claude Code only. Server down? The save waits on that machine, then replays through gate 3.</div></foreignObject>
+        <foreignObject x="770" y="548" width="235" height="240"><div class="fo"><ul>
+          <li>Token or password: <code>rejected_secret</code></li>
+          <li>Personal fact: <code>rejected_personal</code></li>
+          <li class="ask">Opinion in general: <code>needs_confirmation</code>, saved on your yes</li>
+          <li>Names another client: <code>rejected_cross_client</code></li>
+        </ul></div></foreignObject>
+      </svg>
+    </div>
+  </section>
+
+</div>
+</html>

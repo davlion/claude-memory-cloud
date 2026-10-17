@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory Path: Cartoon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&family=Patrick+Hand&display=swap">
+<style>
+/* Layout: two framed treatments in one column. The gates drawing scrolls sideways on narrow screens; the cartoon panels wrap. */
+:root {
+  --bg: #f4f6f2; --fg: #1d2320; --muted: #57625b; --line: #cfd6ce; --panel: #ffffff;
+  --g-track: #8a958d; --g-gate: #2c3a33; --g-ok: #2f7d4f; --g-stop: #b8402f; --g-ask: #a8701a; --g-out: #2f6690; --g-mem: #7a4bb0;
+  --c-sky: #def0fa; --c-ground: #c8e6b6; --c-ink: #22252a; --c-memo: #ffd84d; --c-pink: #ff9fc0; --c-claude: #f08a4b;
+  --c-card: #fff6e2; --c-rule-red: #e06a6a; --c-rule-blue: #8fb3e0; --c-pen: #2c4a8a;
+  --c-dog: #b57d4b; --c-dog-far: #8f5f34; --c-robot: #aeb8c2; --c-vault: #6c7985; --c-mem: #9a7bd2;
+  --c-bubble: #ffffff; --c-bubble-ink: #22252a; --c-book: #3a76b2;
+  --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --hand: "Patrick Hand", "Comic Sans MS", cursive;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141916; --fg: #e5ebe5; --muted: #9ba69e; --line: #333f38; --panel: #1c231f;
+  --g-track: #6f7b73; --g-gate: #d4dcd5; --g-ok: #62c088; --g-stop: #ec7d6b; --g-ask: #e3ad55; --g-out: #6ea9d9; --g-mem: #b897e6;
+  --c-sky: #1b2a36; --c-ground: #23362a; --c-ink: #0d0f12; --c-claude: #f39a63;
+  --c-dog: #b88456; --c-dog-far: #8a5f3a; --c-robot: #95a1ad; --c-vault: #5a6672; --c-mem: #8669bd; --c-bubble: #f3f3ee;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #141916; --fg: #e5ebe5; --muted: #9ba69e; --line: #333f38; --panel: #1c231f;
+  --g-track: #6f7b73; --g-gate: #d4dcd5; --g-ok: #62c088; --g-stop: #ec7d6b; --g-ask: #e3ad55; --g-out: #6ea9d9; --g-mem: #b897e6;
+  --c-sky: #1b2a36; --c-ground: #23362a; --c-ink: #0d0f12; --c-claude: #f39a63;
+  --c-dog: #b88456; --c-dog-far: #8a5f3a; --c-robot: #95a1ad; --c-vault: #5a6672; --c-mem: #8669bd; --c-bubble: #f3f3ee;
+  color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font: 16px/1.55 var(--sans); }
+.wrap { max-width: 1200px; margin: 0 auto; padding-block: 40px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 56px; }
+header { display: grid; gap: 12px; max-width: 68ch; }
+h1 { font-size: clamp(28px, 4vw, 40px); line-height: 1.15; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font-size: 22px; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.lede { color: var(--muted); }
+.lede a { color: var(--fg); }
+nav { display: flex; flex-wrap: wrap; gap: 8px; }
+nav a { color: var(--fg); text-decoration: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 14px; font-size: 14px; }
+nav a:hover, nav a:focus-visible { border-color: var(--fg); outline: none; }
+section { display: grid; gap: 16px; }
+.head { display: grid; gap: 4px; max-width: 72ch; }
+.tag { font: 500 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.scroll svg { display: block; width: 100%; min-width: 1000px; height: auto; }
+.note { color: var(--muted); font-size: 14px; max-width: 72ch; }
+
+/* A · gates */
+.g-track { stroke: var(--g-track); stroke-width: 6; stroke-linecap: round; fill: none; }
+.g-memtrack { stroke: var(--g-mem); stroke-width: 5; stroke-linecap: round; fill: none; }
+.g-post { fill: var(--g-gate); }
+.g-drop { stroke: var(--g-stop); stroke-width: 2; stroke-dasharray: 5 5; fill: none; }
+.g-drop.mem { stroke: var(--g-mem); }
+.g-flow { fill: var(--muted); font: 600 13px var(--sans); }
+.g-flow.mem { fill: var(--g-mem); }
+.g-loop { stroke: var(--g-out); stroke-width: 3; stroke-dasharray: 6 5; fill: none; }
+.g-src { fill: var(--panel); stroke: var(--g-gate); stroke-width: 2; }
+.g-slot { fill: var(--g-gate); font: 500 11px var(--mono); }
+.g-dest { fill: var(--panel); stroke-width: 4; }
+.g-dest.ok { stroke: var(--g-ok); } .g-dest.mem { stroke: var(--g-mem); }
+.g-icon-ok { fill: none; stroke: var(--g-ok); stroke-width: 3; }
+.g-icon-mem { fill: none; stroke: var(--g-mem); stroke-width: 3; stroke-linejoin: round; }
+.g-dest-t { fill: var(--fg); font: 600 17px var(--sans); }
+.g-dest-s { fill: var(--muted); font: 500 11px var(--mono); }
+.fo { font: 13px/1.4 var(--sans); color: var(--fg); }
+.fo b { display: block; font-size: 15px; margin-bottom: 4px; }
+.fo .sub { color: var(--muted); }
+.fo .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.chip { font: 500 11px var(--mono); padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.chip.ask { color: var(--g-ask); border-color: var(--g-ask); }
+.chip.ok { color: var(--g-ok); border-color: var(--g-ok); }
+.fo ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.fo li { padding-left: 12px; border-left: 3px solid var(--g-stop); }
+.fo li.ask { border-color: var(--g-ask); }
+.fo li.mem { border-color: var(--g-mem); }
+.fo code { font: 12px var(--mono); }
+.fo .out-t { color: var(--g-out); }
+.fo .mem-t { color: var(--g-mem); }
+.fo .aside { color: var(--muted); font-style: italic; }
+
+/* B · cartoon */
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.panel { margin: 0; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.panel svg { display: block; width: 100%; height: auto; border: 3px solid var(--fg); border-radius: 6px; background: var(--c-sky); }
+.panel figcaption { font: 20px/1.25 var(--hand); }
+.c-ground { fill: var(--c-ground); }
+.c-ol { stroke: var(--c-ink); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+.c-line { stroke: var(--c-ink); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.c-ink { fill: var(--c-ink); }
+.c-memo { fill: var(--c-memo); } .c-pink { fill: var(--c-pink); } .c-card { fill: var(--c-card); }
+.c-rule-red { stroke: var(--c-rule-red); stroke-width: 2; } .c-rule-blue { stroke: var(--c-rule-blue); stroke-width: 1.5; }
+.c-pen { fill: var(--c-pen); font: 11px var(--hand); } .c-claude { fill: var(--c-claude); }
+.c-dog { fill: var(--c-dog); } .c-dog-far { fill: var(--c-dog-far); }
+.c-robot { fill: var(--c-robot); } .c-vault { fill: var(--c-vault); } .c-mem { fill: var(--c-mem); } .c-book { fill: var(--c-book); }
+.c-white { fill: var(--c-bubble); }
+.c-bubble { fill: var(--c-bubble); stroke: var(--c-ink); stroke-width: 2.5; }
+.c-say { fill: var(--c-bubble-ink); font: 17px var(--hand); }
+.c-label { fill: var(--c-bubble); font: 13px var(--hand); }
+.c-sign { fill: var(--c-bubble-ink); font: 15px var(--hand); }
+.c-ground-t { fill: var(--fg); font: 16px var(--hand); }
+.wob { filter: url(#wobble); }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="wobble"><feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="4"/><feDisplacementMap in="SourceGraphic" scale="2.2"/></filter>
+    <marker id="g-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--g-stop)"/></marker>
+    <marker id="g-arrow-out" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--g-out)"/></marker>
+    <marker id="g-arrow-mem" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--g-mem)"/></marker>
+    <marker id="g-arrow-mem-sm" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--g-mem)"/></marker>
+    <!-- Memo, the sticky note, standing with arms up. Origin is its top-left corner; fill comes from the <use>. -->
+    <g id="memo-body">
+      <path class="c-ol" d="M0 0 h48 l12 12 v50 h-60 z"/><path class="c-line" d="M48 0 v12 h12"/>
+      <circle class="c-ink" cx="18" cy="24" r="4"/><circle class="c-ink" cx="40" cy="24" r="4"/><path class="c-line" d="M18 38 q11 9 22 0"/>
+      <line class="c-line" x1="18" y1="62" x2="14" y2="80"/><line class="c-line" x1="42" y1="62" x2="46" y2="80"/>
+      <line class="c-line" x1="0" y1="32" x2="-14" y2="12"/><line class="c-line" x1="60" y1="32" x2="74" y2="12"/>
+    </g>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <span class="tag">claude-memory-cloud · the cartoon</span>
+    <h1>Where a memory goes</h1>
+    <p class="lede">The same path as <a href="memory-path-gates.html">the gates diagram</a>, told by a sticky note called Memo.</p>
+  </header>
+
+  <!-- B -->
+  <section id="cartoon">
+    <div class="head">
+      <span class="tag">Cartoon</span>
+      <h2>Memo's day out</h2>
+      <p class="note">A sticky note called Memo meets each checkpoint as a character. The panels wrap on a phone, so this one reads best on small screens.</p>
+    </div>
+    <div class="strip">
+
+      <figure class="panel">
+        <svg viewBox="0 0 360 280" role="img" aria-label="Three Memos pop out of a phone running claude.ai chat, a Mac laptop and a dashed virtual machine, under a sign reading same rules, every door.">
+          <rect class="c-ground" x="0" y="225" width="360" height="55"/>
+          <g class="wob">
+            <!-- phone -->
+            <rect class="c-ink c-ol" x="26" y="112" width="62" height="112" rx="12"/>
+            <rect class="c-white" x="33" y="124" width="48" height="86" rx="4"/>
+            <rect class="c-claude" x="38" y="132" width="30" height="10" rx="5"/><rect class="c-book" x="46" y="148" width="30" height="10" rx="5"/><rect class="c-claude" x="38" y="164" width="24" height="10" rx="5"/>
+            <!-- laptop -->
+            <rect class="c-ink c-ol" x="118" y="126" width="96" height="66" rx="6"/>
+            <rect class="c-robot c-ol" x="106" y="192" width="120" height="12" rx="4"/>
+            <!-- VM: a dashed monitor -->
+            <rect class="c-white c-ol" x="248" y="118" width="92" height="70" rx="6" style="stroke-dasharray:7 5"/>
+            <rect class="c-robot c-ol" x="287" y="188" width="14" height="16"/><rect class="c-robot c-ol" x="268" y="204" width="52" height="8" rx="3"/>
+            <!-- Memos -->
+            <use href="#memo-body" class="c-memo" transform="translate(42 70) scale(.5)"/>
+            <use href="#memo-body" class="c-memo" transform="translate(152 84) scale(.5)"/>
+            <use href="#memo-body" class="c-memo" transform="translate(280 76) scale(.5)"/>
+          </g>
+          <text class="c-label" x="130" y="164">&gt;_ claude</text>
+          <text class="c-sign" x="260" y="160" style="font-size:13px">&gt;_ claude</text>
+          <text class="c-ground-t" x="57" y="252" text-anchor="middle">chat</text>
+          <text class="c-ground-t" x="166" y="252" text-anchor="middle">your Mac</text>
+          <text class="c-ground-t" x="294" y="252" text-anchor="middle">a VM</text>
+          <rect class="c-bubble" x="40" y="14" width="280" height="42" rx="12"/>
+          <text class="c-say" x="180" y="41" text-anchor="middle">Same rules, every door.</text>
+        </svg>
+        <figcaption>1 · Memo can start anywhere: claude.ai chat on any device, or Claude Code on your Mac, a VM or another machine.</figcaption>
+      </figure>
+
+      <figure class="panel">
+        <svg viewBox="0 0 360 280" role="img" aria-label="Claude, a round character with glasses and a rulebook, tells Memo personal facts go to claude.ai memory.">
+          <rect class="c-ground" x="0" y="225" width="360" height="55"/>
+          <g class="wob">
+            <!-- Claude -->
+            <ellipse class="c-claude c-ol" cx="95" cy="175" rx="48" ry="50"/>
+            <circle class="c-white c-ol" cx="78" cy="160" r="12"/><circle class="c-white c-ol" cx="112" cy="160" r="12"/><line class="c-line" x1="90" y1="160" x2="100" y2="160"/>
+            <circle class="c-ink" cx="80" cy="161" r="3.5"/><circle class="c-ink" cx="114" cy="161" r="3.5"/>
+            <path class="c-line" d="M82 185 q13 9 26 0"/>
+            <rect class="c-book c-ol" x="62" y="196" width="66" height="36" rx="3"/>
+            <ellipse class="c-claude c-ol" cx="75" cy="230" rx="14" ry="6"/><ellipse class="c-claude c-ol" cx="115" cy="230" rx="14" ry="6"/>
+            <!-- Memo -->
+            <g transform="translate(250 148)">
+              <path class="c-memo c-ol" d="M0 0 h48 l12 12 v50 h-60 z"/><path class="c-line" d="M48 0 v12 h12"/>
+              <circle class="c-ink" cx="18" cy="24" r="4"/><circle class="c-ink" cx="40" cy="24" r="4"/><path class="c-line" d="M18 38 q11 9 22 0"/>
+              <line class="c-line" x1="18" y1="62" x2="14" y2="80"/><line class="c-line" x1="42" y1="62" x2="46" y2="80"/>
+              <line class="c-line" x1="0" y1="34" x2="-12" y2="46"/><line class="c-line" x1="60" y1="34" x2="72" y2="18"/>
+            </g>
+          </g>
+          <text class="c-label" x="95" y="219" text-anchor="middle">house rules</text>
+          <path class="c-bubble" d="M14 14 h196 a12 12 0 0 1 12 12 v52 a12 12 0 0 1 -12 12 h-90 l-14 22 l-4 -22 h-88 a12 12 0 0 1 -12 -12 v-52 a12 12 0 0 1 12 -12 z"/>
+          <text class="c-say" x="26" y="40"><tspan>Health? Money? Family?</tspan><tspan x="26" dy="21">That goes in claude.ai</tspan><tspan x="26" dy="21">memory, not GitHub.</tspan></text>
+          <path class="c-bubble" d="M236 72 h106 a10 10 0 0 1 10 10 v30 a10 10 0 0 1 -10 10 h-46 l-6 18 l-10 -18 h-44 a10 10 0 0 1 -10 -10 v-30 a10 10 0 0 1 10 -10 z"/>
+          <text class="c-say" x="245" y="94"><tspan>I'm a work</tspan><tspan x="245" dy="20">fact, honest!</tspan></text>
+        </svg>
+        <figcaption>2 · On every surface, Claude reads the house rules first.</figcaption>
+      </figure>
+
+      <figure class="panel">
+        <svg viewBox="0 0 360 280" role="img" aria-label="Memo's cousin, a handwritten file card with a pink bow, hops toward a big locked diary labelled claude.ai memory.">
+          <rect class="c-ground" x="0" y="225" width="360" height="55"/>
+          <g class="wob">
+            <!-- diary -->
+            <rect class="c-mem c-ol" x="150" y="40" width="180" height="188" rx="10"/>
+            <rect class="c-ink" opacity=".22" x="152" y="42" width="22" height="184" rx="6"/>
+            <line class="c-line" x1="174" y1="42" x2="174" y2="226"/>
+            <rect class="c-white c-ol" x="188" y="66" width="126" height="56" rx="6"/>
+            <path class="c-pink c-ol" d="M251 190 c-16 -13 -30 -22 -21 -35 c6 -8 17 -7 21 2 c4 -9 15 -10 21 -2 c9 13 -5 22 -21 35 z"/>
+            <!-- clasp and padlock -->
+            <rect class="c-mem c-ol" x="312" y="126" width="30" height="26" rx="5"/>
+            <path class="c-line" d="M320 126 v-9 a7 7 0 0 1 14 0 v9"/><circle class="c-ink" cx="327" cy="139" r="3"/>
+            <!-- the personal note: a handwritten file card with a bow -->
+            <g transform="translate(34 150)">
+              <line class="c-line" x1="26" y1="56" x2="22" y2="74"/><line class="c-line" x1="62" y1="56" x2="66" y2="74"/>
+              <line class="c-line" x1="0" y1="28" x2="-14" y2="10"/><line class="c-line" x1="88" y1="28" x2="102" y2="10"/>
+              <rect class="c-card c-ol" x="0" y="0" width="88" height="58" rx="3"/>
+              <line class="c-rule-red" x1="4" y1="13" x2="84" y2="13"/>
+              <line class="c-rule-blue" x1="4" y1="25" x2="84" y2="25"/><line class="c-rule-blue" x1="4" y1="37" x2="84" y2="37"/><line class="c-rule-blue" x1="4" y1="49" x2="84" y2="49"/>
+              <circle class="c-ink" cx="32" cy="21" r="3.5"/><circle class="c-ink" cx="56" cy="21" r="3.5"/>
+              <path class="c-line" d="M36 29 q8 7 16 0" style="stroke-width:2.5"/>
+              <path class="c-pink c-ol" d="M76 2 l-14 -10 v20 z M76 2 l14 -10 v20 z" style="stroke-width:2"/><circle class="c-pink c-ol" cx="76" cy="2" r="4" style="stroke-width:2"/>
+            </g>
+          </g>
+          <text class="c-pen" x="40" y="197">dear diary,</text>
+          <text class="c-sign" x="251" y="91" text-anchor="middle">claude.ai memory</text>
+          <text class="c-sign" x="251" y="111" text-anchor="middle" style="font-size:13px">built in · just yours</text>
+          <path class="c-bubble" d="M26 18 h106 a12 12 0 0 1 12 12 v62 a12 12 0 0 1 -12 12 h-38 l-8 22 l-10 -22 h-50 a12 12 0 0 1 -12 -12 v-62 a12 12 0 0 1 12 -12 z"/>
+          <text class="c-say" x="24" y="42"><tspan>Family? Health?</tspan><tspan x="24" dy="21">I live in here,</tspan><tspan x="24" dy="21">not on GitHub.</tspan></text>
+        </svg>
+        <figcaption>3 · Memo's cousin, a handwritten personal card, goes to claude.ai's built-in memory instead. In chat Claude files it there; Claude Code hands it back for you to file.</figcaption>
+      </figure>
+
+      <figure class="panel">
+        <svg viewBox="0 0 360 280" role="img" aria-label="A guard dog with pointy ears and a bushy tail, wearing an auto mode sign, growls at the door of this machine that the call smells like PII.">
+          <rect class="c-ground" x="0" y="225" width="360" height="55"/>
+          <g class="wob">
+            <!-- door -->
+            <rect class="c-white c-ol" x="264" y="70" width="80" height="158" rx="4"/><circle class="c-ink" cx="276" cy="150" r="4"/>
+            <!-- tail -->
+            <path class="c-dog c-ol" d="M88 166 Q 44 152 52 102 Q 64 94 70 106 Q 68 140 100 154 Z"/>
+            <path class="c-line" d="M60 112 q2 18 14 30" style="stroke-width:2"/>
+            <!-- far legs -->
+            <rect class="c-dog-far c-ol" x="94" y="188" width="18" height="36" rx="8"/>
+            <rect class="c-dog-far c-ol" x="166" y="190" width="18" height="34" rx="8"/>
+            <ellipse class="c-dog-far c-ol" cx="106" cy="226" rx="12" ry="6"/><ellipse class="c-dog-far c-ol" cx="178" cy="226" rx="12" ry="6"/>
+            <!-- neck -->
+            <path class="c-dog c-ol" d="M164 168 L186 120 L220 128 L206 182 Z"/>
+            <!-- body and haunch -->
+            <ellipse class="c-dog c-ol" cx="140" cy="176" rx="58" ry="30"/>
+            <path class="c-line" d="M86 168 q8 -26 36 -20" style="stroke-width:2.5"/>
+            <!-- near legs -->
+            <rect class="c-dog c-ol" x="110" y="192" width="19" height="34" rx="8"/>
+            <rect class="c-dog c-ol" x="184" y="186" width="19" height="40" rx="8"/>
+            <ellipse class="c-dog c-ol" cx="123" cy="228" rx="13" ry="6"/><ellipse class="c-dog c-ol" cx="197" cy="228" rx="13" ry="6"/>
+            <path class="c-line" d="M119 228 v-3 M127 228 v-3 M193 228 v-3 M201 228 v-3" style="stroke-width:1.5"/>
+            <!-- collar and tag -->
+            <path class="c-line" d="M188 140 q16 10 30 2" style="stroke:var(--c-book);stroke-width:7"/>
+            <circle class="c-memo c-ol" cx="204" cy="156" r="6"/>
+            <!-- head -->
+            <circle class="c-dog c-ol" cx="206" cy="122" r="24"/>
+            <path class="c-dog c-ol" d="M190 108 L184 72 L208 100 Z"/><path class="c-ink" opacity=".3" d="M192 102 L188 82 L201 98 Z"/>
+            <path class="c-dog c-ol" d="M210 100 L226 68 L228 110 Z"/><path class="c-ink" opacity=".3" d="M215 100 L224 80 L225 104 Z"/>
+            <path class="c-dog c-ol" d="M220 112 Q 254 112 256 126 Q 254 140 222 140 Z"/>
+            <ellipse class="c-ink" cx="254" cy="120" rx="6" ry="5"/>
+            <path class="c-line" d="M228 136 l5 -4 l5 4 l5 -4 l5 4" style="stroke-width:2"/>
+            <circle class="c-ink" cx="212" cy="116" r="3.5"/><path class="c-line" d="M203 106 l15 6"/>
+            <!-- sign on the body -->
+            <rect class="c-white c-ol" x="112" y="164" width="64" height="20" rx="4"/>
+          </g>
+          <text class="c-sign" x="144" y="179" text-anchor="middle" style="font-size:12px">auto mode</text>
+          <text class="c-sign" x="304" y="100" text-anchor="middle" style="font-size:13px">this machine</text>
+          <path class="c-bubble" d="M32 18 h120 a12 12 0 0 1 12 12 v34 a12 12 0 0 1 -12 12 h-4 l12 18 l-26 -18 h-102 a12 12 0 0 1 -12 -12 v-34 a12 12 0 0 1 12 -12 z"/>
+          <text class="c-say" x="32" y="42"><tspan>Grrr. This one</tspan><tspan x="32" dy="21">smells like PII.</tspan></text>
+        </svg>
+        <figcaption>4 · Only in Claude Code: a guard dog on each machine sniffs first. Ours bit a test today.</figcaption>
+      </figure>
+
+      <figure class="panel">
+        <svg viewBox="0 0 360 280" role="img" aria-label="A robot at the Cloudflare checkpoint holds a metal detector; three scanners are labelled secret, personal and other client.">
+          <rect class="c-ground" x="0" y="225" width="360" height="55"/>
+          <g class="wob">
+            <!-- booth sign -->
+            <rect class="c-white c-ol" x="196" y="20" width="148" height="34" rx="4"/>
+            <!-- scanners -->
+            <rect class="c-vault c-ol" x="214" y="104" width="34" height="122" rx="4"/><rect class="c-vault c-ol" x="258" y="104" width="34" height="122" rx="4"/><rect class="c-vault c-ol" x="302" y="104" width="34" height="122" rx="4"/>
+            <!-- robot -->
+            <rect class="c-robot c-ol" x="62" y="140" width="80" height="78" rx="8"/>
+            <rect class="c-robot c-ol" x="72" y="92" width="60" height="46" rx="8"/>
+            <line class="c-line" x1="102" y1="92" x2="102" y2="76"/><circle class="c-claude c-ol" cx="102" cy="72" r="6"/>
+            <rect class="c-white c-ol" x="80" y="104" width="44" height="16" rx="8"/><circle class="c-ink" cx="92" cy="112" r="4"/><circle class="c-ink" cx="112" cy="112" r="4"/>
+            <line class="c-line" x1="88" y1="128" x2="116" y2="128"/>
+            <line class="c-line" x1="142" y1="160" x2="182" y2="138"/><ellipse class="c-memo c-ol" cx="190" cy="132" rx="14" ry="9" transform="rotate(-30 190 132)"/>
+            <line class="c-line" x1="80" y1="218" x2="80" y2="232"/><line class="c-line" x1="124" y1="218" x2="124" y2="232"/>
+          </g>
+          <text class="c-sign" x="270" y="43" text-anchor="middle">CLOUDFLARE CUSTOMS</text>
+          <text class="c-label" x="231" y="170" text-anchor="middle" transform="rotate(-90 231 165)" style="font-size:14px">secret</text>
+          <text class="c-label" x="275" y="170" text-anchor="middle" transform="rotate(-90 275 165)" style="font-size:14px">personal</text>
+          <text class="c-label" x="319" y="170" text-anchor="middle" transform="rotate(-90 319 165)" style="font-size:14px">other client</text>
+          <path class="c-bubble" d="M14 18 h158 a12 12 0 0 1 12 12 v34 a12 12 0 0 1 -12 12 h-66 l-6 16 l-12 -16 h-62 a12 12 0 0 1 -12 -12 v-34 a12 12 0 0 1 12 -12 z"/>
+          <text class="c-say" x="26" y="42"><tspan>I don't do vibes.</tspan><tspan x="26" dy="21">I do regexes. BEEP.</tspan></text>
+        </svg>
+        <figcaption>5 · Chat and every machine go through the same Cloudflare customs: three scanners, no small talk, no exceptions.</figcaption>
+      </figure>
+
+      <figure class="panel">
+        <svg viewBox="0 0 360 280" role="img" aria-label="Memo cheers beside the GitHub vault, which has drawers labelled general, a client and projects.">
+          <rect class="c-ground" x="0" y="225" width="360" height="55"/>
+          <g class="wob">
+            <rect class="c-vault c-ol" x="150" y="40" width="180" height="188" rx="10"/>
+            <rect class="c-white c-ol" x="166" y="66" width="148" height="42" rx="4"/><rect class="c-white c-ol" x="166" y="118" width="148" height="42" rx="4"/><rect class="c-white c-ol" x="166" y="170" width="148" height="42" rx="4"/>
+            <!-- Memo cheering -->
+            <g transform="translate(50 140)">
+              <path class="c-memo c-ol" d="M0 0 h48 l12 12 v50 h-60 z"/><path class="c-line" d="M48 0 v12 h12"/>
+              <path class="c-line" d="M12 24 l6 -5 l6 5"/><path class="c-line" d="M34 24 l6 -5 l6 5"/><path class="c-ink" d="M16 34 q14 18 28 0 z"/>
+              <line class="c-line" x1="18" y1="62" x2="14" y2="84"/><line class="c-line" x1="42" y1="62" x2="46" y2="84"/>
+              <line class="c-line" x1="0" y1="30" x2="-14" y2="6"/><line class="c-line" x1="60" y1="30" x2="74" y2="6"/>
+            </g>
+          </g>
+          <text class="c-label" x="240" y="58" text-anchor="middle" style="font-size:14px">GitHub vault</text>
+          <text class="c-sign" x="240" y="93" text-anchor="middle">general</text>
+          <text class="c-sign" x="240" y="145" text-anchor="middle">a client</text>
+          <text class="c-sign" x="240" y="197" text-anchor="middle">projects/&lt;repo&gt;/</text>
+          <path class="c-bubble" d="M18 30 h110 a10 10 0 0 1 10 10 v30 a10 10 0 0 1 -10 10 h-40 l-10 22 l-6 -22 h-54 a10 10 0 0 1 -10 -10 v-30 a10 10 0 0 1 10 -10 z"/>
+          <text class="c-say" x="30" y="61">Committed!!</text>
+        </svg>
+        <figcaption>6 · Work facts are filed in the GitHub vault, in the right drawer. Chat and every machine open the same drawers.</figcaption>
+      </figure>
+
+      <figure class="panel">
+        <svg viewBox="0 0 360 280" role="img" aria-label="Memo peeks out of a mailbox labelled outbox, waiting for the server to come back.">
+          <rect class="c-ground" x="0" y="225" width="360" height="55"/>
+          <g class="wob">
+            <rect class="c-vault c-ol" x="176" y="150" width="14" height="78"/>
+            <path class="c-book c-ol" d="M120 92 h120 v66 h-140 v-46 a20 20 0 0 1 20 -20 z"/>
+            <rect class="c-claude c-ol" x="240" y="76" width="8" height="44"/><rect class="c-claude c-ol" x="248" y="76" width="26" height="16"/>
+            <path class="c-memo c-ol" d="M128 116 h60 v42 h-60 z"/>
+            <circle class="c-ink" cx="146" cy="130" r="4"/><circle class="c-ink" cx="168" cy="130" r="4"/><path class="c-line" d="M148 144 h18"/>
+          </g>
+          <text class="c-label" x="196" y="152" style="font-size:16px">outbox</text>
+          <path class="c-bubble" d="M18 18 h204 a12 12 0 0 1 12 12 v34 a12 12 0 0 1 -12 12 h-66 l-6 22 l-14 -22 h-118 a12 12 0 0 1 -12 -12 v-34 a12 12 0 0 1 12 -12 z"/>
+          <text class="c-say" x="30" y="42"><tspan>Server's out. I'll wait here</tspan><tspan x="30" dy="21">and do customs later.</tspan></text>
+        </svg>
+        <figcaption>7 · Claude Code only: server down? Memo waits in that machine's outbox, then goes back through customs. Chat has no outbox.</figcaption>
+      </figure>
+
+    </div>
+  </section>
+</div>
+</html>
