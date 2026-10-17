@@ -141,7 +141,7 @@ section { display: grid; gap: 16px; }
     <div class="strip">
 
       <figure class="panel">
-        <svg viewBox="0 0 360 280" role="img" aria-label="Three Memos pop out of a phone running claude.ai chat, a Mac laptop and a dashed virtual machine, under a sign reading same rules, every door.">
+        <svg viewBox="0 0 360 280" role="img" aria-label="Memo and its cousin the file card stand above a phone running claude.ai chat, a Mac laptop and a dashed virtual machine, under a sign reading same rules, every door.">
           <rect class="c-ground" x="0" y="225" width="360" height="55"/>
           <g class="wob">
             <!-- phone -->
@@ -154,10 +154,18 @@ section { display: grid; gap: 16px; }
             <!-- VM: a dashed monitor -->
             <rect class="c-white c-ol" x="248" y="118" width="92" height="70" rx="6" style="stroke-dasharray:7 5"/>
             <rect class="c-robot c-ol" x="287" y="188" width="14" height="16"/><rect class="c-robot c-ol" x="268" y="204" width="52" height="8" rx="3"/>
-            <!-- Memos -->
-            <use href="#memo-body" class="c-memo" transform="translate(42 70) scale(.5)"/>
-            <use href="#memo-body" class="c-memo" transform="translate(152 84) scale(.5)"/>
-            <use href="#memo-body" class="c-memo" transform="translate(280 76) scale(.5)"/>
+            <!-- Memo and the file card, ready to go through any door -->
+            <use href="#memo-body" class="c-memo" transform="translate(134 64) scale(.5)"/>
+            <g transform="translate(184 68) scale(.5)">
+              <line class="c-line" x1="26" y1="56" x2="22" y2="74"/><line class="c-line" x1="62" y1="56" x2="66" y2="74"/>
+              <line class="c-line" x1="0" y1="28" x2="-14" y2="10"/><line class="c-line" x1="88" y1="28" x2="102" y2="10"/>
+              <rect class="c-card c-ol" x="0" y="0" width="88" height="58" rx="3"/>
+              <line class="c-rule-red" x1="4" y1="13" x2="84" y2="13"/>
+              <line class="c-rule-blue" x1="4" y1="25" x2="84" y2="25"/><line class="c-rule-blue" x1="4" y1="37" x2="84" y2="37"/><line class="c-rule-blue" x1="4" y1="49" x2="84" y2="49"/>
+              <circle class="c-ink" cx="32" cy="21" r="3.5"/><circle class="c-ink" cx="56" cy="21" r="3.5"/>
+              <path class="c-line" d="M36 29 q8 7 16 0" style="stroke-width:2.5"/>
+              <path class="c-pink c-ol" d="M76 2 l-14 -10 v20 z M76 2 l14 -10 v20 z" style="stroke-width:2"/><circle class="c-pink c-ol" cx="76" cy="2" r="4" style="stroke-width:2"/>
+            </g>
           </g>
           <text class="c-label" x="130" y="164">&gt;_ claude</text>
           <text class="c-sign" x="260" y="160" style="font-size:13px">&gt;_ claude</text>
@@ -167,7 +175,7 @@ section { display: grid; gap: 16px; }
           <rect class="c-bubble" x="40" y="14" width="280" height="42" rx="12"/>
           <text class="c-say" x="180" y="41" text-anchor="middle">Same rules, every door.</text>
         </svg>
-        <figcaption>1 · Memo can start anywhere: claude.ai chat on any device, or Claude Code on your Mac, a VM or another machine.</figcaption>
+        <figcaption>1 · Memo and its cousin can start anywhere: claude.ai chat on any device, or Claude Code on your Mac, a VM or another machine.</figcaption>
       </figure>
 
       <figure class="panel">
@@ -278,13 +286,13 @@ section { display: grid; gap: 16px; }
       </figure>
 
       <figure class="panel">
-        <svg viewBox="0 0 360 280" role="img" aria-label="A robot at the Cloudflare checkpoint holds a metal detector; three scanners are labelled secret, personal and other client.">
+        <svg viewBox="0 0 360 280" role="img" aria-label="A robot at the Cloudflare checks holds a metal detector; three stacked scanners are labelled secret, personal and other client.">
           <rect class="c-ground" x="0" y="225" width="360" height="55"/>
           <g class="wob">
             <!-- booth sign -->
             <rect class="c-white c-ol" x="196" y="20" width="148" height="34" rx="4"/>
             <!-- scanners -->
-            <rect class="c-vault c-ol" x="214" y="104" width="34" height="122" rx="4"/><rect class="c-vault c-ol" x="258" y="104" width="34" height="122" rx="4"/><rect class="c-vault c-ol" x="302" y="104" width="34" height="122" rx="4"/>
+            <rect class="c-vault c-ol" x="214" y="96" width="130" height="34" rx="4"/><rect class="c-vault c-ol" x="214" y="138" width="130" height="34" rx="4"/><rect class="c-vault c-ol" x="214" y="180" width="130" height="34" rx="4"/>
             <!-- robot -->
             <rect class="c-robot c-ol" x="62" y="140" width="80" height="78" rx="8"/>
             <rect class="c-robot c-ol" x="72" y="92" width="60" height="46" rx="8"/>
@@ -294,14 +302,14 @@ section { display: grid; gap: 16px; }
             <line class="c-line" x1="142" y1="160" x2="182" y2="138"/><ellipse class="c-memo c-ol" cx="190" cy="132" rx="14" ry="9" transform="rotate(-30 190 132)"/>
             <line class="c-line" x1="80" y1="218" x2="80" y2="232"/><line class="c-line" x1="124" y1="218" x2="124" y2="232"/>
           </g>
-          <text class="c-sign" x="270" y="43" text-anchor="middle">CLOUDFLARE CUSTOMS</text>
-          <text class="c-label" x="231" y="170" text-anchor="middle" transform="rotate(-90 231 165)" style="font-size:14px">secret</text>
-          <text class="c-label" x="275" y="170" text-anchor="middle" transform="rotate(-90 275 165)" style="font-size:14px">personal</text>
-          <text class="c-label" x="319" y="170" text-anchor="middle" transform="rotate(-90 319 165)" style="font-size:14px">other client</text>
+          <text class="c-sign" x="270" y="43" text-anchor="middle">CLOUDFLARE CHECKS</text>
+          <text class="c-label" x="279" y="118" text-anchor="middle" style="font-size:16px">secret</text>
+          <text class="c-label" x="279" y="160" text-anchor="middle" style="font-size:16px">personal</text>
+          <text class="c-label" x="279" y="202" text-anchor="middle" style="font-size:16px">other client</text>
           <path class="c-bubble" d="M14 18 h158 a12 12 0 0 1 12 12 v34 a12 12 0 0 1 -12 12 h-66 l-6 16 l-12 -16 h-62 a12 12 0 0 1 -12 -12 v-34 a12 12 0 0 1 12 -12 z"/>
           <text class="c-say" x="26" y="42"><tspan>I don't do vibes.</tspan><tspan x="26" dy="21">I do regexes. BEEP.</tspan></text>
         </svg>
-        <figcaption>5 · Chat and every machine go through the same Cloudflare customs: three scanners, no small talk, no exceptions.</figcaption>
+        <figcaption>5 · Chat and every machine go through the same Cloudflare checks: three scanners, no small talk, no exceptions.</figcaption>
       </figure>
 
       <figure class="panel">
@@ -340,9 +348,9 @@ section { display: grid; gap: 16px; }
           </g>
           <text class="c-label" x="196" y="152" style="font-size:16px">outbox</text>
           <path class="c-bubble" d="M18 18 h204 a12 12 0 0 1 12 12 v34 a12 12 0 0 1 -12 12 h-66 l-6 22 l-14 -22 h-118 a12 12 0 0 1 -12 -12 v-34 a12 12 0 0 1 12 -12 z"/>
-          <text class="c-say" x="30" y="42"><tspan>Server's out. I'll wait here</tspan><tspan x="30" dy="21">and do customs later.</tspan></text>
+          <text class="c-say" x="30" y="42"><tspan>Server's out. I'll wait here</tspan><tspan x="30" dy="21">and do the checks later.</tspan></text>
         </svg>
-        <figcaption>7 · Claude Code only: server down? Memo waits in that machine's outbox, then goes back through customs. Chat has no outbox.</figcaption>
+        <figcaption>7 · Claude Code only: server down? Memo waits in that machine's outbox, then goes back through the checks. Chat has no outbox.</figcaption>
       </figure>
 
     </div>
