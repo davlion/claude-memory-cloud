@@ -46,6 +46,22 @@ describe("scripts/friends-rules.mjs", () => {
     expect(msg).toContain("https://github.com/apps/dav-claude-memory/installations/select_target");
     expect(msg).toContain("--login pat --scope general=pat/claude-memory");
     expect(msg).toContain("https://github.com/dav/claude-memory-cloud/blob/main/docs/QUICKSTART-FRIEND.md");
-    expect(friendMessage({ url: "u", slug: "s", codeRepo: "r/r" })).toContain("send me your GitHub username");
+    expect(msg).toContain("Accept the GitHub invitation to dav/claude-memory-cloud");
+    expect(msg).toContain("git clone https://github.com/dav/claude-memory-cloud");
+  });
+
+  it("before they're added, says the invitation is coming and to wait before connecting", () => {
+    const msg = friendMessage({ url: "u", slug: "s", codeRepo: "r/r" });
+    expect(msg).toContain("send me your GitHub username");
+    expect(msg).toContain("GitHub will email you an\ninvitation to r/r");
+    expect(msg).toContain("Wait until I tell you you're added before step 3");
+    expect(msg).not.toContain("Accept the GitHub invitation");
+  });
+
+  it("without an invitation, points at the code sent separately", () => {
+    const msg = friendMessage({ url: "u", slug: "s", codeRepo: "r/r", login: "pat", invited: false });
+    expect(msg).not.toContain("invitation");
+    expect(msg).not.toContain("git clone");
+    expect(msg).toContain("put the code I sent you in ~/src/claude-memory-cloud");
   });
 });

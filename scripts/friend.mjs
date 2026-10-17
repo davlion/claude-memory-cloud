@@ -83,11 +83,15 @@ try {
       (invite ? `, and invite ${login} to read ${repoName}.` : "."));
     if (!(await confirm("Go ahead?"))) die("nothing changed", 0);
     uploadScopes(next);
+    let invited = invite;
     if (invite) {
       const r = gh(["api", "-X", "PUT", `repos/${repoName}/collaborators/${login}`, "-f", "permission=pull", "--silent"]);
-      if (r.status !== 0) console.error(`friend: inviting ${login} failed (${r.stderr.trim()}); invite them by hand`);
+      if (r.status !== 0) {
+        console.error(`friend: inviting ${login} failed (${r.stderr.trim()}); invite them by hand`);
+        invited = false;
+      }
     }
-    console.log(`\nDone. Send ${login} this:\n\n` + friendMessage({ ...server(), codeRepo: repoName, login }));
+    console.log(`\nDone. Send ${login} this:\n\n` + friendMessage({ ...server(), codeRepo: repoName, login, invited }));
   } else if (cmd === "remove") {
     const login = argLogin();
     const next = removeFriend(scopes(), login);

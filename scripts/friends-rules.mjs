@@ -55,15 +55,25 @@ export function removeFriend(scopesJson, login) {
   return JSON.stringify(map, null, 2) + "\n";
 }
 
-/** The message to send a friend. `codeRepo` is the owner/name of this repo; `login` fills in their commands. */
-export function friendMessage({ url, slug, codeRepo, login }) {
+/**
+ * The message to send a friend. `codeRepo` is the owner/name of this repo. Without `login` it's the message for
+ * before they're added; with it, their commands are filled in and `invited` says whether a repo invitation went out.
+ */
+export function friendMessage({ url, slug, codeRepo, login, invited = true }) {
   const you = login ?? "<your GitHub username>";
-  const opening = login
-    ? `I've added ${login} to my claude-memory server.`
-    : "To use my claude-memory server, send me your GitHub username so I can add you.";
-  return `${opening} The full guide is
-https://github.com/${codeRepo}/blob/main/docs/QUICKSTART-FRIEND.md
-(accept the GitHub invitation to ${codeRepo} first, or the link 404s).
+  const guide = `https://github.com/${codeRepo}/blob/main/docs/QUICKSTART-FRIEND.md`;
+  const opening = !login
+    ? `To use my claude-memory server, send me your GitHub username. I'll add you, and GitHub will email you an
+invitation to ${codeRepo}: accept it to read the full guide (until then the link 404s):
+${guide}
+Do steps 1 and 2 now. Wait until I tell you you're added before step 3.`
+    : invited
+      ? `I've added ${login} to my claude-memory server. Accept the GitHub invitation to ${codeRepo}
+(in your email, or https://github.com/${codeRepo}/invitations), then read the full guide:
+${guide}`
+      : `I've added ${login} to my claude-memory server. The full guide is docs/QUICKSTART-FRIEND.md in the
+claude-memory-cloud code I'm sending you.`;
+  return `${opening}
 
 Server:    ${url}
 App name:  ${slug}
@@ -74,7 +84,7 @@ App name:  ${slug}
 3. claude.ai → Settings → Connectors → Add custom connector
    Name: claude-memory    URL: ${url}/mcp
 4. On each machine where you use Claude Code:
-   git clone https://github.com/${codeRepo} ~/src/claude-memory-cloud
+   ${invited ? `git clone https://github.com/${codeRepo} ~/src/claude-memory-cloud` : "put the code I sent you in ~/src/claude-memory-cloud"}
    cd ~/src/claude-memory-cloud
    ./setup.sh --worker-url ${url} --login ${you} --scope general=${you}/claude-memory
 
