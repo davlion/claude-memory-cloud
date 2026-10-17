@@ -124,16 +124,24 @@ The GitHub App is how the server gets access to your memory repo, **and only tha
    npm ci
    ```
 
-2. Create the two storage namespaces, and paste each printed `id` into the `env.production` section of `wrangler.jsonc`:
+2. Make your own copy of the config. `wrangler.jsonc` is a template with `<…>` placeholders; your values go in `wrangler.local.jsonc`, which is gitignored. `npm run deploy:*`, `scripts/wrangler.sh` and `npm run friend` use it automatically:
+
+   ```bash
+   cp wrangler.jsonc wrangler.local.jsonc
+   ```
+
+3. Create the two storage namespaces, and paste each printed `id` into the `env.production` section of `wrangler.local.jsonc`:
 
    ```bash
    npx wrangler kv namespace create OAUTH_KV
    npx wrangler kv namespace create CACHE_KV
    ```
 
-3. In the `env.production` section of `wrangler.jsonc`, set:
+   In the same section, set:
    - `PUBLIC_URL` → `https://claude-memory.<sub>.workers.dev`
    - `GITHUB_APP_SLUG` → `<slug>`
+
+   When you pull a new version, copy any `WORKER_VERSION` or `MIN_HOOK_VERSION` change from `wrangler.jsonc` into your copy; `scripts/wrangler.sh` refuses to deploy until they match.
 
 4. Write your scope map to `scopes.production.json`. The file is gitignored; keep a copy in your password manager. It lists who may sign in and which repos each person's memories live in:
 
@@ -277,7 +285,7 @@ Up to about five people can share one server, each with their own repos. Nobody 
 2. Send your friend the server address `https://claude-memory.<sub>.workers.dev`, your app's `<slug>`, and access to this repo for the local kit (if it's private, add them as a collaborator with **Read** access).
 3. When they send you their GitHub username, add them to `scopes.production.json`: `{"<you>": {…}, "<friend>": {"general": "<friend>/claude-memory"}}`, then rerun `node scripts/check-scopes.mjs scopes.production.json && scripts/wrangler.sh secret put SCOPES --env production < scopes.production.json`. Tell them when it's done.
 
-The server pins each login to its numeric GitHub ID at first sign-in. `npm run friend -- add` and `remove` try to clear the login's pin; with a scoped deploy token that step fails and prints the command to run instead. If someone deletes and recreates their GitHub account under the same name, sign-in is refused until you delete the pin: `npx wrangler kv key delete --binding OAUTH_KV --env production --remote "allowlist:github-id:<login, lower-case>"` (with a scoped token, this KV command needs the temporary login described at the end of Part 5, step 7). Existing grants with the old ID are refused until that user reconnects.
+The server pins each login to its numeric GitHub ID at first sign-in. `npm run friend -- add` and `remove` try to clear the login's pin; with a scoped deploy token that step fails and prints the command to run instead. If someone deletes and recreates their GitHub account under the same name, sign-in is refused until you delete the pin: `npx wrangler kv key delete --config wrangler.local.jsonc --binding OAUTH_KV --env production --remote "allowlist:github-id:<login, lower-case>"` (with a scoped token, this KV command needs the temporary login described at the end of Part 5, step 7). Existing grants with the old ID are refused until that user reconnects.
 
 To remove someone, delete their entry from `SCOPES` and rerun `secret put`: their next request gets a 403, "This GitHub account is no longer on this memory server's allowlist.", and a fresh sign-in shows "This GitHub account isn't on this memory server".
 
@@ -287,7 +295,7 @@ To remove someone, delete their entry from `SCOPES` and rerun `secret put`: thei
 
 Only needed if you're working on claude-memory-cloud itself.
 
-1. **Staging server and app:** create a **separate** GitHub App for staging (same settings as Part 3, named `<you>-claude-memory-staging`, with only the callback `https://claude-memory-staging.<sub>.workers.dev/callback`). Install it only on the test repos below. Staging tokens then can't reach production or client repos. Staging is the top-level config in `wrangler.jsonc`, deployed with `npm run deploy:staging`; its secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `SCOPES` from `scopes.staging.json`) are set without `--env`.
+1. **Staging server and app:** create a **separate** GitHub App for staging (same settings as Part 3, named `<you>-claude-memory-staging`, with only the callback `https://claude-memory-staging.<sub>.workers.dev/callback`). Install it only on the test repos below. Staging tokens then can't reach production or client repos. Staging is the top-level config in `wrangler.local.jsonc` (fill in its staging values too), deployed with `npm run deploy:staging`; its secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `SCOPES` from `scopes.staging.json`) are set without `--env`.
 2. **Test memory repo:** create a private, empty repo `<you>/claude-memory-test`, and add it to the app installation on your account.
 3. **Test client org:** create a free organization (github.com → **+** → **New organization** → **Free**), e.g. `<you>-test-client`. In it, create private repos `claude-memory` (empty) and `sample-app` (with a README). Install the app on that org, selecting only `claude-memory` (never `sample-app`: the app needs only the memory repo, and project memories for `sample-app` live in `claude-memory` under `projects/sample-app/`). If the org isn't offered on the install page, make the app public first (see "Adding a client organization", step 2).
 4. **Local secrets:** in the repo, create `.dev.vars` (it's gitignored):

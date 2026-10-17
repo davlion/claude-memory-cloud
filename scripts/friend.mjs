@@ -9,7 +9,7 @@
 // add and remove also clear the login's GitHub-ID pin, so a later holder of the login can be added.
 // The SCOPES upload goes through scripts/wrangler.sh; scopes.production.json is written only after it succeeds.
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { addFriend, friendMessage, pinKey, productionServer, removeFriend } from "./friends-rules.mjs";
 
@@ -65,11 +65,12 @@ function clearPin(login) {
   if (r.status !== 0) {
     console.error(`friend: clearing ${login}'s sign-in pin failed (${(r.stderr ?? "").trim().split("\n").pop()}).\n` +
       `  A scoped deploy token can't edit KV; with the temporary login from docs/QUICKSTART.md Part 5, step 7, run:\n` +
-      `  npx wrangler kv key delete ${pinKey(login)} --binding OAUTH_KV --env production --remote`);
+      `  npx wrangler kv key delete ${pinKey(login)} --config wrangler.local.jsonc --binding OAUTH_KV --env production --remote`);
   }
 }
 
-const server = () => productionServer(readFileSync("wrangler.jsonc", "utf8"));
+// The real server URL and app slug live in the git-ignored wrangler.local.jsonc; wrangler.jsonc is the template.
+const server = () => productionServer(readFileSync(existsSync("wrangler.local.jsonc") ? "wrangler.local.jsonc" : "wrangler.jsonc", "utf8"));
 const scopes = () => readFileSync(SCOPES_FILE, "utf8");
 
 function argLogin() {

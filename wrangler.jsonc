@@ -1,3 +1,5 @@
+// Template: copy to wrangler.local.jsonc (git-ignored) and fill in the <…> values there. scripts/wrangler.sh and
+// npm run deploy:* use wrangler.local.jsonc when it exists; tests use this file. See docs/QUICKSTART.md Part 5.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "claude-memory-staging",
@@ -17,7 +19,7 @@
   // SCOPES is a secret (it names clients): npx wrangler secret put SCOPES [--env production] < scopes.<env>.json
   "vars": {
     "PUBLIC_URL": "https://claude-memory-staging.<subdomain>.workers.dev",
-    "GITHUB_APP_SLUG": "davlion-claude-memory-staging",
+    "GITHUB_APP_SLUG": "<staging app slug>",
     "WORKER_VERSION": "0.1.2",
     "MIN_HOOK_VERSION": "0.1.3"
   },
@@ -33,7 +35,7 @@
       ],
       "vars": {
         "PUBLIC_URL": "https://claude-memory.<subdomain>.workers.dev",
-        "GITHUB_APP_SLUG": "davlion-claude-memory",
+        "GITHUB_APP_SLUG": "<app slug>",
         "WORKER_VERSION": "0.1.2",
         "MIN_HOOK_VERSION": "0.1.3"
       }

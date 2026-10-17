@@ -12,4 +12,11 @@ if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]] && command -v security >/dev/null 2>&1; 
     export CLOUDFLARE_API_TOKEN="$token"
   fi
 fi
-exec "$here/../node_modules/.bin/wrangler" "$@"
+# wrangler.jsonc is the committed template; a git-ignored wrangler.local.jsonc holds this deployment's real URL, app slug
+# and KV ids. Use it when it exists, unless the command names its own config.
+root="$(cd "$here/.." && pwd)"
+if [[ -f "$root/wrangler.local.jsonc" && " $* " != *" --config"* && " $* " != *" -c "* ]]; then
+  (cd "$root" && node scripts/check-config.mjs)
+  set -- "$@" --config "$root/wrangler.local.jsonc"
+fi
+exec "$root/node_modules/.bin/wrangler" "$@"

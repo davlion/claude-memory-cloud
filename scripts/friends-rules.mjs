@@ -27,7 +27,7 @@ export function productionServer(wranglerJsonc) {
   const vars = JSON.parse(stripJsonc(wranglerJsonc))?.env?.production?.vars ?? {};
   const url = vars.PUBLIC_URL, slug = vars.GITHUB_APP_SLUG;
   if (typeof url !== "string" || typeof slug !== "string") {
-    throw new Error("wrangler.jsonc: env.production.vars needs PUBLIC_URL and GITHUB_APP_SLUG");
+    throw new Error("wrangler config: env.production.vars needs PUBLIC_URL and GITHUB_APP_SLUG");
   }
   return { url: url.replace(/\/+$/, ""), slug };
 }
