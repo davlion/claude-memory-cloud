@@ -76,6 +76,7 @@ section { display: grid; gap: 16px; }
 .fo { font: 13px/1.4 var(--sans); color: var(--fg); }
 .fo b { display: block; font-size: 15px; margin-bottom: 4px; }
 .fo .sub { color: var(--muted); }
+.fo.mid { height: 100%; display: flex; flex-direction: column; justify-content: center; }
 .fo .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
 .chip { font: 500 11px var(--mono); padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 .chip.ask { color: var(--g-ask); border-color: var(--g-ask); }
@@ -156,15 +157,15 @@ section { display: grid; gap: 16px; }
     <div class="scroll">
       <svg viewBox="0 0 1200 800" role="img" aria-label="Chat on any device and Claude Code on any machine both pass Claude's judgment. Personal facts in chat go to claude.ai's built-in memory. Claude Code also passes its permission check and can queue in a per-machine outbox. Both lanes meet at the Worker's guard on Cloudflare before work facts are committed to a GitHub repo.">
         <!-- tracks -->
-        <path class="g-track" d="M196 166 H460 C 500 166, 500 112, 540 112 H640 C 740 112, 700 470, 790 470" marker-end="url(#g-arrow-track)"/>
+        <path class="g-track" d="M196 146 H460 C 500 146, 500 106, 540 106 H640 C 740 106, 700 470, 790 470" marker-end="url(#g-arrow-track)"/>
         <line class="g-track" x1="196" y1="470" x2="1010" y2="470"/>
-        <path class="g-head" d="M228 158 L243 166 L228 174 z"/><path class="g-head" d="M236 462 L251 470 L236 478 z"/>
-        <path class="g-memtrack" d="M352 166 C 392 166, 392 82, 432 82 H998" marker-end="url(#g-arrow-mem)"/>
+        <path class="g-head" d="M228 138 L243 146 L228 154 z"/><path class="g-head" d="M236 462 L251 470 L236 478 z"/>
+        <path class="g-memtrack" d="M352 146 C 392 146, 392 82, 432 82 H998" marker-end="url(#g-arrow-mem)"/>
 
         <!-- sources -->
-        <foreignObject x="16" y="72" width="190" height="40"><div class="fo"><b>You say a fact</b></div></foreignObject>
-        <rect class="g-src" x="16" y="122" width="180" height="88" rx="10"/>
-        <foreignObject x="28" y="132" width="160" height="72"><div class="fo"><b>claude.ai chat</b><span class="sub">web · desktop · phone</span></div></foreignObject>
+        <foreignObject x="16" y="52" width="190" height="40"><div class="fo"><b>You say a fact</b></div></foreignObject>
+        <rect class="g-src" x="16" y="102" width="180" height="88" rx="10"/>
+        <foreignObject x="28" y="112" width="160" height="72"><div class="fo"><b>claude.ai chat</b><span class="sub">web · desktop · phone</span></div></foreignObject>
         <rect class="g-src" x="34" y="408" width="172" height="92" rx="10"/>
         <rect class="g-src" x="25" y="418" width="172" height="92" rx="10"/>
         <rect class="g-src" x="16" y="428" width="172" height="92" rx="10"/>
@@ -172,7 +173,7 @@ section { display: grid; gap: 16px; }
         <foreignObject x="16" y="532" width="180" height="90"><div class="fo aside">Each machine has its own permission check and its own outbox.</div></foreignObject>
 
         <!-- gate 1, on both lanes -->
-        <use href="#gate" class="gate g1" x="260" y="104" width="100" height="112"/>
+        <use href="#gate" class="gate g1" x="260" y="84" width="100" height="112"/>
         <use href="#gate" class="gate g1" x="260" y="408" width="100" height="112"/>
         <!-- gate 2, Claude Code only -->
         <use href="#gate" class="gate g2" x="480" y="408" width="100" height="112"/>
@@ -202,11 +203,11 @@ section { display: grid; gap: 16px; }
 
         <!-- labels -->
         <foreignObject x="440" y="28" width="540" height="50"><div class="fo mem-t"><b>Personal fact in chat? Claude saves it to claude.ai's built-in memory, never to GitHub.</b></div></foreignObject>
-        <text class="g-flow" x="555" y="136">Work fact</text>
+        <text class="g-flow" x="555" y="128">Work fact</text>
         <text class="g-flow" x="372" y="456">Work fact</text>
-        <foreignObject x="200" y="246" width="230" height="156"><div class="fo"><b class="who g1-t"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v17M7 20h10M4 7h16M4 7l-3 7h6zM20 7l-3 7h6z"/></svg>1 · Claude's judgment</b><div class="chips"><span class="chip">every surface</span><span class="chip">runs in the model</span><span class="chip ask">can be talked round</span></div>Follows the server's instructions everywhere, plus your CLAUDE.md in Claude Code.</div></foreignObject>
-        <foreignObject x="462" y="246" width="190" height="160"><div class="fo"><b class="who g2-t"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="11" rx="1.5"/><path d="M2 19h20M7.5 8l2 1.5-2 1.5M11.5 11.5h3"/></svg>2 · Claude Code's permission check</b><div class="chips"><span class="chip ask">Claude Code only</span></div>Before any tool call runs: you approve it, an allow rule permits it, or in auto mode a classifier decides. It doesn't know the memory rules.</div></foreignObject>
-        <foreignObject x="770" y="246" width="235" height="156"><div class="fo"><b class="who"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18h10.5a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.6 9.1 4.5 4.5 0 0 0 7 18z"/></svg>3 · The Worker's guard</b><div class="chips"><span class="chip">one Worker, Cloudflare</span><span class="chip">every surface</span><span class="chip ok">can't be skipped</span></div>Regular expressions, same answer every time. <code>force</code> doesn't get past it.</div></foreignObject>
+        <foreignObject x="200" y="200" width="230" height="214"><div class="fo mid"><b class="who g1-t"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v17M7 20h10M4 7h16M4 7l-3 7h6zM20 7l-3 7h6z"/></svg>1 · Claude's judgment</b><div class="chips"><span class="chip">every surface</span><span class="chip">runs in the model</span><span class="chip ask">can be persuaded</span></div>Follows the server's instructions everywhere, plus your CLAUDE.md in Claude Code.</div></foreignObject>
+        <foreignObject x="462" y="200" width="222" height="214"><div class="fo mid"><b class="who g2-t"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="11" rx="1.5"/><path d="M2 19h20M7.5 8l2 1.5-2 1.5M11.5 11.5h3"/></svg>2 · Claude Code's permission check</b><div class="chips"><span class="chip ask">Claude Code only</span></div>Before any tool call runs, the allow and deny rules in your Claude Code settings decide first. Otherwise you're asked, or in auto mode a classifier decides. The kit allows reads only, so every save gets this check.</div></foreignObject>
+        <foreignObject x="770" y="200" width="235" height="214"><div class="fo mid"><b class="who"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18h10.5a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.6 9.1 4.5 4.5 0 0 0 7 18z"/></svg>3 · The Worker's guard</b><div class="chips"><span class="chip">one Worker, Cloudflare</span><span class="chip">every surface</span><span class="chip ok">can't be skipped</span></div>Regular expressions, same answer every time.</div></foreignObject>
         <foreignObject x="1010" y="162" width="182" height="200"><div class="fo">Personal facts, and in chat your opinions about people. Chat saves them here itself. Claude Code can't reach it: it says “not saved: personal” and you add it in chat.</div></foreignObject>
         <foreignObject x="1010" y="550" width="182" height="200"><div class="fo">Work facts, in general (you), a client's repo, or <code>projects/&lt;repo&gt;/</code>. Chat and every machine read the same repo.</div></foreignObject>
 
