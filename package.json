@@ -12,9 +12,10 @@
     "typecheck": "tsc --noEmit",
     "types": "wrangler types",
     "predeploy:staging": "node scripts/confirm-paid-plan.mjs",
-    "deploy:staging": "wrangler deploy",
+    "deploy:staging": "scripts/wrangler.sh deploy --env=\"\"",
     "predeploy:production": "node scripts/confirm-paid-plan.mjs",
-    "deploy:production": "wrangler deploy --env production"
+    "deploy:production": "scripts/wrangler.sh deploy --env production",
+    "wrangler": "scripts/wrangler.sh"
   },
   "keywords": [],
   "author": "",
