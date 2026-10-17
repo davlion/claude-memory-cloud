@@ -702,6 +702,11 @@ describe("memory_save guard wiring", () => {
     expect(guardContext(cfg3, resolveTarget(cfg3, "project", "dav/app"))).toEqual({ kind: "project", others: [] });
   });
 
+  it("guardContext: scopes owned by the target's org or by the user are not other clients", () => {
+    const cfg4 = { general: "dav/mem", acme: "acme-org/claude-memory", "acme-eu": "acme-org/eu-memory", team: "dav/team-memory", globex: "globex-org/claude-memory" };
+    expect(guardContext(cfg4, resolveTarget(cfg4, "acme"))).toEqual({ kind: "client", others: [{ scope: "globex", owner: "globex-org" }] });
+  });
+
   it("candid needs confirmed: true in general, and confirmed never helps in a client scope", async () => {
     expect(jsonOf((await save({ name: "c", body: candid })).text)).toMatchObject({ status: "needs_confirmation", category: "candid" });
     expect(jsonOf((await save({ name: "c", body: candid, confirmed: true })).text).status).toBe("created");

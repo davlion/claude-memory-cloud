@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
-import { addFriend, friendMessage, productionServer, removeFriend, stripJsonc } from "../scripts/friends-rules.mjs";
+import { addFriend, friendMessage, pinKey, productionServer, removeFriend, stripJsonc } from "../scripts/friends-rules.mjs";
+import { idPinKey } from "../src/scopes";
 
 const scopes = '{"dav":{"general":"dav/claude-memory"}}';
 
@@ -31,6 +32,11 @@ describe("scripts/friends-rules.mjs", () => {
     expect(() => addFriend(scopes, "DAV")).toThrow("dav is already in SCOPES");
     expect(() => addFriend(scopes, "-bad")).toThrow(/invalid GitHub login/);
     expect(() => addFriend(scopes, "pat", "nope")).toThrow(/invalid repo/);
+  });
+
+  it("names the GitHub-ID pin the same way the server does", () => {
+    expect(pinKey("Erin")).toBe(idPinKey("Erin"));
+    expect(idPinKey("Erin")).toBe("allowlist:github-id:erin");
   });
 
   it("removes a friend whatever the case", () => {

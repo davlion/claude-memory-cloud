@@ -6,11 +6,12 @@
 //                          add login to SCOPES (general = <login>/claude-memory unless --repo), upload SCOPES,
 //                          invite them to read this repo (for the local kit), then print the message
 //   remove <login>         remove login from SCOPES, upload SCOPES, and remove their access to this repo
+// add and remove also clear the login's GitHub-ID pin, so a later holder of the login can be added.
 // The SCOPES upload goes through scripts/wrangler.sh; scopes.production.json is written only after it succeeds.
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { addFriend, friendMessage, productionServer, removeFriend } from "./friends-rules.mjs";
+import { addFriend, friendMessage, pinKey, productionServer, removeFriend } from "./friends-rules.mjs";
 
 const SCOPES_FILE = "scopes.production.json";
 const [cmd, ...rest] = process.argv.slice(2);
@@ -57,6 +58,17 @@ function uploadScopes(json) {
   writeFileSync(SCOPES_FILE, json);
 }
 
+// The pin binds a login to the GitHub account that first signed in with it; a new or removed friend starts without one.
+function clearPin(login) {
+  const r = spawnSync("scripts/wrangler.sh", ["kv", "key", "delete", pinKey(login), "--binding", "OAUTH_KV", "--env", "production", "--remote"],
+    { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8" });
+  if (r.status !== 0) {
+    console.error(`friend: clearing ${login}'s sign-in pin failed (${(r.stderr ?? "").trim().split("\n").pop()}).\n` +
+      `  A scoped deploy token can't edit KV; with the temporary login from docs/QUICKSTART.md Part 5, step 7, run:\n` +
+      `  npx wrangler kv key delete ${pinKey(login)} --binding OAUTH_KV --env production --remote`);
+  }
+}
+
 const server = () => productionServer(readFileSync("wrangler.jsonc", "utf8"));
 const scopes = () => readFileSync(SCOPES_FILE, "utf8");
 
@@ -83,6 +95,7 @@ try {
       (invite ? `, and invite ${login} to read ${repoName}.` : "."));
     if (!(await confirm("Go ahead?"))) die("nothing changed", 0);
     uploadScopes(next);
+    clearPin(login);
     let invited = invite;
     if (invite) {
       const r = gh(["api", "-X", "PUT", `repos/${repoName}/collaborators/${login}`, "-f", "permission=pull", "--silent"]);
@@ -99,6 +112,7 @@ try {
     console.log(`Remove ${login} from production SCOPES and from ${repoName}'s collaborators.`);
     if (!(await confirm("Go ahead?"))) die("nothing changed", 0);
     uploadScopes(next);
+    clearPin(login);
     const r = gh(["api", "-X", "DELETE", `repos/${repoName}/collaborators/${login}`, "--silent"]);
     if (r.status !== 0) console.error(`friend: removing ${login} from ${repoName} failed; check its collaborators page`);
     console.log(`Done. ${login}'s next request gets a 403. Pending invitations: https://github.com/${repoName}/settings/access`);

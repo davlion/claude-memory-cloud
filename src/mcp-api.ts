@@ -2,7 +2,7 @@ import { createMcpHandler } from "agents/mcp/server";
 import type { Env, Props } from "./env";
 import { errorPayload, OpError, SCOPES_MISCONFIGURED } from "./errors";
 import { GitHub } from "./github";
-import { parseScopeMap, scopesFor } from "./scopes";
+import { idPinKey, parseScopeMap, scopesFor } from "./scopes";
 import { GitHubStore } from "./store";
 import { createServer } from "./tools";
 
@@ -24,7 +24,7 @@ export const mcpApi = {
     if (props.githubId !== undefined) {
       let pinned: string | null;
       try {
-        pinned = await env.OAUTH_KV.get(`allowlist:github-id:${props.login.toLowerCase()}`);
+        pinned = await env.OAUTH_KV.get(idPinKey(props.login));
       } catch {
         // KV is down or rate-limited: fail closed, but retryable.
         const e = new OpError("unavailable", "The memory server could not check your sign-in right now.", "Try again in a moment.", 30);
@@ -32,6 +32,10 @@ export const mcpApi = {
       }
       if (pinned !== null && pinned !== String(props.githubId)) {
         return denied();
+      }
+      // The pin write at sign-in can fail; record it now so a later rename-and-reregister is still refused.
+      if (pinned === null) {
+        try { await env.OAUTH_KV.put(idPinKey(props.login), String(props.githubId)); } catch { /* retried on the next request */ }
       }
     }
     const gh = new GitHub(props.githubToken);

@@ -34,6 +34,9 @@ export function productionServer(wranglerJsonc) {
 
 const findLogin = (map, login) => Object.keys(map).find((k) => k.toLowerCase() === login.toLowerCase());
 
+/** OAUTH_KV key of the GitHub ID pinned to a login at first sign-in; must match idPinKey in src/scopes.ts. */
+export const pinKey = (login) => `allowlist:github-id:${login.toLowerCase()}`;
+
 /** Returns the new SCOPES JSON with `login` added (general = repo), or throws with a message to show. */
 export function addFriend(scopesJson, login, repo = `${login}/claude-memory`) {
   const map = JSON.parse(scopesJson);

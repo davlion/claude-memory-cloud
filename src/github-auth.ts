@@ -2,7 +2,7 @@ import { AuthorizationError, authorizationErrorRedirect, CimdFetchError, OAuthEr
 import { consentPage, esc } from "./consent";
 import { SCOPES_MISCONFIGURED } from "./errors";
 import type { Env, Props } from "./env";
-import { parseScopeMap, scopesFor } from "./scopes";
+import { idPinKey, parseScopeMap, scopesFor } from "./scopes";
 
 const ALLOWED = new Set(["https://claude.ai/api/mcp/auth_callback", "https://claude.com/api/mcp/auth_callback"]);
 
@@ -73,12 +73,13 @@ export const GRANT_MAX_SECONDS = 180 * 86400;
 export async function tokenExchangeCallback(o: { grantType: string; props: Props; env: Env; now?: number }): Promise<TokenExchangeCallbackResult | undefined> {
   if (o.grantType !== "refresh_token") return undefined;
   const now = o.now ?? Date.now();
-  const authorizedAt = o.props.authorizedAt ?? now;
-  const left = Math.floor((authorizedAt + GRANT_MAX_SECONDS * 1000 - now) / 1000);
+  await checkStillAllowed(o.env, o.props);
+  // A grant from before authorizedAt existed can't prove its age: reconnecting starts a fresh 180 days.
+  if (o.props.authorizedAt === undefined) throw new OAuthError("invalid_grant", { description: "This connection predates the 180-day limit; reconnect" });
+  const left = Math.floor((o.props.authorizedAt + GRANT_MAX_SECONDS * 1000 - now) / 1000);
   if (left < 60) throw new OAuthError("invalid_grant", { description: "This connection is 180 days old; reconnect" });
   const out: TokenExchangeCallbackResult = { refreshTokenIdleTTL: Math.min(GRANT_IDLE_SECONDS, left) };
-  const props: Props = o.props.authorizedAt === undefined ? { ...o.props, authorizedAt } : o.props;
-  if (props !== o.props) out.newProps = props;
+  const props = o.props;
 
   if (o.props.githubTokenExpiresAt - now > 2 * 3600_000) return out;
   const stillValid = o.props.githubTokenExpiresAt - now > 60_000;
@@ -98,6 +99,20 @@ export async function tokenExchangeCallback(o: { grantType: string; props: Props
   }
   if (r.revoked) throw new OAuthError("invalid_grant", { description: "GitHub access was revoked" });
   throw new OAuthError("temporarily_unavailable", { description: "GitHub is unavailable", statusCode: 503 });
+}
+
+/** A refresh keeps a grant alive only while its login is in SCOPES and its githubId matches the pin (as /mcp checks). */
+async function checkStillAllowed(env: Env, props: Props): Promise<void> {
+  let cfg;
+  let pinned: string | null = null;
+  try {
+    cfg = scopesFor(parseScopeMap(env.SCOPES), props.login);
+    if (cfg && props.githubId !== undefined) pinned = await env.OAUTH_KV.get(idPinKey(props.login));
+  } catch {
+    throw new OAuthError("temporarily_unavailable", { description: "Could not check this account's access; retry", statusCode: 503 });
+  }
+  if (!cfg) throw new OAuthError("invalid_grant", { description: "This GitHub account is no longer on this memory server" });
+  if (pinned !== null && pinned !== String(props.githubId)) throw new OAuthError("invalid_grant", { description: "This GitHub account changed; reconnect" });
 }
 
 class ScopesError extends Error {}
@@ -148,10 +163,10 @@ export async function isAllowedUser(env: Env, user: { login: string; id: number 
     throw new ScopesError();
   }
   if (!cfg) return false;
-  const key = `allowlist:github-id:${user.login.toLowerCase()}`;
+  const key = idPinKey(user.login);
   const pinned = await env.OAUTH_KV.get(key);
   if (pinned === null) {
-    try { await env.OAUTH_KV.put(key, String(user.id)); } catch { /* recorded at a later sign-in */ }
+    try { await env.OAUTH_KV.put(key, String(user.id)); } catch { /* /mcp records it on the next request */ }
     return true;
   }
   return pinned === String(user.id);

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 describe("worker wiring", () => {
   it("/health is public and versioned", async () => {
     const res = await exports.default.fetch("https://memory.test/health");
-    expect(await res.json()).toEqual({ ok: true, version: "0.1.1", min_hook_version: "0.1.3" });
+    expect(await res.json()).toEqual({ ok: true, version: "0.1.2", min_hook_version: "0.1.3" });
   });
 
   it("rejects requests for another host (issuer spoofing)", async () => {
@@ -58,6 +58,7 @@ describe("per-user scopes at /mcp", () => {
   it("accepts when no pin exists", async () => {
     await env.OAUTH_KV.delete("allowlist:github-id:erin");
     expect((await call(100)).status).toBe(415); // past the pin; the bare body fails later
+    expect(await env.OAUTH_KV.get("allowlist:github-id:erin")).toBe("100"); // a pin lost at sign-in is recorded now
   });
   it("accepts a legacy grant without githubId (login check still applies)", async () => {
     await env.OAUTH_KV.put("allowlist:github-id:erin", "100");

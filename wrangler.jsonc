@@ -18,7 +18,7 @@
   "vars": {
     "PUBLIC_URL": "https://claude-memory-staging.<subdomain>.workers.dev",
     "GITHUB_APP_SLUG": "davlion-claude-memory-staging",
-    "WORKER_VERSION": "0.1.1",
+    "WORKER_VERSION": "0.1.2",
     "MIN_HOOK_VERSION": "0.1.3"
   },
   "env": {
@@ -34,7 +34,7 @@
       "vars": {
         "PUBLIC_URL": "https://claude-memory.<subdomain>.workers.dev",
         "GITHUB_APP_SLUG": "davlion-claude-memory",
-        "WORKER_VERSION": "0.1.1",
+        "WORKER_VERSION": "0.1.2",
         "MIN_HOOK_VERSION": "0.1.3"
       }
     }

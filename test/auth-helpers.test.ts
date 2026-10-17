@@ -81,7 +81,7 @@ describe("refresh hardening", () => {
     expect(await refreshGitHubToken(env, "ghr_old")).toMatchObject({ ok: true, refreshToken: "ghr_old" });
   });
   it("tokenExchangeCallback maps errors", async () => {
-    const props = { login: "u", githubToken: "t", githubRefreshToken: "r", githubTokenExpiresAt: Date.now() };
+    const props = { login: "carol", githubToken: "t", githubRefreshToken: "r", githubTokenExpiresAt: Date.now(), authorizedAt: Date.now() };
     mockFetch([{ method: "POST", url, respond: () => json({ error: "bad_refresh_token" }) }]);
     await expect(tokenExchangeCallback({ grantType: "refresh_token", props, env })).rejects.toMatchObject({ code: "invalid_grant" });
     mockFetch([{ method: "POST", url, respond: () => json({ error: "incorrect_client_credentials" }) }]);
@@ -127,7 +127,7 @@ describe("tokenExchangeCallback: grant lifetime and refresh resilience", () => {
   const url = "https://github.com/login/oauth/access_token";
   const NOW = 1_800_000_000_000;
   const DAY = 86400_000;
-  const fresh = { login: "u", githubToken: "ghu_old", githubRefreshToken: "ghr_old", githubTokenExpiresAt: NOW + 6 * 3600_000, authorizedAt: NOW - DAY };
+  const fresh = { login: "carol", githubToken: "ghu_old", githubRefreshToken: "ghr_old", githubTokenExpiresAt: NOW + 6 * 3600_000, authorizedAt: NOW - DAY };
   const soon = { ...fresh, githubTokenExpiresAt: NOW + 3600_000 };     // inside the 2 h refresh window, still valid
   const expired = { ...fresh, githubTokenExpiresAt: NOW - 1000 };
   const call = (props: typeof fresh | Omit<typeof fresh, "authorizedAt">, grantType = "refresh_token") =>
@@ -146,10 +146,24 @@ describe("tokenExchangeCallback: grant lifetime and refresh resilience", () => {
     await expect(call({ ...fresh, authorizedAt: NOW - 180 * DAY })).rejects.toMatchObject({ code: "invalid_grant" });
   });
 
-  it("records authorizedAt on grants made before it existed", async () => {
+  it("refuses a grant made before authorizedAt existed instead of restarting its 180 days", async () => {
     mockFetch([]);
     const { authorizedAt: _drop, ...old } = fresh;
-    expect((await call(old))?.newProps).toMatchObject({ authorizedAt: NOW, githubToken: "ghu_old" });
+    await expect(call(old)).rejects.toMatchObject({ code: "invalid_grant" });
+  });
+
+  it("refuses a refresh once the login is off the allowlist", async () => {
+    mockFetch([]);
+    await expect(call({ ...fresh, login: "gone" })).rejects.toMatchObject({ code: "invalid_grant" });
+  });
+
+  it("refuses a refresh whose githubId differs from the pinned ID", async () => {
+    mockFetch([]);
+    await env.OAUTH_KV.put("allowlist:github-id:carol", "5");
+    await expect(tokenExchangeCallback({ grantType: "refresh_token", props: { ...fresh, githubId: 6 }, env, now: NOW }))
+      .rejects.toMatchObject({ code: "invalid_grant" });
+    expect(await tokenExchangeCallback({ grantType: "refresh_token", props: { ...fresh, githubId: 5 }, env, now: NOW }))
+      .toEqual({ refreshTokenIdleTTL: GRANT_IDLE_SECONDS });
   });
 
   it("refreshes GitHub within 2 h of expiry", async () => {

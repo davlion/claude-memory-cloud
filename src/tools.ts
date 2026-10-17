@@ -179,14 +179,16 @@ async function memorySearch(d: ToolDeps, a: Record<string, unknown>, nonce: stri
   return parts.join("\n\n");
 }
 
-/** Guard inputs for a save: the target's kind, and the other clients (never general, never the scope owning this repo) to keep text from. */
+/** Guard inputs for a save: the target's kind, and the other clients to keep text from: never general, nor a scope owned by the target's org or by the user. */
 export function guardContext(cfg: ScopeConfig, t: Target): GuardContext {
   const own = Object.entries(cfg).find(([, repo]) => repo === t.repo)?.[0];
   const kind = t.scopeLabel.startsWith("project:") ? "project" : t.scopeLabel === "general" ? "general" : "client";
   // The general scope's repo holds the user's own projects: no other-client check there.
   if (own === "general" || kind === "general") return { kind, others: [] };
+  const ownerOf = (repo: string) => repo.split("/")[0]!.toLowerCase();
+  const mine = new Set([ownerOf(t.repo), ...(cfg.general ? [ownerOf(cfg.general)] : [])]);
   const others = Object.entries(cfg)
-    .filter(([name, repo]) => name !== "general" && repo !== t.repo)
+    .filter(([name, repo]) => name !== "general" && !mine.has(ownerOf(repo)))
     .map(([scope, repo]) => ({ scope, owner: repo.split("/")[0]! }));
   return { kind, others };
 }

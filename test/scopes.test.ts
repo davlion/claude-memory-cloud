@@ -25,6 +25,15 @@ describe("resolveTarget", () => {
   it("unknown scope", () => expect(code(() => resolveTarget(cfg, "nope"))).toBe("unknown_scope"));
   it("project without remote", () => expect(code(() => resolveTarget(cfg, "project"))).toBe("invalid"));
   it("non-GitHub remote", () => expect(code(() => resolveTarget(cfg, "project", "git@gitlab.com:a/b.git"))).toBe("unsupported_remote"));
+  it("project prefers general when another scope has the same owner, whatever the key order", () => {
+    const two = { team: "dav/team-memory", general: "dav/claude-memory" };
+    expect(resolveTarget(two, "project", "dav/app").repo).toBe("dav/claude-memory");
+  });
+  it("project refuses an owner with several memory repos and no general among them", () => {
+    const two = { general: "dav/claude-memory", acme: "acme-org/claude-memory", "acme-eu": "acme-org/eu-memory" };
+    expect(code(() => resolveTarget(two, "project", "acme-org/x"))).toBe("invalid");
+    expect(resolveTarget({ ...two, "acme-eu": "acme-org/claude-memory" }, "project", "acme-org/x").repo).toBe("acme-org/claude-memory");
+  });
   it("owner without memory repo", () => expect(code(() => resolveTarget(cfg, "project", "someone/x"))).toBe("no_memory_repo_for_owner"));
 });
 

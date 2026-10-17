@@ -44,6 +44,9 @@ export function parseScopeMap(json: string): ScopeMap {
   return out;
 }
 
+/** OAUTH_KV key holding the numeric GitHub ID pinned to a login at first sign-in. scripts/friends-rules.mjs has a copy (pinKey). */
+export const idPinKey = (login: string) => `allowlist:github-id:${login.toLowerCase()}`;
+
 export function scopesFor(map: ScopeMap, login: string): ScopeConfig | undefined {
   const key = login.toLowerCase();
   return Object.hasOwn(map, key) ? map[key] : undefined;
@@ -58,7 +61,14 @@ export function resolveTarget(cfg: ScopeConfig, scope: string, project?: string)
   if (!project) throw new OpError("invalid", "scope project requires `project` (the git origin remote)", "Pass the output of `git remote get-url origin`.");
   const r = normalizeRemote(project);
   if (!r) throw new OpError("unsupported_remote", `not a GitHub remote: ${project}`, "This repo's origin isn't on GitHub; project memories aren't available here.");
-  const repo = Object.values(cfg).find((v) => v.split("/")[0]!.toLowerCase() === r.owner);
+  // General wins for its owner; otherwise the owner must map to exactly one repo, so key order never decides where memories land.
+  const repos = [...new Set(Object.values(cfg).filter((v) => v.split("/")[0]!.toLowerCase() === r.owner))];
+  const general = Object.hasOwn(cfg, "general") && repos.includes(cfg.general!) ? cfg.general : undefined;
+  if (!general && repos.length > 1) {
+    throw new OpError("invalid", `several memory repos are configured for owner ${r.owner} (${repos.join(", ")})`,
+      `Keep one memory repo per owner in SCOPES, so project memories for ${r.owner} have one home.`);
+  }
+  const repo = general ?? repos[0];
   if (!repo) {
     throw new OpError(
       "no_memory_repo_for_owner",
