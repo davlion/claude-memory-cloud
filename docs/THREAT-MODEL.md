@@ -276,7 +276,7 @@ Recommendations:
 
 Recommendations:
 - **[C] A separate GitHub App for staging.** Install it only on `claude-memory-test` and the test org. Production's app gets only the production callback URL.
-- **[L]** Hardware-key 2FA (passkeys) on GitHub, Cloudflare and claude.ai. Use a scoped Cloudflare API token (Workers Scripts:Edit + KV for this account only) instead of `wrangler login`, kept in the keychain. Add to `npm run doctor`: "app has no private keys" (manual check) and "app callback URLs = exactly production" (manual).
+- **[L]** Hardware-key 2FA (passkeys) on GitHub, Cloudflare and claude.ai. ~~Use a scoped Cloudflare API token instead of `wrangler login`, kept in the keychain.~~ **Done 2026-10-16:** an account-owned API token with the Workers **Editor** role on only `claude-memory` and `claude-memory-staging` (no KV, no other products), kept in the keychain as `cloudflare-claude-memory` and read by `scripts/wrangler.sh`; the OAuth login was revoked. A stolen token can still redeploy these two Workers, which is the main threat above, but it can no longer reach the rest of the account or read KV directly. KV commands and creating or deleting Workers need a temporary `wrangler login`, revoked afterwards with `env -u CLOUDFLARE_API_TOKEN npx wrangler logout`. Add to `npm run doctor`: "app has no private keys" (manual check) and "app callback URLs = exactly production" (manual).
 
 ### Secret rotation (verified behavior)
 - **`GITHUB_CLIENT_SECRET`:** GitHub allows several active client secrets. Generate a new one, `wrangler secret put`, check `/health` and one tool call, then delete the old one. Existing grants and `ghr_` keep working, because refresh tokens belong to the app, not to a secret. If the old secret is deleted first, refreshes and sign-ins fail with `temporarily_unavailable` until the new one is deployed. Nothing is revoked.
@@ -414,5 +414,5 @@ Plain-language disclosure. Adapt it as needed.
 2. Remove unused MCP SDK dependencies (§8)
 3. Try `npm ci --ignore-scripts` (§8)
 4. Dependabot/Renovate with a cooldown, plus a review routine for the security-critical libraries (§8)
-5. Hardware 2FA, a scoped Cloudflare API token, more manual checks in `doctor` (§8)
+5. Hardware 2FA, ~~a scoped Cloudflare API token~~ (done 2026-10-16), more manual checks in `doctor` (§8)
 6. Cap `since` keys and `query` length (§9)

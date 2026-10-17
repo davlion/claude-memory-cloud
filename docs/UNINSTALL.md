@@ -39,7 +39,8 @@ This removes the three hooks, the routing rule (between its marker lines), the a
 
 ## 4. If you host the server yourself
 
-- `npx wrangler delete` (staging) and `npx wrangler delete --env production`.
+- `npx wrangler delete` (staging) and `npx wrangler delete --env production`. A scoped token (Workers Editor) can't delete Workers: run `npx wrangler login` first and prefix both commands with `env -u CLOUDFLARE_API_TOKEN`.
+- If you made a scoped token: delete it (Cloudflare dashboard → My Profile → API Tokens) and its keychain item (`security delete-generic-password -s cloudflare-claude-memory`).
 - Delete the KV namespaces in the Cloudflare dashboard (Workers & Pages → KV).
 - Delete the GitHub App (GitHub → Settings → Developer settings → GitHub Apps → the app → Advanced → Delete).
 - Your memory repos stay yours: keep them, archive them, or delete them.
