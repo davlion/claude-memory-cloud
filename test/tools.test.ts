@@ -370,6 +370,16 @@ describe("instructions tier rule (personal memory guard)", () => {
     expect(arg("memory_index", "project")).toContain("Without a GitHub origin");
     expect(arg("memory_index", "project")).toContain("ask the user for its owner/repo");
   });
+
+  it("memory_save: a lesson moved to general keeps its example and repo, except a client's", async () => {
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "t", version: "0" });
+    await Promise.all([createServer(deps).connect(st), client.connect(ct)]);
+    const save = (await client.listTools()).tools.find((x) => x.name === "memory_save")!;
+    expect(save.description).toContain("keep its example and name the repo");
+    expect(save.description).toContain("client's repo");
+    expect(save.description).toContain("general loads in every session");
+  });
 });
 
 describe("instructionsFor (Level 4 H6 findings)", () => {

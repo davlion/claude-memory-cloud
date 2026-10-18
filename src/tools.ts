@@ -292,7 +292,9 @@ export function createServer(d: ToolDeps): McpServer {
   reg("memory_search", "Search memories (all terms must match) in the same scopes memory_index loads; scopes adds named client scopes.", {
     query: z.string().min(1), scopes: scopesArg, project: projectArg, since: sinceArg });
   reg("memory_save", "Create a memory (no version) or update one (pass version from memory_read). scope is required. " +
-    "If it returns similar_found or exists, update instead unless the user wants a separate memory.", {
+    "If it returns similar_found or exists, update instead unless the user wants a separate memory. " +
+    "When a lesson from one repo goes to general, keep its example and name the repo it came from; if it's a client's repo, " +
+    "keep the lesson but leave out the client's name and details, since general loads in every session.", {
     scope: requiredScopeArg, project: projectArg, name: z.string(), description: z.string().describe("One line, at most 200 characters."),
     type: z.enum(["user", "feedback", "project", "reference"]), body: z.string(),
     version: z.string().optional(), force: z.boolean().optional(),

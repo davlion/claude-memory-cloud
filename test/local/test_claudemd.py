@@ -33,6 +33,13 @@ class Block(unittest.TestCase):
         self.assertNotIn("/cache", out)     # the PostToolUse hook writes the snapshot; Claude never does
         self.assertIn("memkit.py outbox-done <filename>", out)
 
+    def test_rule_keeps_examples_when_generalizing(self):
+        tpl = (KIT / "templates" / "routing-rule.md").read_text()
+        saving = tpl.split("- **Saving:**")[1].split("\n- **")[0]
+        self.assertIn("keep its concrete example and name the repo", saving)
+        self.assertIn("client's repo", saving)
+        self.assertIn("general` loads in every session", saving)
+
     def test_template_example_matches_task5_fixture(self):
         fx = FIXTURES / "outbox" / "20261013T180400Z-prefer-small-commits.md"
         if not fx.exists():
