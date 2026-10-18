@@ -24,8 +24,8 @@ Migrate my old Claude Code auto-memory files into claude-memory. Don't save anyt
    - ask: infrastructure (machine names, IPs, internal URLs), opinions or private facts about other people, or about a different repo
    - skip: secrets, out of date, not worth keeping, or already in my memory index (name the memory it duplicates)
    Point out anything that looks out of date, so I can correct or drop it. Save each memory as written unless I approve a change: list in the plan every line you'd add, fix or drop.
-4. Wait for my changes and my OK.
-5. Save the approved memories one at a time with memory_save. Use the type from each file's frontmatter (no frontmatter: pick one and say which in the plan), a description that stands on its own, and source "claude-code on <hostname> (migration)". Announce each result. On similar_found or exists, show me both and ask: merge into the existing one, keep both, or skip.
+4. Wait for my changes and my OK. If I leave a question unanswered, take the cautious choice (leave it out) and say so before saving.
+5. Save the approved memories one at a time with memory_save. Before each save, check the body against the plan: every approved change made, nothing I dropped or left unanswered still in it. Use the type from each file's frontmatter (no frontmatter: pick one and say which in the plan), a description that stands on its own, and source "claude-code on <hostname> (migration)". Announce each result. On similar_found or exists, show me both and ask: merge into the existing one, keep both, or skip.
 6. Finish with a summary table, and put the claude.ai items in one block I can paste into claude.ai chat, starting "Please remember:".
 7. Don't delete, move or edit the local files.
 ```
