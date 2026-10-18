@@ -111,7 +111,7 @@ The script:
 - keeps a timestamped backup of each file it changes
 - prints a health report: one line per problem, with what to do about it
 
-It's safe to run again; rerunning without `--scope` keeps your current scopes. Rerun it after pulling a new version of the code (the session-start check says "Memory hooks are out of date" when the server needs a newer kit).
+It's safe to run again; rerunning without `--scope` keeps your current scopes. Rerun it after pulling a new version of the code (the session-start check says "Memory hooks are out of date" when the server needs a newer kit). See "When do I need to rerun setup?" in the [FAQ](FAQ.md).
 
 **Machine names in commits:** each commit records where Claude ran, e.g. "claude-code on <hostname>". Add `--neutral-source` to `./setup.sh` to record just "claude-code".
 

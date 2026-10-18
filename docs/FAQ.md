@@ -185,6 +185,14 @@ Most of the cost is fixed per-call overhead (token decryption, building the MCP 
 ### How do I know it's working?
 At session start, Claude runs a health check and stays silent if everything's fine. Each problem is reported in one line with what to do, e.g. "reconnect the claude-memory connector in claude.ai → Settings → Connectors". You can also ask "is memory working?" at any time. Errors say whether they're temporary (`unavailable`, `reauth_required`, `server_limit`) or need a fix first (for example `write_rejected`, when a branch rule blocks the server's commits, or `repo_public`).
 
+### When do I need to rerun setup?
+Setup copies the kit onto each machine: the hooks in `~/.claude-memory-cloud`, and the routing rule into `~/.claude/CLAUDE.md`. Pulling new code doesn't change that copy, so each machine keeps the version it was set up with until you run setup again there. The session-start check tells you when to:
+- **"Memory hooks are out of date (installed 0.1.3, server needs 0.1.4)"**: the server was updated and needs a newer kit, usually because the routing rule changed. Every machine set up before the update says this until it's rerun.
+- **"The memory routing rule in `~/.claude/CLAUDE.md` differs from the one the setup script installed"**: the rule was edited after setup, by you or by another tool. Setup puts it back. Keep your own notes outside the `claude-memory-cloud:routing-rule` marker lines; setup only replaces what's between them.
+- **"routing rule is missing", "config … is missing or invalid" or "Scope map missing or invalid"**: part of the install was removed or damaged.
+
+To rerun, pull the latest code in the folder you installed from and run `./setup.sh` again, on each machine and VM separately. It's safe to repeat: it keeps your scopes and your `--neutral-source` choice. Until you do, memory keeps working, but Claude follows the old rule on that machine.
+
 ### How is this tested end to end?
 Level 4 drives real Claude Code sessions on a Mac and two VMs against a staging server and checks the results in test repos with `gh api`, never Claude's wording; the Desktop app, cloud sessions, web chat and mobile are tested by hand with the same checks. See [`test/e2e/README.md`](../test/e2e/README.md) for how to run it. The latest grids are in [`test/e2e/results/`](../test/e2e/results/).
 
