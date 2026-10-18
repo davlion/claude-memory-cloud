@@ -117,7 +117,7 @@ No. Memories rarely change mid-session, and a long session's working context is 
 Nothing is lost. The second save finds the memory changed since it was read, and is saved as a conflict copy. The index lists conflicts, and Claude offers to merge them.
 
 ### What if I save something that's almost the same as an existing memory?
-The server checks for similar memories and asks Claude to update the existing one instead, unless you really want a separate memory.
+The server compares the new memory's name and description with existing ones and asks Claude to update the existing memory instead, unless you really want a separate one. It compares wording, not meaning: a reworded duplicate ("add a failing check first" next to "write tests before code") isn't caught. Claude reads your memory index before saving, and that's the main check for duplicates.
 
 ### Can I edit memories by hand?
 Yes. They're plain Markdown files in your repo. The index is rebuilt from the files every time it's read, and Health notes that the repo was changed outside the server so you know to review it.

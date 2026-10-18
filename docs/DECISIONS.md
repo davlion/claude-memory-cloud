@@ -32,6 +32,8 @@ Why claude-memory-cloud is built the way it is. Each entry gives the decision, t
 
 **Concurrent edits make conflict copies, never silent overwrites.** A save based on an old version is stored next to the original, the index lists it, and Claude offers to merge. Nothing is lost.
 
+**The duplicate check compares wording, not meaning.** A save with an existing memory's name gets `exists`; one whose name and description share at least half their words with an existing memory gets `similar_found`. A paraphrase gets through, so Claude's reading of the index is the main defence. Matching on meaning would need a model call on every save, the same trade-off as the guard. *Cost:* reworded duplicates can build up and have to be merged by hand.
+
 **Local Claude Code has an outbox and a read-only snapshot.** If the server is unreachable, a save is queued as a file on that machine and replayed later through the same checks. A snapshot of the last index lets a session still read something offline. Chat and cloud sessions have no local disk, so there a failed save is reported as not saved.
 
 **The cache keeps copies for at most 7 days.** Caching makes index loads fast and cheap. Seven days bounds how long a deleted memory, or one from a client that removed your access, can linger on the server.
