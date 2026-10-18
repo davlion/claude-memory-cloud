@@ -53,6 +53,10 @@ npm run deploy:production
 
 The local kit (`./setup.sh`) turns off Claude Code's auto-memory and installs the memory routing rule and hooks on each Mac, Linux machine or VM; `./setup.sh --uninstall` reverses it. See [Quickstart Part 7](docs/QUICKSTART.md#part-7--set-up-each-machine).
 
+## Contributing
+
+This is a personal project, shared as is. I'm not taking pull requests, issues or feature requests. Fork it and make it your own; the MIT license allows it. To report a security problem, see [SECURITY.md](SECURITY.md).
+
 ## License
 
 [MIT](LICENSE)
