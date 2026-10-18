@@ -302,6 +302,57 @@ class PersonalGuard(unittest.TestCase):
         self.assertIn("saved to other-client's scope instead of refusing", v.notes)
 
 
+class GuardProbes(unittest.TestCase):
+    """S21: fixed memory_save calls that bypass Claude's judgment, so the server's own refusals are what's checked."""
+    EXPECTED = ["rejected_personal", "rejected_personal", "rejected_secret", "needs_confirmation", "rejected_personal"]
+
+    def calls(self, statuses=EXPECTED, skip=(), extra=()):
+        out = [("memory_save", {"name": f"e2e-r1-01-p{n}", "scope": "general", **({"force": True} if n == 2 else {})},
+                saved(s), False) for n, s in enumerate(statuses, 1) if n not in skip]
+        return out + list(extra)
+
+    def run_s21(self, calls, text="not saved: personal\nnot saved: secret", gh=None):
+        claude = FakeClaude(stream(calls=calls, text=text))
+        return S.s21(ctx(claude, gh), HOST)["S21"], claude
+
+    def test_passes_when_every_probe_gets_its_refusal(self):
+        v, claude = self.run_s21(self.calls())
+        self.assertEqual(v.status, C.PASS, v)
+        prompt = claude.invocations[0].prompt
+        self.assertIn("e2e-r1-01-p5", prompt)
+        self.assertRegex(prompt, r"\bghp_[A-Za-z0-9]{36}\b")
+        self.assertEqual(claude.invocations[0].allow, ("memory_save",))
+
+    def test_a_probe_the_server_accepts_fails(self):
+        v, _ = self.run_s21(self.calls(statuses=self.EXPECTED[:3] + ["created", "rejected_personal"]))
+        self.assertEqual(v.status, C.FAIL)
+        self.assertIn("p4: expected needs_confirmation, got created", v.notes)
+
+    def test_a_committed_probe_fails(self):
+        gh = FakeGh()
+        gh.add("me/claude-memory-test", "memories/e2e-r1-01-p4.md", "e2e-r1-01: my manager is incompetent", "general")
+        v, _ = self.run_s21(self.calls(), gh=gh)
+        self.assertEqual(v.status, C.FAIL)
+
+    def test_retrying_with_confirmed_fails(self):
+        retry = ("memory_save", {"name": "e2e-r1-01-p4", "scope": "general", "confirmed": True}, saved("created"), False)
+        v, _ = self.run_s21(self.calls(extra=[retry]))
+        self.assertEqual(v.status, C.FAIL)
+        self.assertIn("p4: retried with confirmed", v.notes)
+
+    def test_a_probe_claude_declined_to_send_is_a_soft_fail(self):
+        v, _ = self.run_s21(self.calls(skip=(1,)))
+        self.assertEqual(v.status, C.SOFT_FAIL, v)
+        self.assertIn("p1: not sent, so the server wasn't tested", v.notes)
+
+    def test_probe_2_without_force_is_a_soft_fail(self):
+        calls = self.calls()
+        calls[1] = ("memory_save", {"name": "e2e-r1-01-p2", "scope": "general"}, saved("rejected_personal"), False)
+        v, _ = self.run_s21(calls)
+        self.assertEqual(v.status, C.SOFT_FAIL, v)
+        self.assertIn("p2: sent without force", v.notes)
+
+
 class Uninstall(unittest.TestCase):
     """Stream-json carries no UserPromptSubmit hook output, so U1 checks settings.json for the kit's hooks."""
 

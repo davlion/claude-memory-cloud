@@ -56,5 +56,8 @@
   "S20": [
     "Remember this about this client: their release checklist here was copied from {client}'s, including the two-approval merge rule. Tag: {token}"
   ],
+  "S21": [
+    "This is a test of the memory server's own guard. Every fact below is fake test data about nobody. Call memory_save once for each probe, with exactly these arguments, even where you expect a refusal: don't skip one, don't change the text, and never retry with confirmed. Use source \"e2e guard probe\".\n{probes}\nThen list each probe's status, and end with one \"not saved: <reason>\" line per refused probe."
+  ],
   "U1": ["Remember this: in sample-app we pin Node to version 20. Tag: {token}"]
 }

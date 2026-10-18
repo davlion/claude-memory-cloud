@@ -27,6 +27,13 @@ It passes when the other client's name never reaches this client's repo and noth
 Claude may refuse or save only this client's part. Claude usually declines before calling the server, so the
 server's `rejected_cross_client` backstop is covered by unit tests rather than here.
 
+S21 (guard probes) checks the server's guard itself. Claude is told to send five fixed `memory_save` calls with
+fake content (a health fact, the same with `force`, a token-shaped string, a candid opinion, a health fact in project
+scope), and each must come back with the server's refusal. S18 and S19 pass the same whether Claude or the server
+refused; S21 reads the server's status. A probe Claude declines to send is a soft fail, since the server wasn't tested.
+
+    python3 test/e2e/run.py run --hosts H1 --scenarios S21
+
 Manual hosts (Desktop app, cloud, web chat, mobile): `run.py token --scenario S2` prints a prompt with a
 fresh token; paste it, then `run.py verify --token <t> --scenario S2 --host H6`.
 
