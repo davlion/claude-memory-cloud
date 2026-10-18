@@ -9,11 +9,11 @@ from typing import Dict, List, Mapping, Optional, Tuple
 from urllib.parse import urlsplit
 
 from . import HOOK_VERSION
-from .claudemd import has_marker
+from .claudemd import block_sha, has_marker
 from .health import HealthProbe, HealthResult, hook_outdated
 from .outbox import OutboxSummary, scan_outbox
 from .paths import KitPaths
-from .preflight import (AUTO_MEMORY_LINE, CONFIG_LINE, MANAGED_SETTINGS, ROUTING_LINE, SCOPE_MAP_LINE,
+from .preflight import (AUTO_MEMORY_LINE, CONFIG_LINE, MANAGED_SETTINGS, ROUTING_LINE, RULE_CHANGED_LINE, SCOPE_MAP_LINE,
                         auto_memory_off, ensure_private_dirs, settings_chain)
 from .remote import cache_key, normalize_remote, resolve_origin
 from .scopemap import ScopeMapError, load_scope_map
@@ -99,11 +99,13 @@ def session_report(*, cwd: str, paths: KitPaths, env: Mapping[str, str], now: da
     if not auto_memory_off(env, settings_chain(paths.home, env.get("CLAUDE_PROJECT_DIR") or cwd, managed)):
         problems.append(AUTO_MEMORY_LINE)
     try:
-        rule_present = has_marker(paths.claude_md.read_text(encoding="utf-8"))
+        md_text = paths.claude_md.read_text(encoding="utf-8")
     except OSError:
-        rule_present = False
-    if not rule_present:
+        md_text = ""
+    if not has_marker(md_text):
         problems.append(ROUTING_LINE)
+    elif cfg and cfg.get("rule_sha") and block_sha(md_text) != cfg["rule_sha"]:
+        problems.append(RULE_CHANGED_LINE)
     try:
         load_scope_map(paths.scopes)
     except ScopeMapError:

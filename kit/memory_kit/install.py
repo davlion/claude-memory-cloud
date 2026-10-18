@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import HOOK_VERSION
-from .claudemd import MarkerError, has_marker, remove_block, render_rule, upsert_block
+from .claudemd import MarkerError, block_sha, has_marker, remove_block, render_rule, upsert_block
 from .outbox import OutboxFormatError, _frontmatter, list_entries
 from .paths import KIT_DIRNAME, KitPaths, kit_paths
 from .preflight import MANAGED_SETTINGS
@@ -251,7 +251,7 @@ def install(paths: KitPaths, *, worker_url: str, scope_map: Dict[str, Any], pyth
         _write_private(paths.state, json.dumps(state, indent=2) + "\n")
     _copy_kit(src_kit, paths.kit)
     cfg_out: Dict[str, Any] = {"worker_url": worker_url, "hook_version": HOOK_VERSION, "python": python,
-                               "mcp_servers": names}
+                               "mcp_servers": names, "rule_sha": block_sha(new_md)}
     if neutral_source:
         cfg_out["neutral_source"] = True
     _write_private(paths.config, json.dumps(cfg_out, indent=2) + "\n")

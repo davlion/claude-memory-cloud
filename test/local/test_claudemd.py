@@ -1,7 +1,19 @@
+import hashlib
+import re
 import unittest
 
-from helpers import FIXTURES, KIT
-from memory_kit.claudemd import BEGIN, END, MarkerError, has_marker, remove_block, render_rule, upsert_block
+from helpers import FIXTURES, KIT, REPO
+from memory_kit import HOOK_VERSION
+from memory_kit.claudemd import BEGIN, END, MarkerError, block_sha, has_marker, remove_block, render_rule, upsert_block
+
+# The routing rule's hash for each kit version that changed it. A template change fails test_rule_change_bumps_versions
+# until HOOK_VERSION goes up and the new hash is added here; the server's MIN_HOOK_VERSION must then reach that version,
+# so every machine still on the old rule is told to rerun the setup script.
+RULE_PINS = {"0.1.4": "f32432794444973e3d4bf2aff7e64a4dfd65fd68847dab3e5137938beff9a93e"}
+
+
+def _version(v):
+    return tuple(int(x) for x in v.split("."))
 
 BLOCK = f"{BEGIN}\nrule\n{END}"
 
@@ -32,6 +44,32 @@ class Block(unittest.TestCase):
         self.assertNotIn("{{", out)
         self.assertNotIn("/cache", out)     # the PostToolUse hook writes the snapshot; Claude never does
         self.assertIn("memkit.py outbox-done <filename>", out)
+
+    def test_block_sha_hashes_only_the_block(self):
+        a = block_sha(f"# mine\n{BLOCK}\n")
+        self.assertEqual(a, block_sha(f"# other text\n\n{BLOCK}\nmore\n"))
+        self.assertNotEqual(a, block_sha(f"{BEGIN}\nrule, edited\n{END}\n"))
+        self.assertEqual(a, hashlib.sha256(BLOCK.encode()).hexdigest())
+
+    def test_block_sha_none_without_a_well_formed_block(self):
+        self.assertIsNone(block_sha("# nothing\n"))
+        self.assertIsNone(block_sha(f"{BEGIN}\n{BEGIN}\n{END}\n"))
+
+    def test_rule_change_bumps_versions(self):
+        sha = hashlib.sha256((KIT / "templates" / "routing-rule.md").read_bytes()).hexdigest()
+        latest = max(RULE_PINS, key=_version)
+        self.assertEqual(sha, RULE_PINS[latest],
+                         "routing-rule.md changed: bump HOOK_VERSION in kit/memory_kit/__init__.py, add the new hash to "
+                         "RULE_PINS, and raise MIN_HOOK_VERSION in wrangler.jsonc to that version")
+        self.assertGreaterEqual(_version(HOOK_VERSION), _version(latest))
+
+    def test_server_requires_the_kit_that_carries_this_rule(self):
+        latest = max(RULE_PINS, key=_version)
+        mins = re.findall(r'"MIN_HOOK_VERSION":\s*"([0-9.]+)"', (REPO / "wrangler.jsonc").read_text())
+        self.assertEqual(len(mins), 2)      # staging and production
+        for m in mins:
+            self.assertGreaterEqual(_version(m), _version(latest),
+                                    "raise MIN_HOOK_VERSION in wrangler.jsonc so machines on the old rule are told to rerun setup")
 
     def test_rule_keeps_examples_when_generalizing(self):
         tpl = (KIT / "templates" / "routing-rule.md").read_text()

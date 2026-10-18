@@ -5,6 +5,7 @@ import re
 import subprocess
 import unittest
 
+from memory_kit.claudemd import block_sha
 from helpers import FIXTURES, PY, REPO, SCOPES, FakeWorker, clean_env, make_git_dir, run_hook, tempdir
 
 
@@ -49,6 +50,8 @@ class Setup(unittest.TestCase):
         self.assertIn("<!-- claude-memory-cloud:routing-rule:begin -->", self.claude_md.read_text())
         self.assertEqual(json.loads((self.root / "scopes.json").read_text()), SCOPES)
         self.assertEqual(json.loads((self.root / "config.json").read_text())["worker_url"], self.worker.url)
+        cfg = json.loads((self.root / "config.json").read_text())
+        self.assertEqual(cfg["rule_sha"], block_sha(self.claude_md.read_text()))
         for d in ("", "outbox", "cache"):
             self.assertEqual(os.stat(self.root / d).st_mode & 0o777, 0o700, d)
         for f in ("scopes.json", "config.json", "state.json"):

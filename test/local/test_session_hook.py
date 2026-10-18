@@ -7,6 +7,8 @@ import unittest
 
 from helpers import (FIXTURES, KIT, PY, FakeWorker, clean_env, git_env, healthy_home, make_git_dir, run_hook,
                      tempdir)
+from memory_kit import HOOK_VERSION
+from memory_kit.claudemd import block_sha
 from memory_kit.session import COMPACT_LINE
 
 
@@ -167,6 +169,22 @@ class SessionHook(unittest.TestCase):
         self.assert_one_problem("The memory routing rule is missing from `~/.claude/CLAUDE.md`; rerun the "
                                 "claude-memory-cloud setup script.")
 
+    def record_rule(self):
+        cfg = json.loads((self.root / "config.json").read_text())
+        cfg["rule_sha"] = block_sha((self.home / ".claude" / "CLAUDE.md").read_text())
+        (self.root / "config.json").write_text(json.dumps(cfg))
+
+    def test_routing_rule_edited_since_setup(self):
+        self.record_rule()
+        md = self.home / ".claude" / "CLAUDE.md"
+        md.write_text(md.read_text().replace("\nrule\n", "\nrule, edited by hand\n"))
+        self.assert_one_problem("The memory routing rule in `~/.claude/CLAUDE.md` differs from the one the setup script "
+                                "installed; rerun the claude-memory-cloud setup script to restore it.")
+
+    def test_routing_rule_as_installed_is_silent(self):
+        self.record_rule()
+        self.assertEqual(self.problem_lines(self.run_ss()[0]), [])
+
     def test_scope_map_missing_or_invalid(self):
         (self.root / "scopes.json").write_text("{bad")
         self.assert_one_problem("Scope map missing or invalid; rerun the setup script")
@@ -182,7 +200,7 @@ class SessionHook(unittest.TestCase):
 
     def test_hook_older_than_min_hook_version(self):
         self.worker.mode = "old"
-        self.assert_one_problem("Memory hooks are out of date (installed 0.1.3, server needs 9.0.0); rerun the setup script.")
+        self.assert_one_problem(f"Memory hooks are out of date (installed {HOOK_VERSION}, server needs 9.0.0); rerun the setup script.")
 
     def test_open_dir_reported_files_healed(self):
         f = self.root / "cache" / "_none.md"

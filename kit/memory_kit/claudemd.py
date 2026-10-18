@@ -1,6 +1,7 @@
 """Layer A: the routing rule block in ~/.claude/CLAUDE.md, delimited by marker lines."""
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -27,6 +28,19 @@ def _find_block(text: str) -> Optional[Tuple[int, int]]:
 
 def has_marker(text: str) -> bool:
     return BEGIN in text
+
+
+def block_sha(text: str) -> Optional[str]:
+    """sha256 of the routing-rule block, markers included; None when there is no single well-formed block. Setup records
+    it in config.json, so the session hook can tell when the block was changed after install."""
+    try:
+        found = _find_block(text)
+    except MarkerError:
+        return None
+    if not found:
+        return None
+    i, j = found
+    return hashlib.sha256(text[i:j + len(END)].encode("utf-8")).hexdigest()
 
 
 def render_rule(template: str, *, outbox_dir: Path, memkit_cmd: str, source: str) -> str:

@@ -20,6 +20,8 @@ AUTO_MEMORY_LINE = ('Built-in auto-memory is on, so memories may go to the local
                     'Add `"autoMemoryEnabled": false` to `~/.claude/settings.json` (or rerun the setup script).')
 ROUTING_LINE = ("The memory routing rule is missing from `~/.claude/CLAUDE.md`; "
                 "rerun the claude-memory-cloud setup script.")
+RULE_CHANGED_LINE = ("The memory routing rule in `~/.claude/CLAUDE.md` differs from the one the setup script "
+                     "installed; rerun the claude-memory-cloud setup script to restore it.")
 SCOPE_MAP_LINE = ("Scope map missing or invalid; rerun the setup script "
                   "(or fix `~/.claude-memory-cloud/scopes.json`).")
 CONFIG_LINE = ("The memory kit's config (`~/.claude-memory-cloud/config.json`) is missing or invalid; "
