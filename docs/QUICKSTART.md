@@ -279,7 +279,7 @@ Memories about the client's codebases go to `<client-org>/claude-memory` under `
 
 Up to about five people can share one server, each with their own repos. Nobody sees anyone else's scopes. Your friend follows [QUICKSTART-FRIEND.md](QUICKSTART-FRIEND.md); your side is:
 
-**The quick way** (needs the GitHub CLI, `gh`, signed in): `npm run friend -- info` prints a message to send them, with your server address, app name, links and setup command filled in. When they send you their GitHub username, `npm run friend -- add <login>` adds them to `SCOPES`, uploads it, invites them to read this repo, and prints the message again with their login filled in. `npm run friend -- remove <login>` undoes both; `npm run friend -- list` shows who's on the server. `--no-invite` skips the repo invitation (e.g. if you'll send them a copy instead).
+**The quick way** (needs the GitHub CLI, `gh`, signed in): `npm run friend -- info` prints a message to send them, with your server address, app name, links and setup command filled in. When they send you their GitHub username, `npm run friend -- add <login>` adds them to `SCOPES`, uploads it, invites them as a read-only collaborator on this repo, and prints the message again with their login filled in. `<login>` is that GitHub username (e.g. `octocat`), not an email address: the server's allowlist is keyed by it, and the script checks that the account exists. `npm run friend -- remove <login>` undoes both; `npm run friend -- list` shows who's on the server. `--no-invite` skips the invitation. If this repo is public, friends can read the guide and clone the code without it; if it's private, they need it (or a copy you send them).
 
 **By hand:**
 

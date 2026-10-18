@@ -4,7 +4,7 @@
 //   list                   list the logins in scopes.production.json
 //   add <login> [--repo owner/name] [--no-invite]
 //                          add login to SCOPES (general = <login>/claude-memory unless --repo), upload SCOPES,
-//                          invite them to read this repo (for the local kit), then print the message
+//                          invite them as a read-only collaborator on this repo, then print the message
 //   remove <login>         remove login from SCOPES, upload SCOPES, and remove their access to this repo
 // add and remove also clear the login's GitHub-ID pin, so a later holder of the login can be added.
 // The SCOPES upload goes through scripts/wrangler.sh; scopes.production.json is written only after it succeeds.
@@ -69,6 +69,12 @@ function clearPin(login) {
   }
 }
 
+// Whether anyone can read this repo; if gh can't tell, assume not, so the message still mentions the invitation.
+function codeRepoIsPublic(name) {
+  const r = gh(["api", `repos/${name}`, "--jq", ".private"]);
+  return r.status === 0 && r.stdout.trim() === "false";
+}
+
 // The real server URL and app slug live in the git-ignored wrangler.local.jsonc; wrangler.jsonc is the template.
 const server = () => productionServer(readFileSync(existsSync("wrangler.local.jsonc") ? "wrangler.local.jsonc" : "wrangler.jsonc", "utf8"));
 const scopes = () => readFileSync(SCOPES_FILE, "utf8");
@@ -81,7 +87,8 @@ function argLogin() {
 
 try {
   if (cmd === "info") {
-    console.log(friendMessage({ ...server(), codeRepo: codeRepo(), login: rest[0] }));
+    const repoName = codeRepo();
+    console.log(friendMessage({ ...server(), codeRepo: repoName, login: rest[0], publicRepo: codeRepoIsPublic(repoName) }));
   } else if (cmd === "list") {
     for (const [login, s] of Object.entries(JSON.parse(scopes()))) console.log(`${login}  ${Object.keys(s).join(", ")}`);
   } else if (cmd === "add") {
@@ -105,7 +112,7 @@ try {
         invited = false;
       }
     }
-    console.log(`\nDone. Send ${login} this:\n\n` + friendMessage({ ...server(), codeRepo: repoName, login, invited }));
+    console.log(`\nDone. Send ${login} this:\n\n` + friendMessage({ ...server(), codeRepo: repoName, login, invited, publicRepo: codeRepoIsPublic(repoName) }));
   } else if (cmd === "remove") {
     const login = argLogin();
     const next = removeFriend(scopes(), login);

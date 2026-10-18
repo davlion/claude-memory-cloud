@@ -70,4 +70,34 @@ describe("scripts/friends-rules.mjs", () => {
     expect(msg).not.toContain("git clone");
     expect(msg).toContain("put the code I sent you in ~/src/claude-memory-cloud");
   });
+
+  describe("when this repo is public", () => {
+    const base = { url: "u", slug: "s", codeRepo: "r/r", publicRepo: true };
+
+    it("before they're added, doesn't mention an invitation and links the guide", () => {
+      const msg = friendMessage(base);
+      expect(msg).toContain("send me your GitHub username");
+      expect(msg).toContain("https://github.com/r/r/blob/main/docs/QUICKSTART-FRIEND.md");
+      expect(msg).toContain("Wait until I tell you you're added before step 3");
+      expect(msg).not.toContain("invitation");
+      expect(msg).not.toContain("404");
+    });
+
+    it("once added, says the collaborator invitation is optional and clones directly", () => {
+      const msg = friendMessage({ ...base, login: "pat" });
+      expect(msg).toContain("I've added pat");
+      expect(msg).toContain("invited you to collaborate on r/r");
+      expect(msg).toContain("optional");
+      expect(msg).not.toContain("Accept the GitHub invitation");
+      expect(msg).toContain("git clone https://github.com/r/r");
+    });
+
+    it("without an invitation, still clones from GitHub", () => {
+      const msg = friendMessage({ ...base, login: "pat", invited: false });
+      expect(msg).not.toContain("invit");
+      expect(msg).toContain("git clone https://github.com/r/r");
+      expect(msg).toContain("https://github.com/r/r/blob/main/docs/QUICKSTART-FRIEND.md");
+      expect(msg).not.toContain("code I sent you");
+    });
+  });
 });
