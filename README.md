@@ -1,5 +1,7 @@
 # claude-memory-cloud
 
+[![test](https://github.com/davlion/claude-memory-cloud/actions/workflows/test.yml/badge.svg)](https://github.com/davlion/claude-memory-cloud/actions/workflows/test.yml)
+
 One memory for Claude, everywhere you use it: claude.ai chat on web, Desktop and mobile, and Claude Code on every machine and VM. The memories are Markdown files in your own private GitHub repos, served by a small server you run on Cloudflare Workers.
 
 Claude Code's built-in memory lives in files on one machine, and claude.ai chat has its own separate memory. Neither reaches the other or your other machines. This project keeps one set of work memories in GitHub and connects it to every Claude surface as a custom connector.
