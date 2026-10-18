@@ -8,13 +8,13 @@ Claude Code's built-in memory lives in files on one machine, and claude.ai chat 
 
 ## Where a memory goes
 
-![A fact you tell Claude passes up to three gates: Claude's judgment, Claude Code's permission check, and the Worker's guard. Personal facts go to claude.ai's built-in memory; work facts are committed to a GitHub repo.](docs/images/memory-path-gates.png)
+![Flowchart of a fact you tell Claude. Claude's judgment sends personal facts to Claude's built-in memory, never saves passwords or keys, and asks you first about people and computers. Claude Chat then goes straight to the memory service; in Claude Code, every save needs an OK first, and a save that can't connect waits on that computer. The memory service's check, a small program between Claude and GitHub, refuses passwords, personal facts and one client's details in another's memories. Everything else becomes your memories on GitHub, shared by Claude Chat and Claude Code.](docs/images/memory-path-gates.png)
 
 Every save meets up to three checks:
 
 1. **Claude's judgment**, on every surface. Claude follows the server's instructions, and in Claude Code your `CLAUDE.md`, to decide whether and where a fact belongs. It can be persuaded, so it's not the last word.
 2. **Claude Code's permission check**, in Claude Code only. The setup kit allows the read tools, so every save is approved by you or, in auto mode, judged by Claude Code's classifier.
-3. **The Worker's guard**, on every surface. Regular expressions on the server refuse secrets, personal facts and one client's details in another client's repo. It can't be skipped.
+3. **The memory service's check**, on every surface. Regular expressions on the server refuse secrets, personal facts and one client's details in another client's repo. It can't be skipped.
 
 Personal facts (health, money, family, where you live, travel) belong in claude.ai's built-in memory, never in GitHub. In chat Claude puts them there itself; in Claude Code it answers "not saved: personal" so you can add them in chat.
 
