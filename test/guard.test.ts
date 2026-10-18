@@ -112,6 +112,15 @@ const CANDID: Record<string, string[]> = {
     "I can't stand the client's CEO",
     "I don't trust my manager",
     "I find his management style toxic",
+    "my manager is incompetent and lazy",
+    "our CTO seems clueless",
+    "my boss was really unprofessional",
+    "my coworkers are sloppy",
+    "our HR is useless",
+    "my union rep is unreliable",
+    "our PM is clueless about scope",
+    "my project manager is disorganized",
+    "our team is lazy",
   ],
   about_others: [
     "Bob is going through a divorce",
@@ -124,6 +133,13 @@ const CANDID: Record<string, string[]> = {
 };
 
 const WORK_FACTS = [
+  "our client is unreliable on slow networks",
+  "my manager is approving the PR",
+  "the manager process is unreliable",
+  "our team is shipping the release on Friday",
+  "my PM is out until Monday",
+  "the deploy at 5 PM is unreliable",
+  "our HR system is unreliable",
   "the finance team's API rate limit",
   "the health check endpoint",
   "a family of worker processes",
@@ -252,6 +268,7 @@ const THIRD_PERSON_CANDID: Record<string, string[]> = {
     "User's opinion: Acme's business plan is weak",
     "The user thinks the client's founders are clueless",
     "the user can't stand the client's CEO",
+    "The user's manager is incompetent",
     "I think the client's migration plan is badly thought through and their lead architect is out of his depth",
   ],
 };

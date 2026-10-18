@@ -52,6 +52,10 @@ const LEAD = "(?:(?:is|was|has|had|are|just|recently|currently|now|been|got|have
 const ROLE_NOUN =
   "(?:client|customer|founders?|ceo|cto|cfo|boss|manager|colleagues?|coworkers?|co-workers?|vendor|contractor|investors?|management|leadership|owner|team lead)";
 const PERSON_ROLE = `(?:the|my|our|[a-z]+'s)\\s+${ROLE_NOUN}(?:'s)?`;
+// Words that always mean people, for a bare "my manager is incompetent". Client, customer and vendor are left out:
+// they are often software or companies ("our client is unreliable on 3G").
+const PEOPLE_NOUN =
+  "(?:project managers?|managers?|boss(?:es)?|ceo|cto|cfo|colleagues?|coworkers?|co-workers?|teammates?|founders?|hr|union reps?|pms?|team)";
 const PERSON_ANY = `(?:their|his|her|${PERSON_ROLE}|(?:he|she|they))`;
 const NEG =
   "(?:weak|bad|terrible|awful|stupid|dumb|incompetent|inept|useless|doomed|hopeless|lazy|dishonest|unprofessional|mediocre|toxic|clueless|shady|sloppy|idiotic|unreliable|disorganized|amateurish|pathetic|a joke|garbage|half-baked|(?:badly|poorly) thought (?:out|through)|out of (?:his|her|their) depth|greedy|arrogant|manipulative|delusional|unethical|corrupt|rude|incapable)";
@@ -138,6 +142,10 @@ const CANDID_RULES: [PersonalHit & { tier: "candid" }, RegExp][] = [
   [
     { tier: "candid", category: "candid" },
     new RegExp(`\\bi\\s+(?:(?:can't|cannot|can not|don't|do not)\\s+(?:stand|trust|respect)|despise|loathe|distrust|resent|dislike|hate)\\s+(?:working with\\s+)?${PERSON_ROLE}`, "i"),
+  ],
+  [
+    { tier: "candid", category: "candid" },
+    new RegExp(`\\b(?:my|our)\\s+${PEOPLE_NOUN}\\s+(?:is|are|was|were|seems?|seemed|looks?)\\s+(?:\\w+\\s+){0,2}?${NEG}\\b`, "i"),
   ],
   [{ tier: "candid", category: "about_others" }, new RegExp(`\\b${NAME}(?:'s)?\\s+${LEAD}${PRIVATE_LIFE}`, "i")],
   [{ tier: "candid", category: "about_others" }, new RegExp(`\\b${NAME}'s\\s+(?:salary|pay|bonus|compensation|income)\\b`, "i")],
