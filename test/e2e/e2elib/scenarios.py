@@ -23,6 +23,10 @@ SAVE_DELETE = ("memory_save", "memory_delete")
 Verdicts = Dict[str, C.Verdict]
 
 
+class WrongConnector(RuntimeError):
+    """The session loaded memory tools, but not the host's (staging) connector: stop before checking anything."""
+
+
 class Ctx:
     """Everything a scenario needs; tests replace `claude`, `sh` and `gh`."""
 
@@ -57,6 +61,11 @@ class Ctx:
         (self.raw_dir / f"{host.id}-{label}-{self._n:02d}.jsonl").write_text(r.stdout, encoding="utf-8")
         if r.timed_out:
             r.transcript.texts.append("[e2e: timed out]")
+        tools = r.transcript.tools
+        if tools and not inv.no_connector and not any(x.startswith(tuple(host.mcp_prefixes)) for x in tools):
+            other = sorted({x.rsplit("__", 1)[0] for x in tools if x.endswith("__memory_save")})
+            raise WrongConnector(f"no {' or '.join(host.mcp_prefixes)} tools in the session (memory tools seen: "
+                                 f"{', '.join(other) or 'none'}); connect the staging connector")
         return r.transcript
 
     def found(self, token: str, since: str):

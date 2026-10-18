@@ -7,6 +7,7 @@ from pathlib import Path
 
 from e2elib import checks as C
 from e2elib import scenarios as S
+from e2elib.launch import Invocation
 from fakes import CFG, HOST, FakeClaude, FakeGh, FakeShell, saved, stream
 
 
@@ -351,6 +352,23 @@ class GuardProbes(unittest.TestCase):
         v, _ = self.run_s21(calls)
         self.assertEqual(v.status, C.SOFT_FAIL, v)
         self.assertIn("p2: sent without force", v.notes)
+
+
+class Connector(unittest.TestCase):
+    """A session that loaded some other memory connector (production) instead of the host's must stop the scenario."""
+
+    def test_wrong_connector_raises(self):
+        claude = FakeClaude(stream(tools=["mcp__claude_ai_claude-memory__memory_save", "Bash"]))
+        with self.assertRaisesRegex(S.WrongConnector, "mcp__claude_ai_claude-memory-staging__"):
+            ctx(claude).claude(HOST, Invocation("hi", "sample_app"), "x")
+
+    def test_expected_connector_passes(self):
+        claude = FakeClaude(stream(tools=["mcp__claude_ai_claude-memory-staging__memory_save"]))
+        ctx(claude).claude(HOST, Invocation("hi", "sample_app"), "x")
+
+    def test_no_connector_run_is_not_checked(self):
+        claude = FakeClaude(stream(tools=["Bash"]))
+        ctx(claude).claude(HOST, Invocation("hi", "sample_app", no_connector=True), "x")
 
 
 class Uninstall(unittest.TestCase):

@@ -6,6 +6,7 @@
   "sample_project": "davlion-test-client/sample-app",
   "kit_project": "davlion/claude-memory-cloud",
   "repeats": 3,
+  "deny_mcp_prefixes": ["mcp__claude_ai_claude-memory__", "mcp__claude-memory__"],
   "hosts": {
     "H1": {"label": "Mac CLI", "ssh": null, "claude": "~/.local/bin/claude", "python": "/usr/bin/python3",
            "mcp_prefixes": ["mcp__claude_ai_claude-memory-staging__", "mcp__claude-memory-staging__"],

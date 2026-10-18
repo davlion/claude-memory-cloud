@@ -31,7 +31,8 @@ class Config:
 def load(config_path: Path = HERE / "e2e.json", prompts_path: Path = HERE / "prompts.json") -> Config:
     d = json.loads(Path(config_path).read_text(encoding="utf-8"))
     hosts = {hid: Host(id=hid, label=h["label"], ssh=h.get("ssh"), claude=h["claude"], python=h["python"],
-                       mcp_prefixes=list(h["mcp_prefixes"]), dirs=dict(h["dirs"]))
+                       mcp_prefixes=list(h["mcp_prefixes"]), dirs=dict(h["dirs"]),
+                       deny_prefixes=list(d.get("deny_mcp_prefixes", [])))
              for hid, h in d["hosts"].items()}
     prompts = json.loads(Path(prompts_path).read_text(encoding="utf-8"))
     return Config(general_repo=d["general_repo"], client_repo=d["client_repo"], client_scope=d["client_scope"],

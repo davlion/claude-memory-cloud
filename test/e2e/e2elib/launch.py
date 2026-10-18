@@ -7,7 +7,7 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Mapping, Optional, Sequence
 
-from .transcript import Transcript, parse
+from .transcript import MEMORY_TOOLS, Transcript, parse
 
 # Variables a parent Claude Code session sets. Inherited, they make the child think it is nested, and
 # ANTHROPIC_API_KEY turns off claude.ai connectors (observed 2026-10-15, Claude Code 2.1.300).
@@ -25,6 +25,7 @@ class Host:
     python: str                  # python for kit helpers on that host
     mcp_prefixes: List[str]      # e.g. ["mcp__claude_ai_claude-memory-staging__"]
     dirs: Dict[str, str]         # "sample_app" / "kit_repo" / "no_remote" -> path (may start with ~/)
+    deny_prefixes: List[str] = field(default_factory=list)   # other memory connectors (production): never usable
 
 
 @dataclass
@@ -68,6 +69,8 @@ def claude_args(host: Host, inv: Invocation) -> List[str]:
         args += ["--resume", inv.resume]
     if inv.no_connector:
         args += ["--strict-mcp-config", "--mcp-config", EMPTY_MCP]
+    if host.deny_prefixes:
+        args += ["--disallowedTools"] + [p + t for p in host.deny_prefixes for t in MEMORY_TOOLS]
     if inv.allow:
         args += ["--allowedTools"] + [p + t for p in host.mcp_prefixes for t in inv.allow]
     return args

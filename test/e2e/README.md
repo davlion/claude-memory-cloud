@@ -37,4 +37,8 @@ refused; S21 reads the server's status. A probe Claude declines to send is a sof
 Manual hosts (Desktop app, cloud, web chat, mobile): `run.py token --scenario S2` prints a prompt with a
 fresh token; paste it, then `run.py verify --token <t> --scenario S2 --host H6`.
 
+**Staging only.** Each host's `mcp_prefixes` name the staging connector. The production connector's memory tools
+(`deny_mcp_prefixes` in `e2e.json`) are disallowed in every test session, and a session that loaded memory tools but
+not staging's stops with `WrongConnector`, so a run can't touch production even when both connectors are connected.
+
 Offline unit tests: `npm run test:e2e`.

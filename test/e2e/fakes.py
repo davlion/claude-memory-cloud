@@ -16,12 +16,12 @@ CFG = Config(general_repo="me/claude-memory-test", client_repo="client/claude-me
 
 
 def stream(*, kit: str = "Memory project for this session: client/sample-app", calls=(), text: str = "ok",
-           hooks: List[Tuple[str, str]] = ()) -> str:
+           hooks: List[Tuple[str, str]] = (), tools: List[str] = ()) -> str:
     """A stream-json transcript. calls: (short_name, input, result_text, is_error)."""
     ev = [{"type": "system", "subtype": "hook_response", "hook_name": "SessionStart:startup", "output":
            json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": kit}})}]
     ev += [{"type": "system", "subtype": "hook_response", "hook_name": n, "output": o} for n, o in hooks]
-    ev.append({"type": "system", "subtype": "init", "session_id": "s", "tools": []})
+    ev.append({"type": "system", "subtype": "init", "session_id": "s", "tools": list(tools)})
     for i, (name, inp, res, err) in enumerate(calls):
         ev.append({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": f"c{i}", "name": P + name, "input": inp}]}})
         ev.append({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": f"c{i}", "content": res, "is_error": err}]}})

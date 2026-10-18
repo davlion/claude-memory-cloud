@@ -18,6 +18,15 @@ class Args(unittest.TestCase):
         self.assertEqual(a[a.index("--session-id") + 1], "u1")
         self.assertEqual(a[-3:], ["--allowedTools", "mcp__a__memory_save", "mcp__b__memory_save"])
 
+    def test_denied_connector_tools_are_disallowed_and_allowed_tools_stay_last(self):
+        host = Host("H1", "Mac CLI", None, "claude", "python3", ["mcp__a__"], {"sample_app": "/s"},
+                    deny_prefixes=["mcp__prod__"])
+        a = claude_args(host, Invocation("hi", "sample_app", allow=("memory_save",)))
+        denied = a[a.index("--disallowedTools") + 1:a.index("--allowedTools")]
+        self.assertIn("mcp__prod__memory_save", denied)
+        self.assertIn("mcp__prod__memory_index", denied)
+        self.assertEqual(a[-2:], ["--allowedTools", "mcp__a__memory_save"])
+
     def test_no_connector_loads_no_mcp_servers(self):
         a = claude_args(MAC, Invocation("hi", "sample_app", no_connector=True, resume="u2"))
         self.assertIn("--strict-mcp-config", a)
