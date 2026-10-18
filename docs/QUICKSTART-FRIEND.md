@@ -128,6 +128,8 @@ It's safe to run again; rerunning without `--scope` keeps your current scopes. R
 3. Say: *"Save a memory that I prefer small commits."* Claude should answer with **"saved to general"**. Check `https://github.com/<you>/claude-memory` for the new commit.
 4. On your phone, in the Claude app, ask: *"What do you remember about how I like commits?"*
 
+To bring over memories that Claude Code's built-in memory kept before setup, see [MIGRATE.md](MIGRATE.md).
+
 ---
 
 ## If something goes wrong

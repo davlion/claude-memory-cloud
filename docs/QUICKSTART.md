@@ -245,6 +245,8 @@ It's safe to run again; rerunning without `--scopes-file`/`--scope` keeps your c
 4. Check that `~/.claude-memory-cloud/cache/` now holds a snapshot named after the repo (`<owner>__<repo>.md`).
 5. On your phone, in the Claude app, ask: *"What do you remember about how I like commits?"*
 
+To bring over memories that Claude Code's built-in memory kept before setup, see [MIGRATE.md](MIGRATE.md).
+
 To remove everything, see [UNINSTALL.md](UNINSTALL.md).
 
 ---

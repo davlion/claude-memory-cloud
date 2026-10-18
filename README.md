@@ -30,6 +30,7 @@ There's also [a cartoon version](docs/images/memory-path-cartoon.png) of the sam
 
 - **Run your own server:** [Quickstart](docs/QUICKSTART.md). You need a GitHub account and a Cloudflare account on Workers Paid ($5/month).
 - **Use a friend's server:** [Quickstart for friends](docs/QUICKSTART-FRIEND.md).
+- **Bring over Claude Code's old local memories:** [Migrate](docs/MIGRATE.md).
 - **Questions:** [FAQ](docs/FAQ.md). **Why it's built this way:** [Design decisions](docs/DECISIONS.md). **Risks and mitigations:** [Threat model](docs/THREAT-MODEL.md). **Removing it:** [Uninstall](docs/UNINSTALL.md).
 
 ## Develop

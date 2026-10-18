@@ -123,7 +123,7 @@ The server checks for similar memories and asks Claude to update the existing on
 Yes. They're plain Markdown files in your repo. The index is rebuilt from the files every time it's read, and Health notes that the repo was changed outside the server so you know to review it.
 
 ### What about Claude Code's built-in memory?
-The setup script turns it off, so memories don't end up in two places. Your existing local memory files are left in place as a backup.
+The setup script turns it off, so memories don't end up in two places. Your existing local memory files are left in place as a backup. To move them into GitHub memory, see [MIGRATE.md](MIGRATE.md).
 
 ### What about claude.ai's built-in memory?
 Keep it on. claude.ai chat (web, Desktop and mobile) has its own memory, and it is the right home for personal facts that must not go to GitHub (see "What should never go in GitHub memory?"). In chat, the connector's instructions tell Claude to send those facts to built-in memory and to use the connector for facts about work. Claude Code has no built-in memory (the setup script turns it off), so there a personal fact is declined: "not saved: personal, keep it in claude.ai memory".
