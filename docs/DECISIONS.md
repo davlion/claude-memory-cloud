@@ -44,7 +44,7 @@ Why claude-memory-cloud is built the way it is. Each entry gives the decision, t
 
 **Connections expire.** A connection lasts 30 days without use and 180 days at most, then you reconnect. The consent page appears on every new connection, with no "remember me", because connecting is rare and a remembered consent is easier to abuse.
 
-**A small trusted group per server.** A server is meant for you and up to about five friends. A client that wants its own control self-hosts a copy; the code is small. Per-user filtering for a large shared server was left out.
+**A trusted group per server.** A server is for you and people who trust you: whoever runs it can read every memory that passes through it. There's no set size. The practical ceiling is the `SCOPES` secret, which Cloudflare caps at 5 KB, enough for roughly 50 people with a client scope each, and each person is added by hand. A client that wants its own control self-hosts a copy; the code is small.
 
 ## Running it
 
