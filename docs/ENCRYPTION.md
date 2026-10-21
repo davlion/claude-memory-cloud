@@ -38,7 +38,7 @@ A friend using someone else's server is still trusting that host, exactly as [QU
 
 Use the key page. ([memcrypt](#memcrypt-encrypt-decrypt-and-rotate-from-your-machine) is the alternative, from your own machine.)
 
-1. Open `<server>/keys` and sign in with GitHub. The page lists the memory repos you can write to.
+1. Open `<server>/keys` (the server's front page, `/`, links to it) and sign in with GitHub. The page lists the memory repos you can write to.
 2. Next to the repo, click **Turn on encryption**. (If you aren't an admin of the repo, the page says "Only an admin of `<owner>/<repo>` can turn encryption on or off.")
 3. The page shows the new key once, starting with `cmk1_`. **Save it in your password manager now.**
 4. Choose a path (below), **Move to a fresh repo** or **Encrypt in place** (squash), paste the key back (proof that it was saved), type the repo name to confirm, and click the button.
@@ -123,11 +123,13 @@ Reported at session start, once per session, like other health problems:
 | `✓ encryption:<scope> — encrypted` | All well |
 | `⚠ … — encrypted, key not registered` | Register the key; saves are queued until then |
 | `⚠ … — encrypted, the registered key doesn't match (rotated?)` | Register the repo's current key |
-| `⚠ … — encrypted, the marker names a different key (rotated?)` | After `memcrypt rotate`: register the new key. If nobody rotated the key, treat it as a changed marker (below) |
+| `⚠ … — encrypted, the key was changed (memcrypt rotate?)` | After `memcrypt rotate`: register the repo's new key (one line, whether or not an old key is registered). If nobody rotated the key, treat it as a changed marker (below) |
 | `⚠ … — encrypted, N memories unencrypted, added outside the memory tool` | See above |
 | `⚠ … — encryption off, N memories still encrypted` | Encryption was stopped; turn it back on, or decrypt with memcrypt |
 | `⚠ … — encrypted copy written to <new repo>; finish the move` | Delete the old repo and rename the new one |
 | `⚠ … — encrypted copy written to <new repo>, but <owner>/<repo> changed after the copy` | Don't delete the old repo: cancel the move on the key page and start again |
+| `✗ … — encrypted, but the repo was decrypted outside the memory tool (the signed marker says off)` | The registered key verifies a marker that says off. After `memcrypt decrypt`, an admin clicks **Confirm decryption (turn encryption off)** on the key page; otherwise review the repo's recent commits. Saves stay encrypted until then |
+| `✗ … — encrypted, but the encryption marker says off and can't be checked without the key` | The marker says off but no registered key can verify it. Register the key on the key page to check it; if nobody decrypted the repo, review recent commits. Saves stay encrypted |
 | `✗ … — encrypted, but the encryption marker is missing or not signed` | See "If the encryption marker is missing or changed" |
 | `✗ … — encrypted repo, but this memory server doesn't support encryption` | The memory server you're using doesn't have encryption turned on |
 
@@ -135,11 +137,11 @@ Reported at session start, once per session, like other health problems:
 
 ## Stopping, and turning back on
 
-**Stopping** needs admin on the repo and the key. On the key page, paste the key and click **Stop encrypting new memories**. New memories are saved unencrypted from then on. Existing memories stay encrypted and still need the key to read; health shows `encryption off, N memories still encrypted`. To decrypt them, run `memcrypt decrypt`.
+**Stopping** needs admin on the repo and the key. On the key page, paste the key and click **Stop encrypting new memories**. New memories are saved unencrypted from then on. Existing memories stay encrypted and still need the key to read; health shows `encryption off, N memories still encrypted`. To decrypt them, run `memcrypt decrypt`, then an admin clicks **Confirm decryption (turn encryption off)** on the key page (paste the key).
 
 **Turning back on** also needs admin. Click **Turn encryption back on**, paste the repo's existing key, and click **Encrypt in place**: memories saved while encryption was off are in the history in plaintext, so the history is squashed again. Moving to a fresh repo isn't offered when turning back on.
 
-The memory tool never turns encryption off because of what's in the repo. Only **Stop** on the key page turns it off, or an admin registering the key after `memcrypt decrypt`. Deleting or editing the encryption marker (`.claude-memory/encryption.json`) keeps the repo encrypted.
+The memory tool never turns encryption off because of what's in the repo. Only **Stop** on the key page turns it off, or an admin clicking **Confirm decryption (turn encryption off)** after `memcrypt decrypt`. Deleting or editing the encryption marker (`.claude-memory/encryption.json`) keeps the repo encrypted.
 
 ---
 
@@ -201,7 +203,7 @@ With `--in-place`, memcrypt refuses if the repo has other branches, tags or pull
 
 Writes every memory back in plaintext, in a normal commit, and marks encryption off. That plaintext stays in the repo's history from now on, even if you turn encryption on again later.
 
-The memory tool keeps encrypting new saves until an admin of the repo registers the key on the key page (whether or not it's already registered) or uses **Stop** there. If someone who isn't an admin registers it, the page answers "Encryption stays on for `<owner>/<repo>`; an admin can turn it off with Stop."
+The memory tool keeps encrypting new saves, and health shows `✗ … decrypted outside the memory tool`, until an admin of the repo clicks **Confirm decryption (turn encryption off)** on the key page and pastes the key (whether or not it's already registered), or uses **Stop** there. If someone who isn't an admin registers it, the page answers "Encryption stays on for `<owner>/<repo>`; an admin can turn it off with Stop."
 
 ### rotate
 
@@ -213,7 +215,7 @@ The memory tool keeps encrypting new saves until an admin of the repo registers 
 
 Decrypts with the old key and encrypts with a new one in memory, with no plaintext step in history. The new key is generated and shown once, unless you give one with `--new-key-env <VAR>`. Choose where the old key's ciphertext goes: `--to` and `--in-place` leave it behind as for switch-on; `--commit` keeps it in the history, so anyone with read access and the old key can still read those versions.
 
-Then register the new key on the key page. The old key is refused from now on. Until you register it, health shows `⚠ encryption:<scope> — encrypted, the marker names a different key (rotated?)`.
+Then register the new key on the key page. The old key is refused from now on. Until you register it, health shows `⚠ encryption:<scope> — encrypted, the key was changed (memcrypt rotate?)`.
 
 ---
 
@@ -222,7 +224,7 @@ Then register the new key on the key page. The old key is refused from now on. U
 The marker, `.claude-memory/encryption.json` at the repo root, records that the repo is encrypted, signed with a key derived from the repo key. The memory tool also remembers on its own which repos are encrypted.
 
 - **Deleted, or edited without the key:** the repo stays encrypted. Saves stay encrypted, and health shows `✗ encryption:<scope> — encrypted, but the encryption marker is missing or not signed`, with a link to the repo's recent commits. Someone may have tried to turn encryption off.
-- **Replaced with a marker for another key** (by someone with write access): saves stop rather than risk the wrong key, and the key page refuses your key for that repo. A marker that differs only in its key looks like a rotate to the memory tool, so health shows the ⚠ "marker names a different key (rotated?)" line rather than ✗: if nobody ran `memcrypt rotate`, treat it as this case.
+- **Replaced with a marker for another key** (by someone with write access): saves stop rather than risk the wrong key, and the key page refuses your key for that repo. A marker that differs only in its key looks like a rotate to the memory tool, so health shows the ⚠ "the key was changed (memcrypt rotate?)" line rather than ✗: if nobody ran `memcrypt rotate`, treat it as this case.
 
 To recover, review the recent commits and put the last good marker back from the repo's history, for example in a clone:
 
