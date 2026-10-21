@@ -52,6 +52,9 @@ const existingMarker = (files: TreeFile[]): Marker | null => {
   try { return parseMarker(f.text ?? ""); } catch { return null; }
 };
 
+/** Best effort once the switch is done: a failure here mustn't report a finished switch-on as failed; snapshots expire by TTL. */
+const clearCache = async (cache: KVNamespace, repo: string) => { try { await clearSnapshots(cache, repo); } catch { /* expire by TTL */ } };
+
 /** Turns encryption on by replacing the repo's history with one root commit. Saves are held off while it runs. */
 export async function switchOnInPlace(store: GitHubStore, keys: KeyRing, cache: KVNamespace, repo: string, keyText: string, login: string, progress?: Progress): Promise<{ url: string }> {
   const key = await parseKeyText(keyText);
@@ -83,7 +86,7 @@ export async function switchOnInPlace(store: GitHubStore, keys: KeyRing, cache: 
     await keys.putRecord(repo, { repoId: plan.marker.repoId, keyId: key.id, enabled: true });
     await keys.put(repo, keyText, login, Date.now());
     progress?.("Stored the key");
-    await clearSnapshots(cache, repo);
+    await clearCache(cache, repo);
     return { url: res.url };
   } finally {
     await keys.clearSwitching(repo);
@@ -126,7 +129,7 @@ export async function switchOnFresh(store: GitHubStore, keys: KeyRing, cache: KV
     await keys.putRecord(repo, { repoId: plan.marker.repoId, keyId: key.id, enabled: true });
     await keys.put(repo, keyText, login, Date.now());
     progress?.("Stored the key");
-    await clearSnapshots(cache, repo);
+    await clearCache(cache, repo);
     return { url: res.url };
   } finally {
     await keys.clearSwitching(repo);

@@ -433,6 +433,23 @@ describe("switchOnFresh", () => {
     expect(await env.CACHE_KV.get(other)).toBe("{}");
   });
 
+  it("a cache that can't be cleared doesn't fail a finished switch-on, in place or fresh (snapshots expire by TTL)", async () => {
+    const broken = { list: async () => { throw new Error("KV down"); }, delete: async () => { throw new Error("KV down"); } } as unknown as KVNamespace;
+    const keys = await ring();
+    const a = fakeRepo(uniq("mem"));
+    mockFetch(routes([a]));
+    const text = generateKeyText();
+    await expect(switchOnInPlace(store(), keys, broken, a.name, text, "dav")).resolves.toMatchObject({ url: expect.any(String) });
+    expect(await keys.getRecord(a.name)).toMatchObject({ enabled: true });
+    expect(await keys.isSwitching(a.name)).toBe(false);
+    const b = fakeRepo(uniq("mem"));
+    const n = fakeRepo(uniq("new"), { head: null });
+    mockFetch(routes([b, n]));
+    await expect(switchOnFresh(store(), keys, broken, b.name, n.name, text, "dav")).resolves.toMatchObject({ url: expect.any(String) });
+    expect(await keys.getMove(b.name)).toMatchObject({ to: n.name });
+    expect(await keys.getRecord(b.name)).toMatchObject({ enabled: true });
+  });
+
   it("the old repo moved while the copy was written → unavailable; no move, record or key", async () => {
     const r = fakeRepo(uniq("mem"), { refAt: (i) => (i === 0 ? "c1" : "c9") });
     const n = fakeRepo(uniq("new"), { head: null });
