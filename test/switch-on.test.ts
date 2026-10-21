@@ -67,7 +67,7 @@ function routes(repos: FakeRepo[]) {
       { method: "GET", url: `${B}/git/trees/`, respond: () => json({ truncated: false, tree: r.tree }) },
       { method: "GET", url: `${B}/branches`, respond: () => json(r.branches.map((name) => ({ name }))) },
       { method: "GET", url: `${B}/tags`, respond: () => json(r.tags.map((name) => ({ name }))) },
-      { method: "GET", url: `${B}/pulls`, respond: () => json(Array.from({ length: r.pulls }, (_, i) => ({ number: i + 1 }))) },
+      { method: "GET", url: `${B}/git/matching-refs/pull/`, respond: () => json(Array.from({ length: r.pulls }, (_, i) => ({ ref: `refs/pull/${i + 1}/head` }))) },
       { method: "GET", url: `${B}/git/blobs/`, respond: (req: Request) => {
         const sha = req.url.split("/").pop()!;
         return json({ sha, content: btoa(texts[sha] ?? "x"), encoding: "base64" });

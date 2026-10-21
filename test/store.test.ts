@@ -403,10 +403,23 @@ describe("GitHubStore switch-on helpers", () => {
       { method: "GET", url: R, respond: () => json(META) },
       { method: "GET", url: `${R}/branches`, respond: () => json([{ name: "main" }, { name: "feat" }]) },
       { method: "GET", url: `${R}/tags`, respond: () => json([{ name: "v1" }, { name: "v2" }]) },
-      { method: "GET", url: `${R}/pulls`, respond: () => json([{ number: 1 }]) },
+      { method: "GET", url: `${R}/git/matching-refs/pull/`, respond: () => json([
+        { ref: "refs/pull/1/head" }, { ref: "refs/pull/1/merge" }, { ref: "refs/pull/2/head" },
+      ]) },
     ]);
-    expect(await new GitHubStore(new GitHub("t")).extraRefs("dav/mem")).toEqual({ branches: 1, tags: 2, pulls: 1 });
-    expect(calls.find((c) => c.url.includes("/pulls"))!.url).toContain("state=all");
+    expect(await new GitHubStore(new GitHub("t")).extraRefs("dav/mem")).toEqual({ branches: 1, tags: 2, pulls: 2 });
+    // Pull refs come from the git refs API (Contents permission); /pulls would need the Pull requests permission the app doesn't have.
+    expect(calls.some((c) => new URL(c.url).pathname.endsWith("/pulls"))).toBe(false);
+  });
+
+  it("extraRefs: an empty repo (409 from the refs API) has no pull requests", async () => {
+    mockFetch([
+      { method: "GET", url: R, respond: () => json(META) },
+      { method: "GET", url: `${R}/branches`, respond: () => json([]) },
+      { method: "GET", url: `${R}/tags`, respond: () => json([]) },
+      { method: "GET", url: `${R}/git/matching-refs/pull/`, respond: () => json({ message: "Git Repository is empty." }, 409) },
+    ]);
+    expect(await new GitHubStore(new GitHub("t")).extraRefs("dav/mem")).toEqual({ branches: 0, tags: 0, pulls: 0 });
   });
 
   it("extraRefs: none", async () => {
@@ -414,7 +427,7 @@ describe("GitHubStore switch-on helpers", () => {
       { method: "GET", url: R, respond: () => json(META) },
       { method: "GET", url: `${R}/branches`, respond: () => json([{ name: "main" }]) },
       { method: "GET", url: `${R}/tags`, respond: () => json([]) },
-      { method: "GET", url: `${R}/pulls`, respond: () => json([]) },
+      { method: "GET", url: `${R}/git/matching-refs/pull/`, respond: () => json([]) },
     ]);
     expect(await new GitHubStore(new GitHub("t")).extraRefs("dav/mem")).toEqual({ branches: 0, tags: 0, pulls: 0 });
   });
