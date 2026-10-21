@@ -351,6 +351,25 @@ describe("key page", () => {
     expect(html).toContain("unknown expiry");
   });
 
+  it("/ is a small landing page with the key page's headers; other unknown paths stay 404", async () => {
+    for (const method of ["GET", "HEAD"]) {
+      const res = await go("/", { method });
+      expect(res.status, method).toBe(200);
+      expect(res.headers.get("content-type")).toMatch(/^text\/html/);
+      expectHardened(res);
+      if (method === "GET") {
+        const html = await res.text();
+        expect(html).toContain("<title>claude-memory</title>");
+        expect(html).toContain("This is a claude-memory server: Claude's memory tool. Connect it in claude.ai → Settings → Connectors.");
+        expect(html).toContain('<a href="/keys">Key page (encryption at rest)</a>');
+        expect(html).not.toContain("<script");
+      }
+    }
+    expect((await go("/", { method: "POST" })).status).not.toBe(200);
+    expect((await go("/nope")).status).toBe(404);
+    expect((await go("/health")).status).toBe(200);
+  });
+
   it("unknown /keys paths are 404 with the headers", async () => {
     const res = await go("/keys/nope");
     expect(res.status).toBe(404);
@@ -580,6 +599,28 @@ describe("key page actions", () => {
     expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: nk.id, enabled: true });
   });
 
+  it("confirming a decryption with the key already registered turns the record off, and saves go plaintext", async () => {
+    const text = generateKeyText();
+    const key = await parseKeyText(text);
+    const repoId = newRepoId();
+    const off = await signMarker(key, { enabled: false, repoId, keyId: key.id });
+    await (await ring()).put(REPO, text, "dav", Date.now());
+    await (await ring()).putRecord(REPO, { repoId, keyId: key.id, enabled: true });
+    const gh = fake(REPO, { marker: serializeMarker(off) });
+    github({ admin: true }, [gh]);
+    await signIn();
+    const page = await (await go(`/keys?repo=${encodeURIComponent(REPO)}`)).text();
+    expect(page).toContain("Confirm decryption (turn encryption off)");
+    expect((await act("/keys/register", { repo: REPO, key: text })).status).toBe(200);
+    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: false });
+    const inner = new FakeStore();
+    inner.put(REPO, MARKER_PATH, serializeMarker(off));
+    const enc = new EncryptingStore(inner, await ring(), "https://memory.test/keys");
+    await saveMemory(enc, { scopeLabel: "general", displayLabel: "general", repo: REPO, prefix: "" },
+      { name: "a", description: "plain thing", type: "project", body: "x\n", source: "t", force: true }, new Date(), { kind: "general", others: [] });
+    expect(isEncryptedFile(inner.repo(REPO).get("memories/a.md")!)).toBe(false);
+  });
+
   it("without admin, register keeps encryption on but updates the key ID and turns it back on", async () => {
     const text = generateKeyText();
     const key = await parseKeyText(text);
@@ -751,6 +792,20 @@ describe("key page actions", () => {
     expect(stale).not.toContain("The encrypted copy is current.");
     const viewer = repoSection({ repo: REPO, key: null, admin: false, status }, "c", false);
     expect(viewer).not.toContain("/keys/cancel-move");
+  });
+
+  it("decrypted outside: the state line and, for admins, the confirm form; viewers get the admin-only text", () => {
+    const status = { encrypted: true, enabled: true, key: "ok" as const, markerProblem: false, sealed: 0, outside: 0, decrypted: true };
+    const admin = repoSection({ repo: REPO, key: { registeredBy: "dav", expiresAt: null }, admin: true, status }, "c", false);
+    expect(admin).toContain("Decrypted outside the memory tool (memcrypt decrypt?). Encryption stays on until an admin confirms.");
+    expect(admin).toMatch(/action="\/keys\/register"[\s\S]*name="key"[\s\S]*Confirm decryption \(turn encryption off\)/);
+    expect(admin).toContain("/keys/remove");
+    expect(admin).not.toContain("marker is missing");
+    const viewer = repoSection({ repo: REPO, key: { registeredBy: "dav", expiresAt: null }, admin: false, status }, "c", false);
+    expect(viewer).toContain("Decrypted outside the memory tool");
+    expect(viewer).not.toContain("Confirm decryption");
+    expect(viewer).toContain(esc(ADMIN_ONLY));
+    expect(viewer).toContain("/keys/remove");
   });
 
   it("the page's forms post to the action routes, with the key for remove and stop", () => {

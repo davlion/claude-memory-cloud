@@ -109,6 +109,7 @@ function state(v: RepoView): string {
       : `<p>Moving to <strong>${esc(st.moving)}</strong>. The encrypted copy is current.</p>`);
     lines.push(`<p>${esc(MOVE_WAIT(v.repo))}</p>`);
   }
+  if (st.decrypted) lines.push("<p>Decrypted outside the memory tool (memcrypt decrypt?). Encryption stays on until an admin confirms.</p>");
   if (st.markerProblem) lines.push("<p>Its encryption marker is missing or doesn't match. Run memory_health for details.</p>");
   return lines.join("\n");
 }
@@ -124,6 +125,7 @@ ${hidden("csrf", csrf)}${hidden("repo", v.repo)}${withKey ? keyInput : ""}<butto
   const out: string[] = [];
   if (st.key === "ok") out.push(form("remove", "Remove key", true));
   else out.push(form("register", "Register key", true));
+  if (st.decrypted) out.push(change(form("register", "Confirm decryption (turn encryption off)", true)));
   out.push(change(st.moving ? form("cancel-move", "Cancel the move")
     : st.enabled ? form("stop", "Stop encrypting new memories", true) : form("turn-on", "Turn encryption back on")));
   return out.join("\n");
@@ -144,3 +146,8 @@ export function keysHome(o: { login: string; csrf: string; repos: RepoView[]; se
 ${o.problem ? `<p>${esc(o.problem)}</p>` : ""}${missing}
 ${body}`);
 }
+
+/** GET / : nothing about this server beyond what it is, so the dashboard's Visit link lands somewhere. */
+export const landing = () => page(doc("claude-memory", `<h1>claude-memory</h1>
+<p>This is a claude-memory server: Claude's memory tool. Connect it in claude.ai → Settings → Connectors.</p>
+<p><a href="/keys">Key page (encryption at rest)</a></p>`));

@@ -2,6 +2,7 @@ import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import type { Env, Props } from "./env";
 import { authHandler, checkRegistration, GRANT_IDLE_SECONDS, GRANT_MAX_SECONDS, tokenExchangeCallback } from "./github-auth";
 import { harden, keyPage } from "./key-page";
+import { landing } from "./key-page-html";
 import { mcpApi } from "./mcp-api";
 
 let provider: OAuthProvider<Env> | undefined;
@@ -48,6 +49,7 @@ export default {
     if (url.pathname === "/health") {
       return Response.json({ ok: true, version: env.WORKER_VERSION, min_hook_version: env.MIN_HOOK_VERSION });
     }
+    if (url.pathname === "/" && (request.method === "GET" || request.method === "HEAD")) return harden(landing());
     const key = rateLimitKey(request, url);
     if (key && !(await env.AUTH_RATE_LIMIT.limit({ key })).success) {
       const res = new Response("Too many sign-in requests; try again in a minute.", { status: 429, headers: { "retry-after": "60" } });
