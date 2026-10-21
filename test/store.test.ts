@@ -256,6 +256,16 @@ describe("clearSnapshots", () => {
     expect(await left()).toBe(0);
     expect(await env.CACHE_KV.get(other)).toBe("{}");
   });
+
+  it("also deletes the plaintext snap:v2 keys cached before encryption at rest", async () => {
+    const repo = `Dav/Old-${crypto.randomUUID()}`;
+    const old = [`snap:v2:${repo}:c1:`, `snap:v2:${repo}:c1:projects/x/`, `snap:v2:${repo.toLowerCase()}:c2:`];
+    const other = `snap:v2:${repo}x:c1:`;
+    for (const k of [...old, other]) await env.CACHE_KV.put(k, "{}");
+    await clearSnapshots(env.CACHE_KV, repo);
+    for (const k of old) expect(await env.CACHE_KV.get(k), k).toBeNull();
+    expect(await env.CACHE_KV.get(other)).toBe("{}");
+  });
 });
 
 describe("GitHubStore.commit", () => {

@@ -78,11 +78,13 @@ const encode = (s: string) => toB64(new TextEncoder().encode(s));
 
 /**
  * Deletes the repo's cached snapshots (they can hold plaintext), ten at a time and at most `max` per call so a request stays
- * within its KV operation limit; the rest expire by TTL or go on the next call.
+ * within its KV operation limit; the rest expire by TTL or go on the next call. Includes the `snap:v2:` keys of the version
+ * before encryption at rest, which hold plaintext too.
  */
 export async function clearSnapshots(cache: KVNamespace, repo: string, max = 900): Promise<void> {
   let left = max;
-  for (const prefix of new Set([`snap:v3:${repo}:`, `snap:v3:${repo.toLowerCase()}:`])) {
+  const prefixes = ["v3", "v2"].flatMap((v) => [`snap:${v}:${repo}:`, `snap:${v}:${repo.toLowerCase()}:`]);
+  for (const prefix of new Set(prefixes)) {
     let cursor: string | undefined;
     do {
       if (left <= 0) return;
