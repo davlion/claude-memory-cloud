@@ -19,7 +19,7 @@ const CLEAR_LOGIN = `${LOGIN_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Lax; M
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const SECURITY: Record<string, string> = {
   "Cache-Control": "no-store",
-  "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+  "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "same-origin",
   "X-Content-Type-Options": "nosniff",

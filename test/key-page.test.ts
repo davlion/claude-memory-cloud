@@ -19,7 +19,7 @@ import { json, mockFetch, type Route } from "./setup";
 const BASE = "https://memory.test";
 const HEADERS = {
   "cache-control": "no-store",
-  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
   "x-frame-options": "DENY",
   // Not no-referrer: under it browsers send "Origin: null" on this page's own form posts, which the Origin check refuses.
   "referrer-policy": "same-origin",
