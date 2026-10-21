@@ -47,3 +47,20 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python3 -m unittest discover -s test/local
       - run: python3 -m unittest discover -s test/e2e
+
+  crypt:
+    name: Kit encryption (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.x"]   # 3.9 is the oldest Python the kit supports
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python3 -m pip install --require-hashes --only-binary :all: -r kit/requirements-crypt.txt
+      - run: python3 -m unittest discover -s test/local -p 'test_*crypt*.py'

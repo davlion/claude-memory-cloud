@@ -1,0 +1,5 @@
+# Regenerate: python3 -m piptools compile --generate-hashes --output-file kit/requirements-crypt.txt kit/requirements-crypt.in
+cryptography==50.0.2
+# Transitive pins: the newest cffi and pycparser still installable on Python 3.9 (later ones need 3.10).
+cffi==2.0.0
+pycparser==2.23
