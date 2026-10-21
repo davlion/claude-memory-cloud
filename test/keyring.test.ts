@@ -92,9 +92,12 @@ describe("records, flags, moves", () => {
     const { kv, puts } = fakeKv();
     const r = await ring(kv);
     expect(await r.getMove("a/b")).toBeNull();
-    await r.setMove("a/b", "c/d", "rid");
+    await r.setMove("a/b", { to: "c/d", repoId: "rid", head: "c1", prevRecord: null });
     expect(puts[0]!.opts?.expirationTtl).toBeUndefined();
-    expect(await r.getMove("a/b")).toEqual({ to: "c/d", repoId: "rid" });
+    expect(await r.getMove("a/b")).toEqual({ to: "c/d", repoId: "rid", head: "c1", prevRecord: null });
+    const prev = { repoId: "old", keyId: "0123456789abcdef", enabled: false };
+    await r.setMove("a/b", { to: "c/d", repoId: "rid", head: null, prevRecord: prev });
+    expect(await r.getMove("a/b")).toEqual({ to: "c/d", repoId: "rid", head: null, prevRecord: prev });
     await r.clearMove("a/b");
     expect(await r.getMove("a/b")).toBeNull();
   });

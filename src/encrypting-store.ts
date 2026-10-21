@@ -74,9 +74,12 @@ export class EncryptingStore implements Store {
     // A marker the registered key didn't sign, naming another key (rotated elsewhere), means the registered key is stale.
     const stale = Boolean(m && k && !verified && m.keyId !== k.key.id);
     const key = !ring ? "unsupported" : !k ? "missing" : stale || !ids?.repoId || k.key.id !== ids.keyId ? "mismatch" : "ok";
+    // The old repo moved past the copied head: a save that didn't yet see the move flag (KV lag) isn't in the copy.
+    // A marker with the move's repo ID means this is already the renamed copy, never stale.
+    const moveStale = Boolean(move && raw.commitSha !== move.head && m?.repoId !== move.repoId);
     const status: EncryptionStatus = {
       encrypted: enabled || sealed.length > 0, enabled, key, markerProblem: move ? false : problem, sealed: sealed.length, outside: 0,
-      ...(move ? { moving: move.to } : {}),
+      ...(move ? { moving: move.to } : {}), ...(moveStale ? { moveStale } : {}),
     };
     return { status, key: key === "ok" ? k!.key : null, repoId: key === "ok" ? ids!.repoId : null };
   }
@@ -117,7 +120,7 @@ export class EncryptingStore implements Store {
       const [switching, move] = await Promise.all([this.keys.isSwitching(repo), this.keys.getMove(repo)]);
       if (switching || move) {
         throw new OpError("unavailable", "Encryption is being turned on for this memory repo.",
-          switching ? "Try again in a minute." : `Finish the move on the key page: ${this.keysUrl}?repo=${repo}`);
+          switching ? "Try again in a minute." : `Finish or cancel the move on the key page: ${this.keysUrl}?repo=${repo}`);
       }
     }
     const memo = this.last.get(`${repo}\n${prefix}`);

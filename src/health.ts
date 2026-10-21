@@ -239,7 +239,10 @@ export function encryptionChecks(t: Target, repo: string, s: EncryptionStatus, k
   const page = `${keysUrl}?repo=${repo}`;
   const register = `Register the key from your password manager: ${page}. Saves are queued until then.`;
   const out: Check[] = [];
-  if (s.moving) {
+  if (s.moving && s.moveStale) {
+    out.push({ check, status: "warn", detail: `encrypted copy written to ${s.moving}, but ${repo} changed after the copy`,
+      action: `Don't delete ${repo}. Cancel the move on the key page and start it again: ${page}` });
+  } else if (s.moving) {
     out.push({ check, status: "warn", detail: `encrypted copy written to ${s.moving}; finish the move`,
       action: `Delete ${repo}, then rename ${s.moving} to ${repo}. Saves wait until then. ${page}` });
   } else if (s.markerProblem) {

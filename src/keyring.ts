@@ -8,6 +8,12 @@ const MIN_TTL = 60;
 
 export interface RegisteredKey { key: RepoKey; registeredBy: string; registeredAt: number; expiresAt: number | null }
 export interface EncryptedRepoRecord { repoId: string; keyId: string; enabled: boolean }
+/** A fresh-repo move: the copy in `to` (its repo ID), the old repo's head that was copied, and the record before the switch. */
+export interface MoveRecord { to: string; repoId: string; head: string | null; prevRecord: EncryptedRepoRecord | null }
+
+type RecordJson = { repo_id: string; key_id: string; enabled: boolean };
+const recordJson = (r: EncryptedRepoRecord): RecordJson => ({ repo_id: r.repoId, key_id: r.keyId, enabled: r.enabled });
+const fromJson = (v: RecordJson): EncryptedRepoRecord => ({ repoId: v.repo_id, keyId: v.key_id, enabled: v.enabled });
 
 const keyAad = (repo: string) => `repokey-v1\n${repo}`;
 
@@ -58,26 +64,28 @@ export class KeyRing {
   async getRecord(repo: string): Promise<EncryptedRepoRecord | null> {
     const raw = await this.kv.get(KV.record + repo.toLowerCase());
     if (!raw) return null;
-    const v = JSON.parse(raw) as { repo_id: string; key_id: string; enabled: boolean };
-    return { repoId: v.repo_id, keyId: v.key_id, enabled: v.enabled };
+    return fromJson(JSON.parse(raw) as RecordJson);
   }
 
   async putRecord(repo: string, r: EncryptedRepoRecord): Promise<void> {
-    await this.kv.put(KV.record + repo.toLowerCase(), JSON.stringify({ repo_id: r.repoId, key_id: r.keyId, enabled: r.enabled }));
+    await this.kv.put(KV.record + repo.toLowerCase(), JSON.stringify(recordJson(r)));
   }
+
+  async deleteRecord(repo: string): Promise<void> { await this.kv.delete(KV.record + repo.toLowerCase()); }
 
   async isSwitching(repo: string): Promise<boolean> { return (await this.kv.get(KV.switching + repo.toLowerCase())) !== null; }
   async setSwitching(repo: string): Promise<void> { await this.kv.put(KV.switching + repo.toLowerCase(), "1", { expirationTtl: SWITCHING_TTL }); }
   async clearSwitching(repo: string): Promise<void> { await this.kv.delete(KV.switching + repo.toLowerCase()); }
 
-  async getMove(repo: string): Promise<{ to: string; repoId: string } | null> {
+  async getMove(repo: string): Promise<MoveRecord | null> {
     const raw = await this.kv.get(KV.moving + repo.toLowerCase());
     if (!raw) return null;
-    const v = JSON.parse(raw) as { to: string; repo_id: string };
-    return { to: v.to, repoId: v.repo_id };
+    const v = JSON.parse(raw) as { to: string; repo_id: string; head?: string | null; prev_record?: RecordJson | null };
+    return { to: v.to, repoId: v.repo_id, head: v.head ?? null, prevRecord: v.prev_record ? fromJson(v.prev_record) : null };
   }
-  async setMove(repo: string, to: string, repoId: string): Promise<void> {
-    await this.kv.put(KV.moving + repo.toLowerCase(), JSON.stringify({ to, repo_id: repoId }));
+  async setMove(repo: string, m: MoveRecord): Promise<void> {
+    await this.kv.put(KV.moving + repo.toLowerCase(),
+      JSON.stringify({ to: m.to, repo_id: m.repoId, head: m.head, prev_record: m.prevRecord && recordJson(m.prevRecord) }));
   }
   async clearMove(repo: string): Promise<void> { await this.kv.delete(KV.moving + repo.toLowerCase()); }
 

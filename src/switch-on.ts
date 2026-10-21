@@ -109,7 +109,7 @@ export async function switchOnFresh(store: GitHubStore, keys: KeyRing, cache: KV
       throw new OpError("unavailable", "The memory repo changed while its encrypted copy was being written; nothing was switched.",
         `Delete and recreate ${newRepo} as an empty private repo, then try again.`);
     }
-    await keys.setMove(repo, newRepo, plan.marker.repoId);
+    await keys.setMove(repo, { to: newRepo, repoId: plan.marker.repoId, head: tree.head, prevRecord: await keys.getRecord(repo) });
     await keys.putRecord(repo, { repoId: plan.marker.repoId, keyId: key.id, enabled: true });
     await keys.put(repo, keyText, login, Date.now());
     await clearSnapshots(cache, repo);

@@ -375,11 +375,22 @@ describe("switchOnFresh", () => {
     expect(calls.some((c) => c.method === "GET" && c.url.endsWith(`${r.name}/git/blobs/${oid(5)}`))).toBe(true);
     await expectNoPlaintext(calls);
 
-    expect(await keys.getMove(r.name)).toEqual({ to: n.name, repoId: marker.repoId });
+    expect(await keys.getMove(r.name)).toEqual({ to: n.name, repoId: marker.repoId, head: "c1", prevRecord: null });
     expect(await keys.getRecord(r.name)).toEqual({ repoId: marker.repoId, keyId: key.id, enabled: true });
     expect((await (await ring()).get(r.name))!.key.id).toBe(key.id);
     expect(await keys.get(n.name)).toBeNull();
     expect(await keys.isSwitching(r.name)).toBe(false);
+  });
+
+  it("the move keeps the record from before, so cancelling can put it back", async () => {
+    const r = fakeRepo(uniq("mem"));
+    const n = fakeRepo(uniq("new"), { head: null });
+    mockFetch(routes([r, n]));
+    const keys = await ring();
+    const prev = { repoId: "old-id", keyId: "0123456789abcdef", enabled: false };
+    await keys.putRecord(r.name, prev);
+    await switchOnFresh(store(), keys, env.CACHE_KV, r.name, n.name, generateKeyText(), "dav");
+    expect(await keys.getMove(r.name)).toMatchObject({ head: "c1", prevRecord: prev });
   });
 
   it("deletes the old repo's snapshot cache keys after success, and only those", async () => {

@@ -18,6 +18,8 @@ export interface EncryptionStatus {
   markerProblem: boolean; sealed: number; outside: number;
   /** Target repo of an in-progress fresh-repo move. */
   moving?: string;
+  /** Only while moving: the old repo changed after its encrypted copy was written, so the copy lacks those changes. */
+  moveStale?: boolean;
 }
 export interface HeadCommit { sha: string; message: string; author: string; date: string; url: string }
 export interface Snapshot {

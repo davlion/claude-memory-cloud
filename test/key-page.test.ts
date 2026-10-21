@@ -6,8 +6,12 @@ import { MARKER_PATH, markerSignedBy, parseMarker, serializeMarker, signMarker }
 import { keyPage, mayChangeEncryption, message, messageHtml } from "../src/key-page";
 import { repoSection } from "../src/key-page-html";
 import { toB64Url } from "../src/crypto";
+import { EncryptingStore } from "../src/encrypting-store";
+import { isEncryptedFile } from "../src/encrypted-files";
 import { KeyRing, KV } from "../src/keyring";
+import { saveMemory } from "../src/operations";
 import { idPinKey } from "../src/scopes";
+import { FakeStore } from "./fake-store";
 import { json, mockFetch, type Route } from "./setup";
 
 const BASE = "https://memory.test";
@@ -625,7 +629,7 @@ describe("key page actions", () => {
   it("a repo not in SCOPES → 403 on every action", async () => {
     const { calls, sent } = github({ admin: true }, [fake(REPO)]);
     await signIn();
-    for (const path of ["turn-on", "turn-on/confirm", "register", "remove", "stop"]) {
+    for (const path of ["turn-on", "turn-on/confirm", "register", "remove", "stop", "cancel-move"]) {
       const res = await act(`/keys/${path}`, { repo: "someone/else", key: generateKeyText(), confirm_repo: "someone/else", path: "in-place" });
       expect(res.status, path).toBe(403);
     }
@@ -645,6 +649,85 @@ describe("key page actions", () => {
     expect((await act("/keys/register", { repo: REPO, key: text })).status).toBe(200);
     expect((await act("/keys/remove", { repo: REPO, key: text })).status).toBe(200);
     expect(writes(sent)).toEqual([]);
+  });
+
+  /** A fresh move in progress for REPO: key registered, record for the new repo, move flag naming the previous record. */
+  const moving = async (prevRecord: { repoId: string; keyId: string; enabled: boolean } | null) => {
+    const text = generateKeyText();
+    const key = await parseKeyText(text);
+    const repoId = newRepoId();
+    const r = await ring();
+    await r.put(REPO, text, "dav", Date.now());
+    await r.putRecord(REPO, { repoId, keyId: key.id, enabled: true });
+    await r.setMove(REPO, { to: NEW, repoId, head: "c-old", prevRecord });
+    return { text, key, repoId };
+  };
+
+  it("cancel-move: clears the move and drops the record when there was none; saves go through again", async () => {
+    await moving(null);
+    github({ admin: true }, [fake(REPO)]);
+    await signIn();
+    const res = await act("/keys/cancel-move", { repo: REPO });
+    const text = await res.text();
+    expect(res.status, text).toBe(200);
+    expect(text).toContain(`You can delete ${NEW}`);
+    expect(await (await ring()).getMove(REPO)).toBeNull();
+    expect(await (await ring()).getRecord(REPO)).toBeNull();
+    const inner = new FakeStore();
+    inner.put(REPO, "README.md", "r");
+    const s = new EncryptingStore(inner, await ring(), `${BASE}/keys`);
+    const T = { scopeLabel: "general", displayLabel: "general", repo: REPO, prefix: "" };
+    expect(await saveMemory(s, T, { name: "a", description: "d", type: "user", body: "b\n", force: true }, new Date(), { kind: "general", others: [] }))
+      .toMatchObject({ status: "created" });
+    expect(isEncryptedFile(inner.repo(REPO).get("memories/a.md")!)).toBe(false);
+  });
+
+  it("cancel-move: puts the previous record back", async () => {
+    const prev = { repoId: newRepoId(), keyId: "0123456789abcdef", enabled: false };
+    await moving(prev);
+    github({ admin: true }, [fake(REPO)]);
+    await signIn();
+    expect((await act("/keys/cancel-move", { repo: REPO })).status).toBe(200);
+    expect(await (await ring()).getRecord(REPO)).toEqual(prev);
+    expect(await (await ring()).getMove(REPO)).toBeNull();
+  });
+
+  it("cancel-move: needs admin, and a move in progress", async () => {
+    await moving(null);
+    github({ push: true, admin: false }, [fake(REPO)]);
+    await signIn();
+    const res = await act("/keys/cancel-move", { repo: REPO });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain(esc(ADMIN_ONLY));
+    expect(await (await ring()).getMove(REPO)).not.toBeNull();
+    await (await ring()).clearMove(REPO);
+    github({ admin: true }, [fake(REPO)]);
+    expect((await act("/keys/cancel-move", { repo: REPO })).status).toBe(409);
+  });
+
+  it("register after the rename (the new repo's signed marker) clears the move", async () => {
+    const { text, key, repoId } = await moving(null);
+    await (await ring()).remove(REPO); // the key expired before the rename
+    const marker = await signMarker(key, { enabled: true, repoId, keyId: key.id });
+    github({ push: true, admin: false }, [fake(REPO, { marker: serializeMarker(marker) })]);
+    await signIn();
+    expect((await act("/keys/register", { repo: REPO, key: text })).status).toBe(200);
+    expect(await (await ring()).getMove(REPO)).toBeNull();
+  });
+
+  it("a moving repo: cancel form for admins, the wait-and-reload advice, and the stale warning", () => {
+    const status = { encrypted: true, enabled: true, key: "ok" as const, markerProblem: false, sealed: 0, outside: 0, moving: NEW };
+    const html = repoSection({ repo: REPO, key: { registeredBy: "dav", expiresAt: null }, admin: true, status }, "c", false);
+    expect(html).toMatch(/action="\/keys\/cancel-move"[\s\S]*Cancel the move/);
+    expect(html).not.toContain("/keys/stop");
+    expect(html).toContain("The encrypted copy is current.");
+    expect(html).toMatch(/Wait a minute, then reload this page/);
+    expect(html).not.toMatch(/changed after the copy/);
+    const stale = repoSection({ repo: REPO, key: null, admin: true, status: { ...status, moveStale: true } }, "c", false);
+    expect(stale).toContain(`${esc(REPO)} changed after the copy was written. Don&#39;t delete it: cancel the move and start it again.`);
+    expect(stale).not.toContain("The encrypted copy is current.");
+    const viewer = repoSection({ repo: REPO, key: null, admin: false, status }, "c", false);
+    expect(viewer).not.toContain("/keys/cancel-move");
   });
 
   it("the page's forms post to the action routes, with the key for remove and stop", () => {

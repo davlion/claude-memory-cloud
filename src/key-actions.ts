@@ -6,7 +6,7 @@ import { GitHub, toOpError } from "./github";
 import { scopeReachabilityDetailed } from "./health";
 import type { KeyAction, KeySession } from "./key-page";
 import { adminOnly, freshDone, inPlaceDone, message, page, turnOnPage } from "./key-page-html";
-import { KV, type EncryptedRepoRecord, type KeyRing } from "./keyring";
+import type { EncryptedRepoRecord, KeyRing } from "./keyring";
 import { REPO_RE } from "./scopes";
 import { GitHubStore } from "./store";
 import { switchOnFresh, switchOnInPlace, trailers } from "./switch-on";
@@ -175,7 +175,7 @@ const confirm: KeyAction = async (_req, env, ring, s, form) => {
       let undone = true;
       try {
         await ring.clearMove(repo);
-        if (st.rec) await ring.putRecord(repo, st.rec); else await env.OAUTH_KV.delete(KV.record + repo.toLowerCase());
+        if (st.rec) await ring.putRecord(repo, st.rec); else await ring.deleteRecord(repo);
       } catch { undone = false; }
       const now = undone ? `${repo} is unchanged and saves to it continue.` : `Saves to ${repo} may wait until the key page is used again.`;
       return fail(NOT_ON, e, `The encrypted copy was written to ${newRepo}, but the switch didn't finish. ${now} Delete ${newRepo} and recreate it as an empty private repo before trying again. `);
@@ -199,6 +199,9 @@ const register: KeyAction = async (_req, env, ring, s, form) => {
     const want = { repoId: m.repoId, keyId: m.keyId, enabled: m.enabled || keptOn };
     if (!rec || rec.repoId !== want.repoId || rec.keyId !== want.keyId || rec.enabled !== want.enabled) await ring.putRecord(p.repo, want);
   }
+  // After the rename the repo carries the copy's marker: the move is done (the key may have expired before a read saw it).
+  const move = await ring.getMove(p.repo);
+  if (k.verified && m && move?.repoId === m.repoId) await ring.clearMove(p.repo);
   const { expiresAt } = await ring.put(p.repo, k.text, s.login, Date.now());
   if (keptOn) return message("Key registered", `Key registered. Encryption stays on for ${p.repo}; an admin can turn it off with Stop.`, 200);
   const until = expiresAt === null ? "" : ` until ${new Date(expiresAt).toISOString().slice(0, 16).replace("T", " ")} UTC`;
@@ -243,5 +246,17 @@ const stop: KeyAction = async (_req, env, ring, s, form) => {
   return message("Encryption stopped", `New memories in ${p.repo} are saved unencrypted from now on. Existing memories stay encrypted; to decrypt them, run memcrypt decrypt (docs/ENCRYPTION.md).`, 200);
 };
 
+/** Abandons a fresh-repo move: the record from before the switch comes back and saves to the old repo go through again. */
+const cancelMove: KeyAction = async (_req, env, ring, s, form) => {
+  const t = await target(env, s, form, true);
+  if (t instanceof Response) return t;
+  const move = await ring.getMove(t.repo);
+  if (!move) return message("Nothing to cancel", `No move is in progress for ${t.repo}.`, 409);
+  // The record first: with the move flag gone, saves must not be sealed under the abandoned copy's repo ID.
+  if (move.prevRecord) await ring.putRecord(t.repo, move.prevRecord); else await ring.deleteRecord(t.repo);
+  await ring.clearMove(t.repo);
+  return message("Move cancelled", `The move of ${t.repo} to ${move.to} is cancelled, and saves to ${t.repo} go through again as before. You can delete ${move.to}. To encrypt, start again from the key page with a new, empty private repo.`, 200);
+};
+
 /** POST /keys/<name> handlers; key-page.ts runs them only after the Origin, session and csrf checks. */
-export const actions: Record<string, KeyAction> = { "turn-on": turnOn, "turn-on/confirm": confirm, register, remove, stop };
+export const actions: Record<string, KeyAction> = { "turn-on": turnOn, "turn-on/confirm": confirm, register, remove, stop, "cancel-move": cancelMove };

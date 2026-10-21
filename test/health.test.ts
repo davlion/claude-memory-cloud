@@ -274,6 +274,11 @@ describe("encryptionChecks", () => {
       detail: "encrypted copy written to dav/mem2; finish the move",
       action: `Delete dav/mem, then rename dav/mem2 to dav/mem. Saves wait until then. ${KEY_PAGE}` }]);
   });
+  it("moving, but the old repo changed after the copy: don't delete it, cancel and start again", () => {
+    expect(run({ moving: "dav/mem2", moveStale: true })).toEqual([{ check: "encryption:general", status: "warn",
+      detail: "encrypted copy written to dav/mem2, but dav/mem changed after the copy",
+      action: `Don't delete dav/mem. Cancel the move on the key page and start it again: ${KEY_PAGE}` }]);
+  });
   it("encrypted off and nothing sealed: no lines", () => {
     expect(run({ enabled: false, sealed: 0, encrypted: false })).toEqual([]);
   });

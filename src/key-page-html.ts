@@ -30,6 +30,8 @@ export const message = (title: string, text: string, status: number, cookies: st
 
 export const IN_PLACE_WARNING = "Turning on encryption replaces this repo's whole history with a single commit. Past changes and their log are gone. The old commits stay readable through the repo's activity log by anyone with read access until GitHub Support purges them: request that at https://support.github.com/request after this finishes. Clones and forks made before now keep the old plaintext. A rule that blocks force pushes on the branch must be lifted first. Without this key your memories can't be read: keep it in your password manager. To continue, paste the key back and type the repo name.";
 export const FRESH_WARNING = "Your encrypted memories will be written to a new, empty private repo. Then you delete this repo and rename the new one to this name. Until you do, saves wait. Deleting is what removes the old plaintext; clones and forks made before now keep it. Without this key your memories can't be read: keep it in your password manager. To continue, paste the key back and type the repo name.";
+/** A save made elsewhere just before the switch can take about a minute to show (KV propagation). */
+const MOVE_WAIT = (repo: string) => `Wait a minute, then reload this page before deleting ${repo}: a save made just before the switch can take that long to show. Only delete ${repo} when this page says the encrypted copy is current.`;
 export const adminOnly = (repo: string) => `Only an admin of ${repo} can turn encryption on or off.`;
 
 const hidden = (name: string, value: string) => `<input type="hidden" name="${name}" value="${esc(value)}">`;
@@ -72,6 +74,7 @@ export const freshDone = (repo: string, newRepo: string) => doc("Finish the move
 <li>Delete <strong>${esc(repo)}</strong>: ${link(`https://github.com/${repo}/settings`)} → Danger Zone → Delete this repository. GitHub keeps a deleted repo restorable by its owner for 90 days.</li>
 <li>Rename <strong>${esc(newRepo)}</strong> to <strong>${esc(repo.split("/")[1]!)}</strong>: ${link(`https://github.com/${newRepo}/settings`)} → Repository name.</li>
 </ol>
+<p>Before step 1, wait a minute and reload the key page: delete ${esc(repo)} only when it says the encrypted copy is current. To change your mind, cancel the move there.</p>
 <p><a href="/keys">Back to the key page</a></p>`);
 
 export const notOnPage = () => doc("Encryption isn't turned on",
@@ -98,7 +101,12 @@ function state(v: RepoView): string {
   } else {
     lines.push("<p>Its key isn't registered, so the memory tool can't read or save its memories.</p>");
   }
-  if (st.moving) lines.push(`<p>Moving to <strong>${esc(st.moving)}</strong>.</p>`);
+  if (st.moving) {
+    lines.push(st.moveStale
+      ? `<p>Moving to <strong>${esc(st.moving)}</strong>, but ${esc(`${v.repo} changed after the copy was written. Don't delete it: cancel the move and start it again.`)}</p>`
+      : `<p>Moving to <strong>${esc(st.moving)}</strong>. The encrypted copy is current.</p>`);
+    lines.push(`<p>${esc(MOVE_WAIT(v.repo))}</p>`);
+  }
   if (st.markerProblem) lines.push("<p>Its encryption marker is missing or doesn't match. Run memory_health for details.</p>");
   return lines.join("\n");
 }
@@ -114,7 +122,8 @@ ${hidden("csrf", csrf)}${hidden("repo", v.repo)}${withKey ? keyInput : ""}<butto
   const out: string[] = [];
   if (st.key === "ok") out.push(form("remove", "Remove key", true));
   else out.push(form("register", "Register key", true));
-  out.push(change(st.enabled ? form("stop", "Stop encrypting new memories", true) : form("turn-on", "Turn encryption back on")));
+  out.push(change(st.moving ? form("cancel-move", "Cancel the move")
+    : st.enabled ? form("stop", "Stop encrypting new memories", true) : form("turn-on", "Turn encryption back on")));
   return out.join("\n");
 }
 

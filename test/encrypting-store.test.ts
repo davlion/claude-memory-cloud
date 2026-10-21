@@ -318,10 +318,11 @@ describe("EncryptingStore", () => {
     await ring.put(REPO, KEY_TEXT, "dav", Date.now());
     await ring.putRecord(REPO, { repoId: REPO_ID, keyId: key.id, enabled: true });
     const newId = newRepoId();
-    await ring.setMove(REPO, "dav/mem-encrypted", newId);
+    await ring.setMove(REPO, { to: "dav/mem-encrypted", repoId: newId, head: (await inner.snapshot(REPO, "")).commitSha, prevRecord: null });
     const snap = await store.snapshot(REPO, "");
     expect(snap.encryption).toMatchObject({ moving: "dav/mem-encrypted", markerProblem: false });
-    await expect(save(store, "a")).rejects.toMatchObject({ code: "unavailable", message: "Encryption is being turned on for this memory repo.", action: `Finish the move on the key page: ${KEYS_URL}?repo=dav/mem` });
+    expect(snap.encryption).not.toHaveProperty("moveStale");
+    await expect(save(store, "a")).rejects.toMatchObject({ code: "unavailable", message: "Encryption is being turned on for this memory repo.", action: `Finish or cancel the move on the key page: ${KEYS_URL}?repo=dav/mem` });
     expect(inner.commits.length).toBe(0);
     inner.put(REPO, MARKER_PATH, await marker(true, newId));
     const after = await store.snapshot(REPO, "");
@@ -329,6 +330,25 @@ describe("EncryptingStore", () => {
     expect(await ring.getMove(REPO)).toBeNull();
     expect(await save(store, "a")).toMatchObject({ status: "created" });
     expect(isEncryptedFile(files().get("memories/a.md")!)).toBe(true);
+  });
+
+  it("moving: the old repo's head moved after the copy (a save that didn't see the move) → moveStale", async () => {
+    await ring.put(REPO, KEY_TEXT, "dav", Date.now());
+    await ring.putRecord(REPO, { repoId: REPO_ID, keyId: key.id, enabled: true });
+    await ring.setMove(REPO, { to: "dav/mem-encrypted", repoId: newRepoId(), head: (await inner.snapshot(REPO, "")).commitSha, prevRecord: null });
+    inner.put(REPO, "memories/late.md", mem("late", "saved elsewhere", "x\n"));
+    expect((await store.snapshot(REPO, "")).encryption).toMatchObject({ moving: "dav/mem-encrypted", moveStale: true });
+    expect(await store.status(REPO, "")).toMatchObject({ moveStale: true });
+  });
+
+  it("moving: after the rename (the new repo's marker, key expired) the copy isn't reported stale", async () => {
+    const newId = newRepoId();
+    await ring.putRecord(REPO, { repoId: newId, keyId: key.id, enabled: true });
+    await ring.setMove(REPO, { to: "dav/mem-encrypted", repoId: newId, head: "c-old", prevRecord: null });
+    inner.put(REPO, MARKER_PATH, await marker(true, newId));
+    const snap = await store.snapshot(REPO, "");
+    expect(snap.encryption).toMatchObject({ moving: "dav/mem-encrypted", key: "missing" });
+    expect(snap.encryption).not.toHaveProperty("moveStale");
   });
 
   it("no marker, no record, no sealed files: identical to the inner store", async () => {
