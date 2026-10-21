@@ -1,0 +1,32 @@
+[
+  {
+    "key_text": "cmk1_GLtTXRept_XCoEh9rFKtm3EnEtB9FzBt_ldkVimLJU0",
+    "key_id": "ab71a6b51f8ac688",
+    "iv_b64": "AQIDBAUGBwgJCgsM",
+    "aad": "claude-memory-v1\nrepo0\nprojects/p/memories/m0.md",
+    "plaintext": "---\nname: a\ntype: user\n---\nplain ascii memory\n",
+    "sealed": "AQIDBAUGBwgJCgsM/VTyu4Rca3yNLHdtc6kpRX0ZyDpSSvJYolLeivBYVoDoBEvjHz3PGWjKHk5CyeNAFvRSWpCpMljkYsPjeF8=",
+    "mac_message": "claude-memory-marker-v1\n1\ntrue\nrepo0\nab71a6b51f8ac688",
+    "mac": "04a55586226e0a05d3dcfe75817d08b2fe177986cc4dca490997d6a446b3e231"
+  },
+  {
+    "key_text": "cmk1_PRIsqRqnqJH1539UNI1xJl-UU2Dxv_zdMYjwAELIono",
+    "key_id": "f71a6458ac8a2f20",
+    "iv_b64": "ERITFBUWFxgZGhsc",
+    "aad": "claude-memory-v1\nrepo1\nprojects/p/memories/m1.md",
+    "plaintext": "---\nname: b\n---\nnaïve café — 日本語 🙂\n",
+    "sealed": "ERITFBUWFxgZGhscXTJxpuU5BOlhnR/3YC9OuzecAX+0mFBfce/DTqRwmbyf3V5Lu6RIlozYGCOg8dc/U2sbaT8FxhHuuC5n4Sl2oQ==",
+    "mac_message": "claude-memory-marker-v1\n1\ntrue\nrepo1\nf71a6458ac8a2f20",
+    "mac": "b45ec59aac8e7ea41845963b50e78c0ab7b4a748557121e730da397f520fe988"
+  },
+  {
+    "key_text": "cmk1_dLW9V1vrIJ_GXFPlAEjrh-258JXnW944PzlIM7TlT8Q",
+    "key_id": "d77d9e1e6a188871",
+    "iv_b64": "ISIjJCUmJygpKiss",
+    "aad": "claude-memory-v1\nrepo2\nprojects/p/memories/m2.md",
+    "plaintext": "",
+    "sealed": "ISIjJCUmJygpKissyKoOHKpoPcD+VNng9W9pBg==",
+    "mac_message": "claude-memory-marker-v1\n1\ntrue\nrepo2\nd77d9e1e6a188871",
+    "mac": "e807d324edfeba84ed0434780eea0ae184ce4e2008cb2c1ab8e2f7f7e9d217ee"
+  }
+]
