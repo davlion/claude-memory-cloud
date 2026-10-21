@@ -5,7 +5,7 @@ import type { KeyRing } from "./keyring";
 import { namesOnlyIndex, parseMemoryPath } from "./memory";
 import { splitSet, type GitHubStore, type TreeFile, type TreeWrite } from "./store";
 
-const trailers = (login: string) => `\n\nMemory-Source: key page (${login})\nMemory-Scope: *\n`;
+export const trailers = (login: string) => `\n\nMemory-Source: key page (${login})\nMemory-Scope: *\n`;
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**

@@ -228,8 +228,8 @@ describe("other tools and errors", () => {
   it("memory_scopes lists only the user's scopes", async () => {
     healthyGitHub();
     expect(JSON.parse((await callTool(deps, "memory_scopes", {})).text)).toEqual([
-      { scope: "general", repo: "dav/mem", reachable: true, writable: true, private: true },
-      { scope: "acme", repo: "acme-org/claude-memory", reachable: true, writable: true, private: true },
+      { scope: "general", repo: "dav/mem", reachable: true, writable: true, admin: false, private: true },
+      { scope: "acme", repo: "acme-org/claude-memory", reachable: true, writable: true, admin: false, private: true },
     ]);
   });
   it("OpErrors become isError results with code and action", async () => {

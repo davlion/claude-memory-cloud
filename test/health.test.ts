@@ -185,9 +185,14 @@ describe("scopeReachability", () => {
   it("reports per scope", async () => {
     mockFetch(routes({ installs: [{ id: 1, account: { login: "dav" } }] }));
     expect(await scopeReachability(new GitHub("t"), cfg, "s")).toEqual([
-      { scope: "general", repo: "dav/claude-memory", reachable: true, writable: true, private: true },
-      { scope: "acme", repo: "acme-org/claude-memory", reachable: false, writable: false, reason: "app_not_installed" },
+      { scope: "general", repo: "dav/claude-memory", reachable: true, writable: true, admin: false, private: true },
+      { scope: "acme", repo: "acme-org/claude-memory", reachable: false, writable: false, admin: false, reason: "app_not_installed" },
     ]);
+  });
+  it("admin comes from the installation repository list", async () => {
+    mockFetch(routes({ installs: [{ id: 1, account: { login: "dav" } }],
+      repos: { 1: [{ full_name: "dav/claude-memory", private: true, visibility: "private", permissions: { push: true, admin: true } }] } }));
+    expect((await scopeReachability(new GitHub("t"), cfg, "s"))[0]).toMatchObject({ writable: true, admin: true });
   });
 });
 

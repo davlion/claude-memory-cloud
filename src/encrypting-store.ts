@@ -101,6 +101,15 @@ export class EncryptingStore implements Store {
     return { ...raw, files, encryption: { ...st.status, outside } };
   }
 
+  /** The repo's encryption status without opening any file; null when it isn't encrypted. */
+  async status(repo: string, prefix: string): Promise<EncryptionStatus | null> {
+    const raw = await this.inner.snapshot(repo, prefix);
+    const st = await this.state(repo, raw);
+    if (!st) return null;
+    const outside = st.status.enabled ? [...raw.files.values()].filter((f) => !f.unreadable && !isEncryptedFile(f.content)).length : 0;
+    return { ...st.status, outside };
+  }
+
   async commit(repo: string, prefix: string, base: string | null, changes: Change[], message: string): Promise<CommitResult> {
     if (this.keys) {
       const [switching, move] = await Promise.all([this.keys.isSwitching(repo), this.keys.getMove(repo)]);

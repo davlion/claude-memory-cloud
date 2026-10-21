@@ -6,7 +6,9 @@ import type { EncryptionStatus, HeadCommit } from "./store";
 
 export interface Check { check: string; status: "ok" | "warn" | "fail"; detail: string; action?: string }
 export interface ScopeReach {
-  scope: string; repo: string; reachable: boolean; writable: boolean; private?: boolean;
+  scope: string; repo: string; reachable: boolean; writable: boolean;
+  /** Admin on the repo (from the installation repository list): needed to turn encryption on or off. */
+  admin: boolean; private?: boolean;
   reason?: "app_not_installed" | "not_reachable" | "repo_public" | "installation_suspended" | "error";
   /** Only on reason "error": why this scope's installation could not be checked (status-only, never raw text). */
   error?: { code: string; message: string; action?: string };
@@ -15,7 +17,7 @@ export interface ScopeReach {
 }
 
 type Installation = { id: number; account: { login: string }; repository_selection?: "all" | "selected"; suspended_at?: string | null };
-type InstRepo = { full_name: string; private?: boolean; visibility?: string; permissions?: { push?: boolean } };
+type InstRepo = { full_name: string; private?: boolean; visibility?: string; permissions?: { push?: boolean; admin?: boolean } };
 
 async function listAll<T>(gh: GitHub, path: string, key: string): Promise<T[]> {
   const out: T[] = [];
@@ -47,15 +49,15 @@ export async function scopeReachabilityDetailed(gh: GitHub, cfg: ScopeConfig, _a
   try {
     installs = await installations(gh);
   } catch (e) {
-    for (const [scope, repo] of Object.entries(cfg)) out.push({ scope, repo, reachable: false, writable: false, reason: "error", error: errorInfo(e) });
+    for (const [scope, repo] of Object.entries(cfg)) out.push({ scope, repo, reachable: false, writable: false, admin: false, reason: "error", error: errorInfo(e) });
     return { reach: out, listingError: e };
   }
   const reposByInstall = new Map<number, InstRepo[] | { error: unknown }>();
   for (const [scope, repo] of Object.entries(cfg)) {
     const owner = repo.split("/")[0]!.toLowerCase();
     const inst = installs.find((i) => i.account.login.toLowerCase() === owner);
-    if (!inst) { out.push({ scope, repo, reachable: false, writable: false, reason: "app_not_installed" }); continue; }
-    if (inst.suspended_at) { out.push({ scope, repo, reachable: false, writable: false, reason: "installation_suspended" }); continue; }
+    if (!inst) { out.push({ scope, repo, reachable: false, writable: false, admin: false, reason: "app_not_installed" }); continue; }
+    if (inst.suspended_at) { out.push({ scope, repo, reachable: false, writable: false, admin: false, reason: "installation_suspended" }); continue; }
     if (!reposByInstall.has(inst.id)) {
       try {
         reposByInstall.set(inst.id, await listAll<InstRepo>(gh, `/user/installations/${inst.id}/repositories`, "repositories"));
@@ -64,14 +66,14 @@ export async function scopeReachabilityDetailed(gh: GitHub, cfg: ScopeConfig, _a
       }
     }
     const listed = reposByInstall.get(inst.id)!;
-    if (!Array.isArray(listed)) { out.push({ scope, repo, reachable: false, writable: false, reason: "error", error: errorInfo(listed.error) }); continue; }
+    if (!Array.isArray(listed)) { out.push({ scope, repo, reachable: false, writable: false, admin: false, reason: "error", error: errorInfo(listed.error) }); continue; }
     const r = listed.find((x) => x.full_name.toLowerCase() === repo.toLowerCase());
-    if (!r) { out.push({ scope, repo, reachable: false, writable: false, reason: "not_reachable" }); continue; }
+    if (!r) { out.push({ scope, repo, reachable: false, writable: false, admin: false, reason: "not_reachable" }); continue; }
     if (r.visibility !== "private") {
-      out.push({ scope, repo, reachable: true, writable: false, private: false, reason: "repo_public", visibility: r.visibility ?? "unknown" });
+      out.push({ scope, repo, reachable: true, writable: false, admin: false, private: false, reason: "repo_public", visibility: r.visibility ?? "unknown" });
       continue;
     }
-    out.push({ scope, repo, reachable: true, writable: Boolean(r.permissions?.push), private: true });
+    out.push({ scope, repo, reachable: true, writable: Boolean(r.permissions?.push), admin: r.permissions?.admin === true, private: true });
   }
   return { reach: out };
 }

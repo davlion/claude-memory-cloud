@@ -5,8 +5,8 @@ import { MASTER_KEY_MISCONFIGURED, SCOPES_MISCONFIGURED } from "./errors";
 import { GitHub, toOpError } from "./github";
 import { exchangeCode, isAllowedUser, notAllowed, s256, ScopesError } from "./github-auth";
 import { scopeReachabilityDetailed } from "./health";
-import { esc } from "./consent";
-import { doc, keysHome, notOnPage, reloadPage, type RepoView } from "./key-page-html";
+import { actions, same, sidHash } from "./key-actions";
+import { keysHome, message, messageHtml, notOnPage, page, reloadPage, type RepoView } from "./key-page-html";
 import { KeyRing } from "./keyring";
 import { idPinKey, parseScopeMap, REPO_RE, scopesFor, type ScopeConfig } from "./scopes";
 import { GitHubStore } from "./store";
@@ -27,33 +27,24 @@ const SECURITY: Record<string, string> = {
 
 /** A signed-in key page browser. `token` is the unwrapped GitHub token; `id` is the numeric GitHub user ID. */
 export interface KeySession { sid: string; login: string; id: number; csrf: string; token: string; cfg: ScopeConfig }
-/** POST /keys/<action> handlers, run only after the session and its csrf check out (Task 9). */
+/** POST /keys/<action> handlers, run only after the session and its csrf check out. */
 export type KeyAction = (req: Request, env: Env, ring: KeyRing, s: KeySession, form: FormData) => Promise<Response>;
-export const keyActions: Record<string, KeyAction> = {};
+export const keyActions: Record<string, KeyAction> = actions;
+export { mayChangeEncryption } from "./key-actions";
+export { message, messageHtml };
 
 export const sessionAad = (sid: string) => `keysession-v1\n${sid}`;
 /** KV holds the session under a hash of its id, so reading KV never yields a working cookie. */
-const sessionKey = async (sid: string) =>
-  `keysession:${toB64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sid))))}`;
+const sessionKey = async (sid: string) => `keysession:${await sidHash(sid)}`;
 const random = () => toB64Url(crypto.getRandomValues(new Uint8Array(32)));
 const validRepo = (v: string | null | undefined) => (v && REPO_RE.test(v) ? v : null);
 const keysPath = (repo: string | null) => (repo ? `/keys?repo=${encodeURIComponent(repo)}` : "/keys");
 
-const page = (body: string, status = 200, cookies: string[] = []) => {
-  const h = new Headers({ "content-type": "text/html; charset=utf-8" });
-  for (const c of cookies) h.append("Set-Cookie", c);
-  return new Response(body, { status, headers: h });
-};
 const redirect = (location: string, cookies: string[] = []) => {
   const h = new Headers({ Location: location });
   for (const c of cookies) h.append("Set-Cookie", c);
   return new Response(null, { status: 302, headers: h });
 };
-/** A one-paragraph page; `html` is trusted markup, never request or GitHub text. */
-export const messageHtml = (title: string, html: string, status: number, cookies: string[] = []) =>
-  page(doc(title, `<h1>${esc(title)}</h1><p>${html}</p>`), status, cookies);
-/** A one-paragraph page with plain text, escaped. */
-export const message = (title: string, text: string, status: number, cookies: string[] = []) => messageHtml(title, esc(text), status, cookies);
 const unavailable = () => message("The key page is unavailable", "The memory server couldn't check its settings right now. Try again in a moment.", 503);
 const scopesBroken = () => message("The key page is unavailable", `${SCOPES_MISCONFIGURED.message}. ${SCOPES_MISCONFIGURED.action}.`, 503);
 
@@ -70,11 +61,6 @@ function cookie(req: Request, name: string): string | null {
     if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
   }
   return null;
-}
-
-function same(a: string, b: string): boolean {
-  const [x, y] = [new TextEncoder().encode(a), new TextEncoder().encode(b)];
-  return x.byteLength === y.byteLength && crypto.subtle.timingSafeEqual(x, y);
 }
 
 /** The session behind the `__Host-keys` cookie, still on the allowlist; otherwise the response to send. */
@@ -169,17 +155,17 @@ async function home(req: Request, url: URL, env: Env, ring: KeyRing): Promise<Re
   if (s instanceof Response) return s;
   const gh = new GitHub(s.token);
   const { reach, listingError } = await scopeReachabilityDetailed(gh, s.cfg, env.GITHUB_APP_SLUG);
-  const repos = [...new Map(reach.filter((r) => r.reachable && r.writable).map((r) => [r.repo.toLowerCase(), r.repo])).values()];
+  const repos = [...new Map(reach.filter((r) => r.reachable && r.writable).map((r) => [r.repo.toLowerCase(), r])).values()];
   const failed = listingError ?? reach.find((r) => r.reason === "error")?.error;
   const problem = failed ? `Some memory repos couldn't be checked: ${toOpError(failed).message}` : undefined;
   const store = new EncryptingStore(new GitHubStore(gh, env.CACHE_KV), ring, `${env.PUBLIC_URL}/keys`);
-  const views = await Promise.all(repos.map(async (repo): Promise<RepoView> => {
+  const views = await Promise.all(repos.map(async ({ repo, admin }): Promise<RepoView> => {
     try {
-      const snap = await store.snapshot(repo, "");
+      const status = await store.status(repo, "");
       const k = await ring.get(repo);
-      return { repo, status: snap.encryption ?? null, key: k && { registeredBy: k.registeredBy, expiresAt: k.expiresAt } };
+      return { repo, admin, status, key: k && { registeredBy: k.registeredBy, expiresAt: k.expiresAt } };
     } catch (e) {
-      return { repo, status: null, key: null, error: toOpError(e).message };
+      return { repo, admin, status: null, key: null, error: toOpError(e).message };
     }
   }));
   const selected = validRepo(url.searchParams.get("repo"));
