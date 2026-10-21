@@ -1,3 +1,7 @@
 GITHUB_CLIENT_ID=Iv1.xxxxxxxx
 GITHUB_CLIENT_SECRET=xxxxxxxx
 SCOPES={"<your github login>":{"general":"<you>/claude-memory-test"}}
+# Encryption at rest (optional): base64 of 32 random bytes, e.g. from `openssl rand -base64 32`.
+# MEMORY_MASTER_KEY=
+# Optional: how long a registered repo key lasts, in seconds (at least 60; unset means until removed).
+# REPO_KEY_TTL_SECONDS=86400
