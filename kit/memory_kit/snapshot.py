@@ -130,7 +130,29 @@ def snapshot_from_tool_use(tool_input: Any, tool_response: Any, session_remote: 
     text = _response_text(tool_response)
     if text is None or not text.startswith(_PREAMBLE) or not _complete(text):
         return None
-    return key, text.rstrip() + "\n"
+    return key, names_only_encrypted(text.rstrip()) + "\n"
+
+
+_BLOCK_OPEN_RE = re.compile(r"^<memory-index\b[^\n>]*>$")
+_BLOCK_CLOSE_RE = re.compile(r"^</memory-index:[A-Za-z0-9]+>$")
+_INDEX_LINE_RE = re.compile(r"^(- \[[^\]]+\]\([^)]+\)) — .*$")
+
+
+def names_only_encrypted(text: str) -> str:
+    """Inside each memory-index block marked encrypted="true", drop the ' — description' tail of index lines
+    (mirrors the Worker's namesOnlyIndex), so the stored snapshot holds names only."""
+    out = []
+    inside = False
+    for line in text.split("\n"):
+        if inside:
+            if _BLOCK_CLOSE_RE.match(line):
+                inside = False
+            else:
+                line = _INDEX_LINE_RE.sub(r"\1", line)
+        elif _BLOCK_OPEN_RE.match(line) and ' encrypted="true"' in line:
+            inside = True
+        out.append(line)
+    return "\n".join(out)
 
 
 def _complete(text: str) -> bool:

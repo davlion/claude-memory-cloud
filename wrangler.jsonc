@@ -23,8 +23,8 @@
   "vars": {
     "PUBLIC_URL": "https://claude-memory-staging.<subdomain>.workers.dev",
     "GITHUB_APP_SLUG": "<staging app slug>",
-    "WORKER_VERSION": "0.1.4",
-    "MIN_HOOK_VERSION": "0.1.4"
+    "WORKER_VERSION": "0.1.5",
+    "MIN_HOOK_VERSION": "0.1.5"
   },
   "env": {
     "production": {
@@ -39,8 +39,8 @@
       "vars": {
         "PUBLIC_URL": "https://claude-memory.<subdomain>.workers.dev",
         "GITHUB_APP_SLUG": "<app slug>",
-        "WORKER_VERSION": "0.1.4",
-        "MIN_HOOK_VERSION": "0.1.4"
+        "WORKER_VERSION": "0.1.5",
+        "MIN_HOOK_VERSION": "0.1.5"
       }
     }
   }

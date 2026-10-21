@@ -9,7 +9,8 @@ from memory_kit.claudemd import BEGIN, END, MarkerError, block_sha, has_marker, 
 # The routing rule's hash for each kit version that changed it. A template change fails test_rule_change_bumps_versions
 # until HOOK_VERSION goes up and the new hash is added here; the server's MIN_HOOK_VERSION must then reach that version,
 # so every machine still on the old rule is told to rerun the setup script.
-RULE_PINS = {"0.1.4": "f32432794444973e3d4bf2aff7e64a4dfd65fd68847dab3e5137938beff9a93e"}
+RULE_PINS = {"0.1.4": "f32432794444973e3d4bf2aff7e64a4dfd65fd68847dab3e5137938beff9a93e",
+             "0.1.5": "5eed7d6f61f35f044f42b4092f61d981fc95eda47d1eabe7bd06b92dc45586ff"}
 
 
 def _version(v):
@@ -161,3 +162,11 @@ class Block(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EncryptionRule(unittest.TestCase):
+    def test_rule_has_key_required(self):
+        tpl = (KIT / "templates" / "routing-rule.md").read_text()
+        self.assertIn("(`unavailable`, `reauth_required`, `server_limit`, `key_required`)", tpl)
+        self.assertIn("On `key_required`, keep that entry and continue with the next one (its repo's key isn't registered yet); "
+                      "on any other retryable error, keep the entry and stop flushing.", tpl)

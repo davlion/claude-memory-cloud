@@ -2,7 +2,7 @@ import os
 import unittest
 
 from helpers import tempdir
-from memory_kit.snapshot import render_snapshot
+from memory_kit.snapshot import names_only_encrypted, render_snapshot, snapshot_from_tool_use
 
 
 class Snapshot(unittest.TestCase):
@@ -94,3 +94,33 @@ class Snapshot(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+RESP = ("claude-memory response. Blocks headed [server:abc123abc123] come from the memory server.\n\n"
+        "## Health [server:abc123abc123]\n\u2713 github_token \u2014 ok\n\n"
+        '<memory-index scope="general" repo="dav/claude-memory" encrypted="true">\n'
+        "- [a](memories/a.md) \u2014 quiet harbor\n- [b](memories/b.md)\n"
+        "</memory-index:abc123abc123>\n\n"
+        '<memory-index scope="project" repo="acme/billing">\n'
+        "- [c](memories/c.md) \u2014 plain one\n"
+        "</memory-index:abc123abc123>\n\n"
+        "## Since [server:abc123abc123]\nPass this as since on later memory tool calls:\n"
+        '```json\n{"general":"0123"}\n```')
+
+
+class NamesOnly(unittest.TestCase):
+    def test_encrypted_block_loses_descriptions_plain_block_keeps_them(self):
+        got = snapshot_from_tool_use({}, [{"type": "text", "text": RESP}], None)
+        self.assertIsNotNone(got)
+        text = got[1]
+        self.assertIn("\n- [a](memories/a.md)\n", text)
+        self.assertNotIn("quiet harbor", text)
+        self.assertIn("- [c](memories/c.md) \u2014 plain one", text)
+        self.assertIn("- [b](memories/b.md)\n", text)
+
+    def test_only_inside_the_encrypted_block(self):
+        t = ('<memory-index scope="general" encrypted="true">\n- [a](x) \u2014 d\n</memory-index:n1>\n'
+             '- [z](y) \u2014 outside\n')
+        self.assertEqual(names_only_encrypted(t),
+                         '<memory-index scope="general" encrypted="true">\n- [a](x)\n</memory-index:n1>\n'
+                         '- [z](y) \u2014 outside\n')

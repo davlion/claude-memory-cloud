@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 describe("worker wiring", () => {
   it("/health is public and versioned", async () => {
     const res = await exports.default.fetch("https://memory.test/health");
-    expect(await res.json()).toEqual({ ok: true, version: "0.1.4", min_hook_version: "0.1.4" });
+    expect(await res.json()).toEqual({ ok: true, version: "0.1.5", min_hook_version: "0.1.5" });
   });
 
   it("rejects requests for another host (issuer spoofing)", async () => {
