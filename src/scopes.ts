@@ -7,7 +7,7 @@ export type ScopeConfig = Record<string, string>;
 export type ScopeMap = Record<string, ScopeConfig>;
 export interface Target { scopeLabel: string; displayLabel: string; repo: string; prefix: string }
 
-const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+export const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 
 function validateScopes(v: unknown, where: string): ScopeConfig {

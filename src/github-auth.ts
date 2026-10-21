@@ -47,8 +47,8 @@ async function tokenRequest(env: Env, params: Record<string, string>) {
   }
 }
 
-export async function exchangeCode(env: Env, code: string, verifier: string) {
-  const { res, data } = await tokenRequest(env, { code, code_verifier: verifier, redirect_uri: `${env.PUBLIC_URL}/callback` });
+export async function exchangeCode(env: Env, code: string, verifier: string, redirectUri = `${env.PUBLIC_URL}/callback`) {
+  const { res, data } = await tokenRequest(env, { code, code_verifier: verifier, redirect_uri: redirectUri });
   if (!res.ok || data.error || !data.access_token) throw new Error(`GitHub code exchange failed: ${String(data.error ?? res.status)}`);
   return { accessToken: String(data.access_token), refreshToken: String(data.refresh_token ?? ""), expiresIn: Number(data.expires_in ?? 28800) };
 }
@@ -115,7 +115,7 @@ async function checkStillAllowed(env: Env, props: Props): Promise<void> {
   if (pinned !== null && pinned !== String(props.githubId)) throw new OAuthError("invalid_grant", { description: "This GitHub account changed; reconnect" });
 }
 
-class ScopesError extends Error {}
+export class ScopesError extends Error {}
 
 const html = (body: string, status = 400) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } });
 
@@ -147,7 +147,7 @@ export const authHandler = {
   },
 };
 
-const notAllowed = (login: string) => html(
+export const notAllowed = (login: string) => html(
   `<h1>This GitHub account isn't on this memory server</h1><p>You signed in to GitHub as <strong>${esc(login)}</strong>. Ask the server's owner to add this account, or sign in to GitHub with the account they added, then connect again.</p>`,
   403);
 

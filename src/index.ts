@@ -1,6 +1,7 @@
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import type { Env, Props } from "./env";
 import { authHandler, checkRegistration, GRANT_IDLE_SECONDS, GRANT_MAX_SECONDS, tokenExchangeCallback } from "./github-auth";
+import { harden, keyPage } from "./key-page";
 import { mcpApi } from "./mcp-api";
 
 let provider: OAuthProvider<Env> | undefined;
@@ -26,9 +27,14 @@ function getProvider(env: Env) {
   return provider;
 }
 
-/** Unauthenticated endpoints that write KV are rate-limited per client IP and path. */
+const isKeyPage = (path: string) => path === "/keys" || path.startsWith("/keys/");
+
+/** Unauthenticated endpoints that write KV, and key page sign-in and actions, are rate-limited per client IP and path. */
 function rateLimitKey(request: Request, url: URL): string | null {
-  const limited = (url.pathname === "/register" && request.method === "POST") || (url.pathname === "/authorize" && request.method === "GET");
+  const p = url.pathname;
+  const get = request.method === "GET";
+  const limited = (p === "/register" && request.method === "POST") || (p === "/authorize" && get)
+    || (get && (p === "/keys/login" || p === "/keys/callback")) || (request.method === "POST" && isKeyPage(p));
   return limited ? `${url.pathname}:${request.headers.get("cf-connecting-ip") ?? "unknown"}` : null;
 }
 
@@ -41,8 +47,10 @@ export default {
     }
     const key = rateLimitKey(request, url);
     if (key && !(await env.AUTH_RATE_LIMIT.limit({ key })).success) {
-      return new Response("Too many sign-in requests; try again in a minute.", { status: 429, headers: { "retry-after": "60" } });
+      const res = new Response("Too many sign-in requests; try again in a minute.", { status: 429, headers: { "retry-after": "60" } });
+      return isKeyPage(url.pathname) ? harden(res) : res;
     }
+    if (isKeyPage(url.pathname)) return keyPage.fetch(request, env);
     return getProvider(env).fetch(request, env, ctx);
   },
 };

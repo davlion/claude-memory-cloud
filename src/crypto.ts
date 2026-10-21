@@ -10,7 +10,7 @@ export class DecryptError extends Error {
 
 const enc = new TextEncoder();
 const toB64 = (b: Uint8Array) => btoa(String.fromCharCode(...b));
-const toB64Url = (b: Uint8Array) => toB64(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+export const toB64Url = (b: Uint8Array) => toB64(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const fromB64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 const rand = (n: number) => crypto.getRandomValues(new Uint8Array(n));
 
