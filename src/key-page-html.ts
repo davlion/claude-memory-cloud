@@ -143,7 +143,8 @@ ${hidden("csrf", csrf)}${hidden("repo", v.repo)}${withKey ? keyInput : ""}<butto
   if (st.key === "ok") out.push(form("remove", "Remove key", true));
   else out.push(form("register", "Register key", true));
   // Non-admins get the admin-only sentence once, from the Stop/turn-on entry below.
-  if (st.decrypted && v.admin) out.push(form("register", "Confirm decryption (turn encryption off)", true));
+  // The pasted key must sign the off marker, so this works whether or not the key is registered yet.
+  if ((st.decrypted || st.markerOff) && v.admin) out.push(form("confirm-decryption", "Confirm decryption (turn encryption off)", true));
   out.push(change(st.moving ? form("cancel-move", "Cancel the move")
     : st.enabled ? form("stop", "Stop encrypting new memories", true) : form("turn-on", "Turn encryption back on")));
   return out.join("\n");

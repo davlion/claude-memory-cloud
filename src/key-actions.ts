@@ -221,6 +221,10 @@ const confirm: KeyAction = async (_req, env, ring, s, form, ctx) => {
   });
 };
 
+/** Registering a key that names a different key or repo ID than the record (a rotate, or a planted marker) needs admin. */
+export const newKeyAdminOnly = (repo: string) =>
+  `Only an admin of ${repo} can register a new key for it (the key was changed, e.g. with memcrypt rotate).`;
+
 const register: KeyAction = async (_req, env, ring, s, form) => {
   const title = "Key not registered";
   const p = await prepare(env, ring, s, form, false, title);
@@ -229,9 +233,14 @@ const register: KeyAction = async (_req, env, ring, s, form) => {
   if (k instanceof Response) return k;
   const m = p.st.marker;
   const rec = p.st.rec;
-  // The marker this key signed is current (after memcrypt decrypt or rotate): the record follows it.
-  // Only an admin may turn the record off this way; write users keep it on.
-  const keptOn = Boolean(k.verified && m && rec?.enabled && !m.enabled && !p.admin);
+  // A marker this key signed with other IDs than the record's (memcrypt rotate, or one a co-writer planted under a key only
+  // they hold): following it would move every later save to that key, so only an admin may.
+  if (k.verified && m && rec && (m.keyId !== rec.keyId || m.repoId !== rec.repoId) && !p.admin) {
+    return message("Not allowed", newKeyAdminOnly(p.repo), 403);
+  }
+  // The record follows the marker this key signed, except that registering never turns encryption off: an off marker
+  // (memcrypt decrypt, or an old one put back from history) leaves an enabled record on until an admin confirms.
+  const keptOn = Boolean(k.verified && m && rec?.enabled && !m.enabled);
   if (k.verified && m) {
     const want = { repoId: m.repoId, keyId: m.keyId, enabled: m.enabled || keptOn };
     if (!rec || rec.repoId !== want.repoId || rec.keyId !== want.keyId || rec.enabled !== want.enabled) await ring.putRecord(p.repo, want);
@@ -243,10 +252,37 @@ const register: KeyAction = async (_req, env, ring, s, form) => {
     try { await clearSnapshots(env.CACHE_KV, p.repo); } catch { /* they expire by TTL */ }
   }
   const { expiresAt } = await ring.put(p.repo, k.text, s.login, Date.now());
-  if (keptOn) return message("Key registered", `Key registered. Encryption stays on for ${p.repo}; an admin can turn it off with Stop.`, 200);
-  const wasOff = Boolean(k.verified && m && rec?.enabled && !m.enabled && p.admin);
-  const until = expiresAt === null ? "" : ` until ${new Date(expiresAt).toISOString().slice(0, 16).replace("T", " ")} UTC`;
-  return message("Key registered", `${wasOff ? `Encryption is off for ${p.repo}: new memories are saved unencrypted. ` : ""}The key for ${p.repo} is registered${until}. The memory tool can read and save its memories.`, 200);
+  if (keptOn) {
+    return message("Key registered", p.admin
+      ? `Key registered. Encryption stays on for ${p.repo}: its marker says it was decrypted (memcrypt decrypt?). To turn encryption off, use Confirm decryption on the key page.`
+      : `Key registered. Encryption stays on for ${p.repo}; an admin can turn it off with Stop.`, 200);
+  }
+  return message("Key registered", `${registered(p.repo, expiresAt)} The memory tool can read and save its memories.`, 200);
+};
+
+const registered = (repo: string, expiresAt: number | null) =>
+  `The key for ${repo} is registered${expiresAt === null ? "" : ` until ${new Date(expiresAt).toISOString().slice(0, 16).replace("T", " ")} UTC`}.`;
+
+/**
+ * After memcrypt decrypt: the admin pastes the key, which must sign the current marker, and that marker must say off.
+ * Only then is the enabled record turned off (and the key registered). Plain register never does this.
+ */
+const confirmDecryption: KeyAction = async (_req, env, ring, s, form) => {
+  const title = "Encryption wasn't turned off";
+  const p = await prepare(env, ring, s, form, true, title);
+  if (p instanceof Response) return p;
+  const k = await withKey(form, p.st, p.repo, title);
+  if (k instanceof Response) return k;
+  const blocked = await busy(ring, p.repo);
+  if (blocked) return blocked;
+  const { marker: m, rec } = p.st;
+  if (!rec?.enabled) return message(title, `${p.repo} isn't encrypting new saves.`, 409);
+  if (!k.verified || !m || m.enabled) {
+    return message(title, `The encryption marker of ${p.repo} doesn't say off, so there is no decryption to confirm. Nothing was changed.`, 409);
+  }
+  await ring.putRecord(p.repo, { repoId: m.repoId, keyId: m.keyId, enabled: false });
+  const { expiresAt } = await ring.put(p.repo, k.text, s.login, Date.now());
+  return message("Encryption is off", `Encryption is off for ${p.repo}: new memories are saved unencrypted. ${registered(p.repo, expiresAt)}`, 200);
 };
 
 const remove: KeyAction = async (_req, env, ring, s, form) => {
@@ -300,4 +336,6 @@ const cancelMove: KeyAction = async (_req, env, ring, s, form) => {
 };
 
 /** POST /keys/<name> handlers; key-page.ts runs them only after the Origin, session and csrf checks. */
-export const actions: Record<string, KeyAction> = { "turn-on": turnOn, "turn-on/confirm": confirm, register, remove, stop, "cancel-move": cancelMove };
+export const actions: Record<string, KeyAction> = {
+  "turn-on": turnOn, "turn-on/confirm": confirm, register, remove, stop, "cancel-move": cancelMove, "confirm-decryption": confirmDecryption,
+};

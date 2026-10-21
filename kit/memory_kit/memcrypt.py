@@ -415,7 +415,7 @@ def run(a: argparse.Namespace) -> int:
         page = _key_page(a, repo)
         if a.cmd == "decrypt":
             print("Encryption is off in the repo. To let the memory tool see it, an admin of "
-                  f"{repo} registers this key once more on the key page{f' ({page})' if page else ''}, or uses Stop there.")
+                  f"{repo} clicks Confirm decryption on the key page{f' ({page})' if page else ''} and pastes this key, or uses Stop there.")
         elif path == "fresh":
             print(_move_steps(a, repo, "Register the key" if a.cmd == "encrypt" else "Register the new key"))
         elif a.cmd == "encrypt":

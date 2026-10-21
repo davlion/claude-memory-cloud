@@ -211,7 +211,7 @@ class Memcrypt(unittest.TestCase):
         self.assertTrue(crypt.marker_signed_by(key, m))
         self.assertEqual(self.git("--git-dir", self.origin, "rev-parse", "main^").strip(), enc_head)
         self.assertTrue(self.git("--git-dir", self.origin, "log", "-1", "--format=%B").startswith("encrypt: decrypt all\n"))
-        self.assertIn("an admin of acme/memory registers this key once more on the key page (https://mem.example/keys?repo=acme/memory), or uses Stop there.", self.out)
+        self.assertIn("an admin of acme/memory clicks Confirm decryption on the key page (https://mem.example/keys?repo=acme/memory) and pastes this key, or uses Stop there.", self.out)
         self.assert_key_hidden(KEY)
 
     def test_decrypt_restores_index_descriptions(self):

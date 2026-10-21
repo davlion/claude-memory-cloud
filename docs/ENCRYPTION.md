@@ -12,7 +12,7 @@ Encryption is optional and set per memory repo. Once it's on, each memory's desc
 
 - **A password manager** (1Password or similar). This is a precondition, not a suggestion. The key is shown once, and **without it your memories can't be read by anyone, including you.** Sharing the key through the password manager's sharing is how several people get access to one repo.
 - **A memory tool with encryption turned on.** Open `<server>/keys`. If it says "Encryption isn't turned on for this memory server", ask the memory server's operator to turn it on ([QUICKSTART.md](QUICKSTART.md), "Turning on encryption at rest").
-- **Admin access to the memory repo** to turn encryption on, turn it back on, or stop it. Registering and removing a key need write access plus the key. For a client repo, the client's admin turns encryption on. `memory_scopes` shows `admin: true` for each memory repo where you have it.
+- **Admin access to the memory repo** to turn encryption on, turn it back on, stop it, confirm a decryption, or register a changed key (after `memcrypt rotate`). Registering and removing the repo's current key need write access plus the key. For a client repo, the client's admin turns encryption on. `memory_scopes` shows `admin: true` for each memory repo where you have it.
 - **The local kit at version 0.1.5 or later** on each machine where you use Claude Code (rerun `./setup.sh`; see "When do I need to rerun setup?" in the [FAQ](FAQ.md)). Older kits keep descriptions in the local snapshot, and may report a save that waits for a key as "not saved" instead of queuing it.
 
 ---
@@ -93,10 +93,10 @@ Nothing changes for you or Claude. Save, read and search work as before, and Cla
 
 Turning on registers the key with the memory tool. You register it yourself in these cases:
 - the key expired (see below), or someone removed it;
-- you rotated the key with memcrypt: only the key that signed the repo's current encryption marker is accepted, so after `memcrypt rotate` the old key is refused ("This isn't the key for `<owner>/<repo>`") and you register the new one;
+- you rotated the key with memcrypt: only the key that signed the repo's current encryption marker is accepted, so after `memcrypt rotate` the old key is refused ("This isn't the key for `<owner>/<repo>`") and an admin of the repo registers the new one;
 - you use a different memory server (see "Moving to another server, or leaving a host").
 
-To register: on the key page, paste the key next to the repo and click **Register key**. Write access plus the key is enough.
+To register: on the key page, paste the key next to the repo and click **Register key**. Write access plus the key is enough for the key the memory tool already knows for that repo. A key that differs from it (after `memcrypt rotate`, or a marker someone else put in the repo) needs an admin of the repo: anyone else gets "Only an admin of `<owner>/<repo>` can register a new key for it (the key was changed, e.g. with memcrypt rotate)." Registering never turns encryption off.
 
 To remove: paste the key and click **Remove key**. The memory tool loses access within about a minute (the removal takes that long to reach every Cloudflare location): then it can't read or save that repo's memories until the key is registered again.
 
@@ -141,7 +141,7 @@ Reported at session start, once per session, like other health problems:
 
 **Turning back on** also needs admin. Click **Turn encryption back on**, paste the repo's existing key, and click **Encrypt in place**: memories saved while encryption was off are in the history in plaintext, so the history is squashed again. Moving to a fresh repo isn't offered when turning back on.
 
-The memory tool never turns encryption off because of what's in the repo. Only **Stop** on the key page turns it off, or an admin clicking **Confirm decryption (turn encryption off)** after `memcrypt decrypt`. Deleting or editing the encryption marker (`.claude-memory/encryption.json`) keeps the repo encrypted.
+The memory tool never turns encryption off because of what's in the repo. Only **Stop** on the key page turns it off, or an admin clicking **Confirm decryption (turn encryption off)** after `memcrypt decrypt`; plain **Register key** never does, even for an admin. Deleting or editing the encryption marker (`.claude-memory/encryption.json`) keeps the repo encrypted.
 
 ---
 
@@ -205,7 +205,7 @@ With `--in-place`, memcrypt refuses if the repo has other branches, tags or pull
 
 Writes every memory back in plaintext, in a normal commit, and marks encryption off. That plaintext stays in the repo's history from now on, even if you turn encryption on again later. Each `MEMORY.md` index gets its descriptions back from the decrypted memories.
 
-The memory tool keeps encrypting new saves, and health shows `✗ … decrypted outside the memory tool`, until an admin of the repo clicks **Confirm decryption (turn encryption off)** on the key page and pastes the key (whether or not it's already registered), or uses **Stop** there. If someone who isn't an admin registers it, the page answers "Encryption stays on for `<owner>/<repo>`; an admin can turn it off with Stop."
+The memory tool keeps encrypting new saves, and health shows `✗ … decrypted outside the memory tool`, until an admin of the repo clicks **Confirm decryption (turn encryption off)** on the key page and pastes the key (whether or not it's already registered), or uses **Stop** there. The key page answers "Encryption is off for `<owner>/<repo>`: new memories are saved unencrypted." Registering the key with **Register key** doesn't turn encryption off: someone who isn't an admin is told "Encryption stays on for `<owner>/<repo>`; an admin can turn it off with Stop."
 
 ### rotate
 
@@ -217,7 +217,7 @@ The memory tool keeps encrypting new saves, and health shows `✗ … decrypted 
 
 Decrypts with the old key and encrypts with a new one in memory, with no plaintext step in history. The new key is generated and shown once, unless you give one with `--new-key-env <VAR>`. Choose where the old key's ciphertext goes: `--to` and `--in-place` leave it behind as for switch-on; `--commit` keeps it in the history, so anyone with read access and the old key can still read those versions.
 
-Then register the new key on the key page. The old key is refused from now on. Until you register it, health shows `⚠ encryption:<scope> — encrypted, the key was changed (memcrypt rotate?)`.
+Then an admin of the repo registers the new key on the key page (a changed key needs admin, so a co-writer can't switch the memory tool to a key only they hold). The old key is refused from now on. Until you register it, health shows `⚠ encryption:<scope> — encrypted, the key was changed (memcrypt rotate?)`.
 
 ---
 
@@ -226,7 +226,7 @@ Then register the new key on the key page. The old key is refused from now on. U
 The marker, `.claude-memory/encryption.json` at the repo root, records that the repo is encrypted, signed with a key derived from the repo key. The memory tool also remembers on its own which repos are encrypted.
 
 - **Deleted, or edited without the key:** the repo stays encrypted. Saves stay encrypted, and health shows `✗ encryption:<scope> — encrypted, but the encryption marker is missing or not signed` (or, for a marker that says off and can't be checked without the key, `… the encryption marker says off and can't be checked without the key`), with a link to the repo's recent commits. Someone may have tried to turn encryption off.
-- **Replaced with a marker for another key** (by someone with write access): saves stop rather than risk the wrong key, and the key page refuses your key for that repo. A marker that differs only in its key looks like a rotate to the memory tool, so health shows the ⚠ "the key was changed (memcrypt rotate?)" line rather than ✗: if nobody ran `memcrypt rotate`, treat it as this case.
+- **Replaced with a marker for another key** (by someone with write access): saves stop rather than risk the wrong key, and the key page refuses your key for that repo. Only an admin of the repo can register the key that signed the new marker, so whoever planted it can't make the memory tool use their key. A marker that differs only in its key looks like a rotate to the memory tool, so health shows the ⚠ "the key was changed (memcrypt rotate?)" line rather than ✗: if nobody ran `memcrypt rotate`, treat it as this case.
 
 To recover, review the recent commits and put the last good marker back from the repo's history, for example in a clone:
 
