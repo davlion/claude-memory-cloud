@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import json
 import os
 import re
 import shutil
@@ -39,6 +40,10 @@ ROTATE_COMMIT_WARNING = ("The re-sealed memories go in a normal commit. The old 
                          "read access and the old key can still read those versions. Without the new key your memories can't be read: keep it "
                          "in your password manager.")
 _SET_RE = re.compile(r"(projects/[^/]+/)?(.*)\Z", re.S)
+
+
+NOT_APPLIED = ("The new key shown above was NOT applied: {repo} still uses its current key. "
+               "Discard the new key; run memcrypt again to get another.")
 
 
 class Abort(Exception):
@@ -220,8 +225,15 @@ def _description(text: str) -> Optional[str]:
     if not d:
         return None
     v = d.group(1)
-    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
-        v = v[1:-1]
+    if not v or v[0] in "|>&*![{%@`" or (v[0] in "\"'" and (len(v) < 2 or v[-1] != v[0])):
+        return None   # block scalar or anything else not parsed with confidence: leave the line names-only
+    if v[0] == '"':
+        try:
+            v = json.loads(v)
+        except ValueError:
+            return None
+    elif v[0] == "'":
+        v = v[1:-1].replace("''", "'")
     v = re.sub(r"\s+", " ", v.replace("```", " ")).strip()
     v = re.sub(r"^#+\s*", "", v)
     if len(v) > 200:
@@ -380,14 +392,19 @@ def run(a: argparse.Namespace) -> int:
                 if r.out("ls-remote", "origin", f"refs/heads/{branch}").split("\t")[0] != head:
                     raise Abort(f"{repo} changed while its encrypted copy was being written, so the copy misses those saves. "
                                 f"Delete and recreate {redact_remote(a.to)} as an empty private repo, then try again.")
+        except (KeyboardInterrupt, EOFError) as e:
+            if r.key_shown:
+                print(NOT_APPLIED.format(repo=repo), file=sys.stderr)
+            if isinstance(e, KeyboardInterrupt):
+                raise
+            raise Abort("No input. Nothing was changed.") from None
         except Abort as e:
             if not r.key_shown:
                 raise
             extra = ""
             if "stale info" in str(e):
                 extra = f"\n{repo} changed while memcrypt was waiting (a memory was probably saved). Nothing was changed; run it again."
-            raise Abort(f"{e}{extra}\nThe new key shown above was NOT applied: {repo} still uses its current key. "
-                        "Discard the new key; run memcrypt again to get another.") from None
+            raise Abort(f"{e}{extra}\n{NOT_APPLIED.format(repo=repo)}") from None
         if a.cmd == "decrypt":
             print(f"Done: {repo} is decrypted.")
         elif a.cmd == "rotate":

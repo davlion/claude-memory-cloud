@@ -275,6 +275,42 @@ class Memcrypt(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertNotIn("NOT applied", self.out)
 
+    def test_description_unquoting_matches_yaml_package(self):
+        def fm(d):
+            return f"---\nname: n\ndescription: {d}\nmetadata:\n  type: user\n---\n\nbody\n"
+        # texts below are what serializeMemory (yaml package) emits for the descriptions in the comments
+        d = self.mc._description
+        self.assertEqual(d(fm("'say \"hi\": x'")), 'say "hi": x')           # say "hi": x
+        self.assertEqual(d(fm('"it\'s: ok"')), "it's: ok")                     # it's: ok
+        self.assertEqual(d(fm('"line one: x\\\\y"')), "line one: x\\y")        # line one: x\y
+        self.assertEqual(d(fm("'it''s'")), "it's")
+        self.assertEqual(d(fm('"caf\\u00e9: x"')), "caf\u00e9: x")
+        self.assertEqual(d(fm("plain \u00e9")), "plain \u00e9")
+        for bad in ("|-\n  a\n  b: c", ">-", "|", ">", '"unterminated', "'x"):
+            self.assertIsNone(d(fm(bad)), bad)
+
+    def test_decrypt_block_scalar_description_stays_names_only(self):
+        self.seed(self.origin, {
+            "memories/blk.md": "---\nname: blk\ndescription: |-\n  a\n  b: c\nmetadata:\n  type: user\n---\n\nbody\n",
+            "MEMORY.md": "# Memory index \u2014 general\n\n- [blk](memories/blk.md)\n",
+        }, "more")
+        self.encrypt()
+        self.assertEqual(self.run_mc("decrypt", self.origin, "--key-env", "MK", "--confirm", "acme/memory"), 0, self.out)
+        self.assertEqual(self.show(self.origin, "MEMORY.md"), "# Memory index \u2014 general\n\n- [blk](memories/blk.md)\n")
+
+    def test_interrupt_or_eof_at_prompt_after_key_shown(self):
+        self.encrypt()
+        for exc, code in ((KeyboardInterrupt(), 130), (EOFError(), 1)):
+            with mock.patch.object(crypt, "generate_key_text", return_value=KEY2), \
+                    mock.patch("getpass.getpass", side_effect=exc):
+                got = self.run_mc("rotate", self.origin, "--key-env", "MK", "--commit", "--confirm", "acme/memory")
+            self.assertEqual(got, code)
+            self.assertIn("The new key shown above was NOT applied: acme/memory still uses its current key.", self.out)
+        with mock.patch.object(crypt, "generate_key_text", return_value=KEY2), \
+                mock.patch("getpass.getpass", return_value=KEY2), mock.patch("builtins.input", side_effect=KeyboardInterrupt):
+            self.assertEqual(self.run_mc("rotate", self.origin, "--key-env", "MK", "--commit"), 130)
+        self.assertIn("NOT applied", self.out)
+
     def test_decrypt_wrong_key_changes_nothing(self):
         self.encrypt()
         before = self.head(self.origin)
