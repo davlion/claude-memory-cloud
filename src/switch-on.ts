@@ -7,6 +7,12 @@ import { clearSnapshots, splitSet, type GitHubStore, type TreeFile, type TreeWri
 
 export const trailers = (login: string) => `\n\nMemory-Source: key page (${login})\nMemory-Scope: *\n`;
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+/** Called with a short line as each stage of turning on finishes (the key page streams them). Never carries key text. */
+export type Progress = (step: string) => void;
+const memoryCount = (files: TreeFile[]) => plural(files.filter((f) => {
+  const { rel } = splitSet(f.path);
+  return rel !== "MEMORY.md" && parseMemoryPath(rel) !== null;
+}).length, "memory", "memories");
 
 /**
  * The repo's whole tree with every memory sealed under `key`, names-only `MEMORY.md` files and a signed `enabled: true` marker.
@@ -47,11 +53,13 @@ const existingMarker = (files: TreeFile[]): Marker | null => {
 };
 
 /** Turns encryption on by replacing the repo's history with one root commit. Saves are held off while it runs. */
-export async function switchOnInPlace(store: GitHubStore, keys: KeyRing, cache: KVNamespace, repo: string, keyText: string, login: string): Promise<{ url: string }> {
+export async function switchOnInPlace(store: GitHubStore, keys: KeyRing, cache: KVNamespace, repo: string, keyText: string, login: string, progress?: Progress): Promise<{ url: string }> {
   const key = await parseKeyText(keyText);
   await keys.setSwitching(repo);
   try {
     const tree = await store.readTree(repo);
+    const n = memoryCount(tree.files);
+    progress?.(`Read ${repo}: ${n}`);
     if (!tree.isPrivate) throw new OpError("repo_public", `${repo} is not private, so encryption wasn't turned on.`, "Make the repo private, then try again.");
     const extra = await store.extraRefs(repo);
     if (extra.branches || extra.tags || extra.pulls) {
@@ -64,12 +72,15 @@ export async function switchOnInPlace(store: GitHubStore, keys: KeyRing, cache: 
         extra.pulls ? "Pull requests can't be deleted: move to a fresh repo instead." : "Delete the other branches and tags, then try again, or move to a fresh repo instead.");
     }
     const plan = await planEncryptedTree(tree.files, key, existingMarker(tree.files), await keys.getRecord(repo));
+    progress?.(`Encrypted ${n}`);
     const message = `encrypt: switch on, history squashed${trailers(login)}`;
     const res = tree.head === null
       ? await store.writeFirstCommit(repo, plan.files, message)
       : await store.replaceHistory(repo, tree.head, plan.files, message);
+    progress?.("Wrote the new history (one commit)");
     await keys.putRecord(repo, { repoId: plan.marker.repoId, keyId: key.id, enabled: true });
     await keys.put(repo, keyText, login, Date.now());
+    progress?.("Stored the key");
     await clearSnapshots(cache, repo);
     return { url: res.url };
   } finally {
@@ -81,7 +92,7 @@ export async function switchOnInPlace(store: GitHubStore, keys: KeyRing, cache: 
  * Turns encryption on by writing an encrypted copy of `repo` into the empty private `newRepo`. The user then deletes `repo`
  * and renames `newRepo` to it, so the record and key are stored under `repo`; saves to `repo` wait for that (the move flag).
  */
-export async function switchOnFresh(store: GitHubStore, keys: KeyRing, cache: KVNamespace, repo: string, newRepo: string, keyText: string, login: string): Promise<{ url: string }> {
+export async function switchOnFresh(store: GitHubStore, keys: KeyRing, cache: KVNamespace, repo: string, newRepo: string, keyText: string, login: string, progress?: Progress): Promise<{ url: string }> {
   const key = await parseKeyText(keyText);
   if (newRepo.toLowerCase() === repo.toLowerCase()) throw new OpError("invalid", "The new repo must be a different repo.", "Create a new, empty private repo.");
   const target = await store.readTree(newRepo);
@@ -91,17 +102,23 @@ export async function switchOnFresh(store: GitHubStore, keys: KeyRing, cache: KV
   await keys.setSwitching(repo);
   try {
     const tree = await store.readTree(repo);
+    const n = memoryCount(tree.files);
+    progress?.(`Read ${repo}: ${n}`);
     const prevRecord = await keys.getRecord(repo);
     const plan = await planEncryptedTree(tree.files, key, existingMarker(tree.files), prevRecord);
+    progress?.(`Encrypted ${n}`);
     const res = await store.writeFirstCommit(newRepo, plan.files, `encrypt: fresh encrypted copy of ${repo}${trailers(login)}`, repo);
+    progress?.(`Wrote the encrypted copy to ${newRepo}`);
     // A save that landed in `repo` during the copy would be lost with the old repo.
     if (await store.currentHead(repo) !== tree.head) {
       throw new OpError("unavailable", "The memory repo changed while its encrypted copy was being written; nothing was switched.",
         `Delete and recreate ${newRepo} as an empty private repo, then try again.`);
     }
+    progress?.(`Checked ${repo} didn't change during the copy`);
     await keys.setMove(repo, { to: newRepo, repoId: plan.marker.repoId, head: tree.head, prevRecord });
     await keys.putRecord(repo, { repoId: plan.marker.repoId, keyId: key.id, enabled: true });
     await keys.put(repo, keyText, login, Date.now());
+    progress?.("Stored the key");
     await clearSnapshots(cache, repo);
     return { url: res.url };
   } finally {

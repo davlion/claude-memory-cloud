@@ -447,3 +447,33 @@ describe("switchOnFresh", () => {
     expect(await keys.isSwitching(r.name)).toBe(false);
   });
 });
+
+describe("progress", () => {
+  it("in place: reports each stage in order; without progress it behaves as before", async () => {
+    const r = fakeRepo(uniq("mem"));
+    mockFetch(routes([r]));
+    const steps: string[] = [];
+    const res = await switchOnInPlace(store(), await ring(), env.CACHE_KV, r.name, generateKeyText(), "dav", (s) => steps.push(s));
+    expect(res).toEqual({ url: `https://github.com/${r.name}/commit/c-new` });
+    expect(steps).toEqual([`Read ${r.name}: 2 memories`, "Encrypted 2 memories", "Wrote the new history (one commit)", "Stored the key"]);
+  });
+
+  it("fresh: reports each stage in order", async () => {
+    const r = fakeRepo(uniq("mem"));
+    const n = fakeRepo(uniq("new"), { head: null });
+    mockFetch(routes([r, n]));
+    const steps: string[] = [];
+    await switchOnFresh(store(), await ring(), env.CACHE_KV, r.name, n.name, generateKeyText(), "dav", (s) => steps.push(s));
+    expect(steps).toEqual([`Read ${r.name}: 2 memories`, "Encrypted 2 memories", `Wrote the encrypted copy to ${n.name}`,
+      `Checked ${r.name} didn't change during the copy`, "Stored the key"]);
+  });
+
+  it("a failing stage stops the reports there", async () => {
+    const r = fakeRepo(uniq("mem"), { refAt: (i) => (i === 0 ? "c1" : "c9") });
+    const n = fakeRepo(uniq("new"), { head: null });
+    mockFetch(routes([r, n]));
+    const steps: string[] = [];
+    await expect(switchOnFresh(store(), await ring(), env.CACHE_KV, r.name, n.name, generateKeyText(), "dav", (s) => steps.push(s))).rejects.toMatchObject({ code: "unavailable" });
+    expect(steps).toEqual([`Read ${r.name}: 2 memories`, "Encrypted 2 memories", `Wrote the encrypted copy to ${n.name}`]);
+  });
+});
