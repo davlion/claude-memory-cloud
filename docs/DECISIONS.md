@@ -4,7 +4,7 @@ Why claude-memory-cloud is built the way it is. Each entry gives the decision, t
 
 ## Storage and reach
 
-**Memories live in GitHub repos, as plain Markdown.** You own the repo, so you can read, edit, export or delete everything without this project. Every change is a commit, which is a free audit trail. A client's memories live in a repo inside the client's own GitHub org, which the client controls and can cut off. *Cost:* deleting a memory leaves it in git history, and one index load makes about 15 GitHub requests.
+**Memories live in GitHub repos, as plain Markdown.** You own the repo, so you can read, edit, export or delete everything without this project. Every change is a commit, which is a free audit trail. A client's memories live in a repo inside the client's own GitHub org, which the client controls and can cut off. *Cost:* deleting a memory leaves it in git history, and one index load makes about 15 GitHub requests. A repo's owner can encrypt its memories (see "Encryption at rest" below); then the files are no longer readable by hand.
 
 **The server is a remote MCP connector on Cloudflare Workers.** claude.ai web, Desktop, mobile and Claude Code cloud sessions can only reach memory through a remote connector; a local MCP server would serve one machine's Claude Code and nothing else. Workers is cheap and needs no server to run. *Cost:* the server sees memory text in plaintext, and each call needs more CPU than the free plan allows, so it needs Workers Paid ($5/month).
 
@@ -46,6 +46,26 @@ Why claude-memory-cloud is built the way it is. Each entry gives the decision, t
 
 **A trusted group per server.** A server is for you and people who trust you: whoever runs it can read every memory that passes through it. There's no set size. The practical ceiling is the `SCOPES` secret, which Cloudflare caps at 5 KB, enough for roughly 50 people with a client scope each, and each person is added by hand. A client that wants its own control self-hosts a copy; the code is small.
 
+## Encryption at rest
+
+The how-to is [ENCRYPTION.md](ENCRYPTION.md); the risks are in the [threat model](THREAT-MODEL.md), section 11.
+
+**Encryption happens in the Worker.** The memory tool seals each memory just before it commits and opens it just after it reads, so the guard, search, the duplicate check and the index all keep working on plaintext, on every surface. Encrypting on the client side would have meant no search, no guard and no claude.ai chat, which has no place to run code. *Cost:* encryption protects memories from GitHub and from anyone who gets the repo, not from the server's operator, Cloudflare or Anthropic.
+
+**The repo owner holds the key, in a password manager.** It's generated once, shown once, and pasted back before anything is encrypted, as proof it was saved. The owner registers it with a server once; it stays until removed, or until an operator-set lifetime (`REPO_KEY_TTL_SECONDS`) ends, so no session asks for it. The server keeps it in KV, wrapped under its own master key (`MEMORY_MASTER_KEY`). Because the key lives with the owner, it moves with them to another server. *Cost:* a lost key loses the memories; the owner needs a password manager.
+
+**One key per memory repo.** It covers every scope in that repo: `general` or the client scope, and every `projects/<repo>/` folder inside it. Several people share a repo by sharing the key through their password manager. *Cost:* no per-person keys and no server-side rotation; changing the key is a deliberate local step (`memcrypt rotate`).
+
+**Names stay readable.** Filenames, each encrypted file's `name:` line, the repo's names-only `MEMORY.md` and commit messages show memory names, so the index, conflicts and history keep working without the key. Descriptions, bodies and types are encrypted. *Cost:* a name can give away content, so in encrypted scopes Claude is asked to choose names that don't.
+
+**A fresh repo is recommended over squashing history.** Both switch-on paths encrypt every memory. The in-place squash leaves the old plaintext commits readable through GitHub's activity log until GitHub Support purges them, and can't be used on a repo that ever had a pull request. Writing the encrypted memories into a new repo and deleting the old one removes the old history with the user's own action. *Cost:* a delete and a rename by hand, and saves wait until they're done.
+
+**Turning encryption off can't happen silently.** The marker in the repo (`.claude-memory/encryption.json`) is signed with a key derived from the repo key, and each server keeps its own record of every repo it has seen encrypted. A missing, unsigned or changed marker keeps the repo encrypted and fails health; only Stop on the key page (or an admin registering the key after `memcrypt decrypt`) turns it off. Turning encryption on, back on or off needs admin on the repo, so a co-writer can't put a shared repo under a key only they hold. *Cost:* recovering from a damaged marker means restoring it from the repo's history.
+
+**No automatic sealing of outside files.** A plaintext memory that appears after switch-on (a hand edit, another tool, an older server) is marked in the index and in health, not encrypted. An encrypted file is a sign the memory tool wrote it; sealing a planted file would make it look trustworthy. *Cost:* such files stay in plaintext until someone saves them again through Claude.
+
+**The local commands use a pinned `cryptography`.** `memcrypt` (encrypt, decrypt, rotate) is the one part of the kit that needs a package beyond Python's standard library. It's pinned to an exact version with hashes in `kit/requirements-crypt.txt` and installed from wheels only (`pip install --require-hashes --only-binary :all:`), so a hijacked or look-alike release can't slip in; upgrades are deliberate commits. The rest of the kit stays standard-library only. *Cost:* one virtual environment to set up, only for people who run `memcrypt`.
+
 ## Running it
 
 **The local kit lives in `~/.claude-memory-cloud`, not `~/.claude`.** Claude Code asks permission for every write under `~/.claude`, and allow rules can't change that, so the outbox would prompt on every queued save. Only `settings.json` (hooks, auto-memory off) and `CLAUDE.md` (the routing rule) are changed in `~/.claude`.
@@ -54,4 +74,4 @@ Why claude-memory-cloud is built the way it is. Each entry gives the decision, t
 
 **Deploy credentials are scoped and stay off disk.** Deploys use a Cloudflare API token limited to editing the two Workers, read from the macOS keychain by `scripts/wrangler.sh`. Your deployment's URL, app slug and storage IDs live in a git-ignored `wrangler.local.jsonc`; the committed `wrangler.jsonc` is a template.
 
-**TypeScript on the server; Python and shell on your machine.** Cloudflare's OAuth and MCP libraries for Workers are TypeScript. Everything local (hooks, setup, tests) uses only Python's standard library and shell, so installing it needs nothing extra.
+**TypeScript on the server; Python and shell on your machine.** Cloudflare's OAuth and MCP libraries for Workers are TypeScript. Everything local (hooks, setup, tests) uses only Python's standard library and shell, so installing it needs nothing extra. The one exception is the optional `memcrypt` (above).

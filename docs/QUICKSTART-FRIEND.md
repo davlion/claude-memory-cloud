@@ -29,6 +29,8 @@ You'll set up:
 
 **What your host can see.** Read this before you start. The server runs in your host's Cloudflare account, and memory text passes through it in plaintext. Whoever controls that account (your host, and anyone who compromises it) can read your memories: as they pass through, and from the server's cache, which keeps copies for up to 7 days, even after you delete a memory or leave. The server also holds your GitHub sign-in for the app, so whoever controls it could change your memories too, but only in repos where you installed the app (Part 3 limits that to `<you>/claude-memory`), never your other repos or your GitHub account. Every change is a commit you can see, and uninstalling the app (see "Leaving") cuts the server off immediately. Only use a server run by someone you'd trust with what you save. Never save secrets: the server's secret check is best effort. See "Who can see my memories?" in the [FAQ](FAQ.md).
 
+**Encryption doesn't change this.** If your host has turned on encryption at rest, you can encrypt your memory repo ([ENCRYPTION.md](ENCRYPTION.md)). That keeps your memories unreadable to GitHub and to anyone who gets the repo, but not to your host: the server has to decrypt your memories to answer Claude, so while your key is registered there, whoever controls the server can read them, as before. Only running your own server changes that.
+
 ---
 
 ## Part 1 — Create your memory repo
@@ -150,5 +152,7 @@ Your memories are in your own repo and stay there.
 2. claude.ai → **Settings** → **Connectors** → claude-memory → **Remove**. Remove `CLAUDE_CODE_DISABLE_AUTO_MEMORY` from your cloud environment if you set it.
 3. GitHub → **Settings** → **Applications** → **Installed GitHub Apps** → `<slug>` → **Uninstall**. Then **Authorized GitHub Apps** → `<slug>` → **Revoke**. The server loses access immediately.
 4. Tell your host, so they remove you from the allowlist.
+
+If your memory repo is encrypted, remove your key on the key page (`<server>/keys` → **Remove key**) before step 3. Your key stays in your password manager: register it on your next memory server's key page (see "Moving to another server, or leaving a host" in [ENCRYPTION.md](ENCRYPTION.md)).
 
 The server's cache may keep copies of memories it read for up to 7 days after you leave.

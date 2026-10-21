@@ -293,11 +293,39 @@ To remove someone, delete their entry from `SCOPES` and rerun `secret put`: thei
 
 ---
 
+## Turning on encryption at rest (optional)
+
+Encryption at rest lets each memory repo's owner keep the text of their memories unreadable to GitHub, with a key they hold in their password manager. Your part is to turn the feature on for the server; each owner then turns it on per repo, as [ENCRYPTION.md](ENCRYPTION.md) describes. The server still decrypts memories to answer Claude, so encryption doesn't hide anything from you as the host.
+
+The feature is on when the Worker has a **master key**: a secret that protects the repo keys owners register. Without it the key page (`/keys`) says "Encryption isn't turned on for this memory server", and encrypted repos can't be read or saved through this server.
+
+1. **Update the server and every machine to 0.1.5 or later.** Pull the new code, copy the `WORKER_VERSION` and `MIN_HOOK_VERSION` values (`0.1.5`) from `wrangler.jsonc` into both sections of your `wrangler.local.jsonc`, and deploy. Then rerun `./setup.sh` on each machine and VM (see "When do I need to rerun setup?" in the [FAQ](FAQ.md)); until then each machine's session-start check says "Memory hooks are out of date".
+2. **Create the master key and keep a copy.** Generate it, and save the printed value in your password manager:
+
+   ```bash
+   openssl rand -base64 32
+   ```
+
+   Then set it, pasting the value at the prompt:
+
+   ```bash
+   scripts/wrangler.sh secret put MEMORY_MASTER_KEY --env production
+   ```
+
+   Or in one step, if you'd rather not keep a copy: `openssl rand -base64 32 | scripts/wrangler.sh secret put MEMORY_MASTER_KEY --env production`. Losing or changing the master key loses nothing in the repos, but every registered repo key becomes unreadable: each owner has to register their key again, and key page sign-ins start over. Removing the secret turns the feature off. A value that isn't base64 of 32 bytes makes every memory call fail with "memory server misconfigured: MEMORY_MASTER_KEY is invalid".
+3. **Add the key page's callback URL to the GitHub App.** The key page signs people in with GitHub separately from the connector. Open `https://github.com/settings/apps/<slug>`, and next to the existing Redirect URI ("Callback URL" on older versions of the page) add a second one: `https://claude-memory.<sub>.workers.dev/keys/callback` (your `PUBLIC_URL` followed by `/keys/callback`). Keep the existing `/callback` entry. Click **Save changes**.
+4. **Optional: a key lifetime.** By default a registered repo key stays until its owner removes it. To make owners paste it again regularly, add `"REPO_KEY_TTL_SECONDS": "86400"` (one day; at least 60) to the `vars` of the `env.production` section of `wrangler.local.jsonc`, and deploy. A key registered before the change keeps its old lifetime.
+5. Deploy (`npm run deploy:production`) and open `https://claude-memory.<sub>.workers.dev/keys`. After signing in you should see your memory repos, each "Not encrypted".
+
+The master key gives whoever holds it, together with read access to the server's KV storage, the registered repo keys. Keep it as safe as the GitHub App's client secret.
+
+---
+
 ## Appendix — Development and test setup
 
 Only needed if you're working on claude-memory-cloud itself.
 
-1. **Staging server and app:** create a **separate** GitHub App for staging (same settings as Part 3, named `<you>-claude-memory-staging`, with only the callback `https://claude-memory-staging.<sub>.workers.dev/callback`). Install it only on the test repos below. Staging tokens then can't reach production or client repos. Staging is the top-level config in `wrangler.local.jsonc` (fill in its staging values too), deployed with `npm run deploy:staging`; its secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `SCOPES` from `scopes.staging.json`) are set without `--env`.
+1. **Staging server and app:** create a **separate** GitHub App for staging (same settings as Part 3, named `<you>-claude-memory-staging`, with only the callbacks `https://claude-memory-staging.<sub>.workers.dev/callback` and, for encryption at rest, `https://claude-memory-staging.<sub>.workers.dev/keys/callback`). Install it only on the test repos below. Staging tokens then can't reach production or client repos. Staging is the top-level config in `wrangler.local.jsonc` (fill in its staging values too), deployed with `npm run deploy:staging`; its secrets (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `SCOPES` from `scopes.staging.json`, and optionally its own `MEMORY_MASTER_KEY`) are set without `--env`.
 2. **Test memory repo:** create a private, empty repo `<you>/claude-memory-test`, and add it to the app installation on your account.
 3. **Test client org:** create a free organization (github.com → **+** → **New organization** → **Free**), e.g. `<you>-test-client`. In it, create private repos `claude-memory` (empty) and `sample-app` (with a README). Install the app on that org, selecting only `claude-memory` (never `sample-app`: the app needs only the memory repo, and project memories for `sample-app` live in `claude-memory` under `projects/sample-app/`). If the org isn't offered on the install page, make the app public first (see "Adding a client organization", step 2).
 4. **Local secrets:** in the repo, create `.dev.vars` (it's gitignored):

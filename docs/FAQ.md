@@ -36,6 +36,11 @@ From the git `origin` remote of the directory Claude Code is running in. So the 
 
 The server logs no memory content and no tokens.
 
+**With encryption turned on for a repo** ([ENCRYPTION.md](ENCRYPTION.md)), the first row changes: GitHub, the repo's collaborators and anyone with a clone see only memory names, not descriptions or bodies, for every memory saved after switch-on. Memories from before switch-on are gone from the repo after a move to a fresh repo; after an in-place squash they stay readable through the repo's activity log until GitHub Support purges them, and clones and forks made earlier keep them either way. The server's cache then holds the encrypted files, never decrypted text. The other rows don't change: the server decrypts to answer Claude, so whoever controls the Cloudflare account can still read memories while the repo's key is registered, and Anthropic and your own computers see what Claude reads.
+
+### Can my memories be encrypted?
+Yes, per memory repo, if the memory server's operator has turned encryption on. You keep the key in your password manager and register it once on the memory tool's key page; no session ever asks for it. It keeps memory text unreadable to GitHub and to anyone who gets the repo, not to the server's operator, Cloudflare or Anthropic, and memory names stay readable. See [ENCRYPTION.md](ENCRYPTION.md).
+
 ### Is Cloudflare in the middle a security risk?
 The server sees memory text in plaintext, because that's how TLS works at Cloudflare's edge. Mitigations:
 - The GitHub App can touch only the memory repos it's installed on, nothing else, and only with your own access.
@@ -122,6 +127,8 @@ The server compares the new memory's name and description with existing ones and
 ### Can I edit memories by hand?
 Yes. They're plain Markdown files in your repo. The index is rebuilt from the files every time it's read, and Health notes that the repo was changed outside the server so you know to review it.
 
+In an encrypted repo, memories can't be edited by hand: change them through Claude, or decrypt the repo first with `memcrypt` (see [ENCRYPTION.md](ENCRYPTION.md)). A plaintext memory you add by hand isn't encrypted automatically; the index marks it "unencrypted, added outside the memory tool" until Claude saves it again.
+
 ### What about Claude Code's built-in memory?
 The setup script turns it off, so memories don't end up in two places. Your existing local memory files are left in place as a backup. To move them into GitHub memory, see [MIGRATE.md](MIGRATE.md).
 
@@ -187,7 +194,7 @@ At session start, Claude runs a health check and stays silent if everything's fi
 
 ### When do I need to rerun setup?
 Setup copies the kit onto each machine: the hooks in `~/.claude-memory-cloud`, and the routing rule into `~/.claude/CLAUDE.md`. Pulling new code doesn't change that copy, so each machine keeps the version it was set up with until you run setup again there. The session-start check tells you when to:
-- **"Memory hooks are out of date (installed 0.1.3, server needs 0.1.4)"**: the server was updated and needs a newer kit, usually because the routing rule changed. Every machine set up before the update says this until it's rerun.
+- **"Memory hooks are out of date (installed 0.1.4, server needs 0.1.5)"**: the server was updated and needs a newer kit, usually because the routing rule changed. Every machine set up before the update says this until it's rerun.
 - **"The memory routing rule in `~/.claude/CLAUDE.md` differs from the one the setup script installed"**: the rule was edited after setup, by you or by another tool. Setup puts it back. Keep your own notes outside the `claude-memory-cloud:routing-rule` marker lines; setup only replaces what's between them.
 - **"routing rule is missing", "config … is missing or invalid" or "Scope map missing or invalid"**: part of the install was removed or damaged.
 
@@ -197,7 +204,7 @@ To rerun, pull the latest code in the folder you installed from and run `./setup
 Level 4 drives real Claude Code sessions on a Mac and two VMs against a staging server and checks the results in test repos with `gh api`, never Claude's wording; the Desktop app, cloud sessions, web chat and mobile are tested by hand with the same checks. See [`test/e2e/README.md`](../test/e2e/README.md) for how to run it. The latest grids are in [`test/e2e/results/`](../test/e2e/results/).
 
 ### Why TypeScript for the server, and Python and shell for the rest?
-Cloudflare's OAuth and MCP libraries for Workers are TypeScript, so the server is TypeScript. Everything that runs on your machine (hooks, setup script, test runner) is Python and shell, to keep it simple and dependency-free.
+Cloudflare's OAuth and MCP libraries for Workers are TypeScript, so the server is TypeScript. Everything that runs on your machine (hooks, setup script, test runner) is Python and shell, to keep it simple and dependency-free. The one exception is the optional `memcrypt` for encrypted repos, which needs the pinned `cryptography` package (see [ENCRYPTION.md](ENCRYPTION.md)).
 
 ## Troubleshooting
 

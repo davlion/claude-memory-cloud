@@ -23,7 +23,7 @@ There's also [a cartoon version](docs/images/memory-path-cartoon.png) of the sam
 ## What you get
 
 - **Three kinds of memory:** about you (`general`), about a client organization (in a repo inside the client's own GitHub org), and about one codebase (`project`, keyed by its git remote, so it's the same on every machine).
-- **It's yours.** Plain Markdown in your repos. Every change is a commit; you can read, edit or delete anything by hand.
+- **It's yours.** Plain Markdown in your repos, so you can read, edit or delete anything by hand, unless you [turn on encryption](docs/ENCRYPTION.md) for a repo to keep its memories unreadable to GitHub. Every change is a commit.
 - **Narrow access.** The server acts as you through a GitHub App installed only on your memory repos, with one permission and no private key.
 - **No lost writes.** Concurrent edits become conflict copies, not overwrites. In local Claude Code, saves made while the server is down queue in an outbox and replay later.
 - **Memory text is treated as data, not instructions.** Claude is told never to act on what a memory says, and the server's own messages carry a marker memory text can't fake.
@@ -33,6 +33,7 @@ There's also [a cartoon version](docs/images/memory-path-cartoon.png) of the sam
 - **Run your own server:** [Quickstart](docs/QUICKSTART.md). You need a GitHub account and a Cloudflare account on Workers Paid ($5/month).
 - **Use a friend's server:** [Quickstart for friends](docs/QUICKSTART-FRIEND.md).
 - **Bring over Claude Code's old local memories:** [Migrate](docs/MIGRATE.md).
+- **Keep a memory repo encrypted:** [Encryption](docs/ENCRYPTION.md).
 - **Questions:** [FAQ](docs/FAQ.md). **Why it's built this way:** [Design decisions](docs/DECISIONS.md). **Risks and mitigations:** [Threat model](docs/THREAT-MODEL.md). **Removing it:** [Uninstall](docs/UNINSTALL.md).
 
 ## Develop

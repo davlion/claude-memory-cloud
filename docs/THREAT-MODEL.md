@@ -5,6 +5,8 @@
 **Method:** I read the code and the library source. I checked the secret-scanner regexes against bypass strings in a scratch script. Nothing was run against GitHub or Cloudflare.
 **Status (2026-10-14):** the [P] items and most [C] items are implemented by Plan 1b (claude-memory-mcp/docs/superpowers/plans/2026-10-14-cloud-memory-hardening.md); the text below describes the code as it was at dcc1df4.
 
+**Update (2026-10-20):** section 11 covers optional encryption at rest of memory repos, as implemented on the `encryption-at-rest` branch.
+
 Each recommendation has a tag: **[P]** = before production, **[C]** = before client onboarding, **[L]** = later.
 
 ---
@@ -325,6 +327,53 @@ Recommendations:
    - **Commit trailers can expose hostnames.** `Memory-Source: claude-code on <hostname>` is visible to anyone who can read the repo, including a client. Install with `./setup.sh --neutral-source` to record just "claude-code". The trailer is Claude-supplied and not provenance (item 2).
    - **Chat can still choose the connector for a personal fact.** The guard stops the write, but the fact was already sent to the connector in that conversation (and so is in Anthropic's history, as any chat is).
    - Facts written outside the memory tools (code, PR text, hand edits to a repo) are not guarded.
+
+---
+
+## 11. Encryption at rest (2026-10-20)
+
+A memory repo's owner can turn on encryption for that repo ([ENCRYPTION.md](ENCRYPTION.md)). Each memory's description, body and type are sealed with AES-256-GCM under a per-repo key that the owner keeps in a password manager and registers with the server. The aim is to keep memory text from GitHub and from anyone who gets the repo: a leaked token, a stray clone, a GitHub breach, an accidental visibility change.
+
+### Trust boundary
+
+| Who | Sees plaintext? |
+|---|---|
+| GitHub, and anyone with the repo or a clone of it | **No**, for memories saved after switch-on. Memories that existed before switch-on: no after a move to a fresh repo; after an in-place squash, still readable through the repo's activity log by anyone with read access until GitHub Support purges the old commits. Clones and forks made before switch-on keep the old plaintext either way |
+| The server operator and Cloudflare | Yes. The server must decrypt to answer Claude, so while a repo is in use its key is on the server |
+| Anthropic | Yes. Claude has to read the memory |
+| The user's own machines (transcripts, outbox) | Yes. **The local machine is inside the trusted boundary.** Only the session-start snapshot is reduced (names only) |
+
+**The host can read while a key is registered.** Registered repo keys sit in `OAUTH_KV`, wrapped under the Worker's `MEMORY_MASTER_KEY` secret. Whoever controls the Cloudflare account can deploy code that uses them, so a friend on someone else's server is trusting that host exactly as before. Removing the key on the key page cuts the server off at once; an operator-set `REPO_KEY_TTL_SECONDS` makes keys expire on their own. `CACHE_KV` holds only the encrypted files of an encrypted repo, and switch-on clears that repo's cached snapshots.
+
+**Names stay readable**: filenames, the encrypted file's `name:` line, the names-only `MEMORY.md`, commit messages, and `projects/<repo>/` folder names. Claude is asked to choose names in encrypted scopes that don't give away the content.
+
+### Residual copies of the old plaintext
+
+Switch-on can't reach every copy:
+- **In-place squash:** the old commits stay readable through the repo's activity log by anyone with read access until GitHub Support purges them. The key page and `memcrypt` say so and give the request link. A repo that ever had a pull request can't be squashed (pull refs can't be deleted), nor one with other branches or tags.
+- **Fresh repo:** the old repo is deleted by the owner, and GitHub keeps it restorable by its owner for 90 days.
+- **Either way:** clones and forks made before switch-on, Claude Code transcripts and outbox entries, and Anthropic's conversation history keep what they had.
+- **After Stop, or `memcrypt decrypt`:** memories saved in plaintext stay in history even if encryption is turned back on, unless the fresh-repo or squash path is used again.
+
+### Controls against turning encryption off
+
+- **Signed marker.** `.claude-memory/encryption.json` records the repo ID, the key's fingerprint and whether new saves are encrypted, with an HMAC under a key derived from the repo key. Someone without the key can't write a valid one.
+- **Server-side record.** Each server remembers every repo it has seen encrypted (repo ID and key fingerprint, no expiry). A repo counts as encrypted if the marker says so, the record exists, or any memory file in it is encrypted. A missing, unsigned or changed marker keeps it encrypted, and health fails with `encrypted, but the encryption marker is missing or not signed`. A validly signed `enabled: false` marker found in the repo (an old one put back from history, or one written by `memcrypt decrypt`) doesn't turn off an enabled record either.
+- **Only Stop turns it off.** Stop on the key page, or registering the key after `memcrypt decrypt`, both need admin on the repo. Turning on and turning back on need admin too, so a co-writer can't rewrite a shared repo's history under a key only they hold through the memory tool. Registering and removing a key need write access and the key. Only the key that signed the current marker is accepted, so after a rotate the old key is refused.
+- **Fail closed on a planted marker.** If someone with write access replaces the marker with one for another key, saves stop (they queue as `key_required`) and the key page refuses the real key. Recovery is restoring the marker from git history.
+- **No auto-sealing.** A plaintext memory that appears after switch-on is marked "unencrypted, added outside the memory tool" in the index and in health, never encrypted by the server, so an encrypted file remains a sign that the memory tool wrote it.
+- **Bound ciphertext.** Each file is sealed with the repo ID and its path as additional data, so files can't be moved between memories or repos unnoticed.
+
+### Accepted limits
+
+- **Rollback and deletion aren't detected.** Encryption protects each file, not the repo. Someone with write access can delete memories or put back an older encrypted version of one. The provenance warning (§3) still flags commits made outside the server.
+- **A server without this feature can write plaintext.** A server running code from before encryption at rest ignores the marker. A server without `MEMORY_MASTER_KEY` refuses repos it recognizes as encrypted, but with the marker deleted it can't tell, so either can write plaintext memories into a new project folder (one with no encrypted files yet). An encrypted repo needs a memory server with encryption turned on; documented, not prevented.
+- **The in-place squash has no lease.** The server re-checks the branch right before the force push, but GitHub's API offers no compare-and-swap for it, so a push from outside the memory tool in that instant could be overwritten. Saves through the memory tool are held during switch-on. `memcrypt` uses `git push --force-with-lease`.
+- **The fresh-repo move through `memcrypt` doesn't hold saves.** The key page holds saves to the old repo until the rename; `memcrypt encrypt --to` can't, so the docs tell users not to save to that scope until they finish.
+- **Git access bypasses the key page's rules.** Anyone with push access can rewrite the repo with git directly (including running `memcrypt`). The admin rule limits what the memory tool does on someone's behalf; branch rules and write-access hygiene (§3) limit the rest.
+- **Local copies are trusted.** Transcripts and the outbox hold plaintext, as before. Only the session-start snapshot is reduced to names for encrypted scopes. `memcrypt` must not run through Claude, or the key lands in the transcript.
+- **Master key.** Losing or changing `MEMORY_MASTER_KEY` makes every registered repo key unreadable (owners register again; nothing in the repos is lost). Its holder, with access to `OAUTH_KV`, can unwrap every registered repo key.
+- **Supply chain of the local commands.** `memcrypt` uses `cryptography`, pinned with hashes in `kit/requirements-crypt.txt` and installed with `--require-hashes --only-binary :all:`. The Worker uses WebCrypto only.
 
 ---
 
