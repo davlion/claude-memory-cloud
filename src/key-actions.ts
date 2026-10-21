@@ -133,6 +133,10 @@ const confirm: KeyAction = async (_req, env, ring, s, form) => {
   const blocked = await busy(ring, repo);
   if (blocked) return blocked;
   if (sealing(st)) return message("Already encrypted", `${repo} is already encrypted.`, 409);
+  // A fresh copy would keep the repo's ID, and the old repo's "off" marker would then end the move before the rename.
+  if (path === "fresh" && (st.marker || st.rec)) {
+    return message(NOT_ON, "Turning encryption back on works in place only. Nothing was changed.", 400);
+  }
 
   const h = await sidHash(s.sid);
   let keyText: string;

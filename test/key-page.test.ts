@@ -498,7 +498,15 @@ describe("key page actions", () => {
     expect(res.status).toBe(200);
     expect(body).not.toMatch(KEY_RE);
     expect(body).toMatch(/existing key/i);
-    const wrong = await act("/keys/turn-on/confirm", { repo: REPO, key: generateKeyText(), confirm_repo: REPO, path: "in-place" });
+    // Only in place: a fresh copy would share the old repo's ID, and its "off" marker would end the move early.
+    expect(body).not.toContain('value="fresh"');
+    expect(body).toContain('value="in-place"');
+    const fresh = await act("/keys/turn-on/confirm", { repo: REPO, key: text, confirm_repo: REPO, path: "fresh", new_repo: `${REPO}-enc` });
+    expect(fresh.status).toBe(400);
+    expect(await fresh.text()).toMatch(/in place/i);
+    expect(writes(sent)).toEqual([]);
+    expect(await (await ring()).getMove(REPO)).toBeNull();
+    const wrong =await act("/keys/turn-on/confirm", { repo: REPO, key: generateKeyText(), confirm_repo: REPO, path: "in-place" });
     expect(await wrong.text()).toContain(`This isn&#39;t the key for ${REPO}.`);
     expect(writes(sent)).toEqual([]);
     const ok = await act("/keys/turn-on/confirm", { repo: REPO, key: text, confirm_repo: REPO, path: "in-place" });

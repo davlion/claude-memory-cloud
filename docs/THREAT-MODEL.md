@@ -353,7 +353,7 @@ Switch-on can't reach every copy:
 - **In-place squash:** the old commits stay readable through the repo's activity log by anyone with read access until GitHub Support purges them. The key page and `memcrypt` say so and give the request link. A repo that ever had a pull request can't be squashed (pull refs can't be deleted), nor one with other branches or tags.
 - **Fresh repo:** the old repo is deleted by the owner, and GitHub keeps it restorable by its owner for 90 days.
 - **Either way:** clones and forks made before switch-on, Claude Code transcripts and outbox entries, and Anthropic's conversation history keep what they had.
-- **After Stop, or `memcrypt decrypt`:** memories saved in plaintext stay in history even if encryption is turned back on, unless the fresh-repo or squash path is used again.
+- **After Stop, or `memcrypt decrypt`:** memories saved in plaintext stay in history even if encryption is turned back on, unless the history is squashed again: turning back on on the key page always encrypts in place, which squashes it.
 
 ### Controls against turning encryption off
 

@@ -137,7 +137,7 @@ Reported at session start, once per session, like other health problems:
 
 **Stopping** needs admin on the repo and the key. On the key page, paste the key and click **Stop encrypting new memories**. New memories are saved unencrypted from then on. Existing memories stay encrypted and still need the key to read; health shows `encryption off, N memories still encrypted`. To decrypt them, run `memcrypt decrypt`.
 
-**Turning back on** also needs admin. Click **Turn encryption back on**, paste the repo's existing key, and choose a path as when you first turned it on: memories saved while encryption was off are in the history in plaintext.
+**Turning back on** also needs admin. Click **Turn encryption back on**, paste the repo's existing key, and click **Encrypt in place**: memories saved while encryption was off are in the history in plaintext, so the history is squashed again. Moving to a fresh repo isn't offered when turning back on.
 
 The memory tool never turns encryption off because of what's in the repo. Only **Stop** on the key page turns it off, or an admin registering the key after `memcrypt decrypt`. Deleting or editing the encryption marker (`.claude-memory/encryption.json`) keeps the repo encrypted.
 

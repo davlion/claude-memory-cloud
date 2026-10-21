@@ -49,13 +49,15 @@ ${hidden("csrf", o.csrf)}${hidden("repo", o.repo)}${hidden("path", path)}
 <p><label>Type <strong>${r}</strong> to confirm <input name="confirm_repo" autocomplete="off" spellcheck="false" required></label></p>
 <button>${label}</button></form>`;
   const owner = esc(o.repo.split("/")[0]!);
-  return doc("Turn on encryption", `<h1>Turn on encryption for ${r}</h1>
-${intro}
-<section><h2>Move to a fresh repo (recommended)</h2>
+  // Turning back on is in place only: a fresh copy would share the old repo's ID (see confirm in key-actions.ts).
+  const fresh = o.key ? `<section><h2>Move to a fresh repo (recommended)</h2>
 <p>${esc(FRESH_WARNING)}</p>
 ${form("fresh", `<p><label>New empty private repo <input name="new_repo" autocomplete="off" spellcheck="false" placeholder="${owner}/…" required></label></p>`, "Encrypt into the new repo")}
 </section>
-<section><h2>Encrypt in place</h2>
+` : "";
+  return doc("Turn on encryption", `<h1>Turn on encryption for ${r}</h1>
+${intro}
+${fresh}<section><h2>Encrypt in place</h2>
 <p>${esc(IN_PLACE_WARNING)}</p>
 ${form("in-place", "", "Encrypt in place")}
 </section>`);
