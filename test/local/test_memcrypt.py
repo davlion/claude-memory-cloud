@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -310,6 +311,109 @@ class Memcrypt(unittest.TestCase):
                 mock.patch("getpass.getpass", return_value=KEY2), mock.patch("builtins.input", side_effect=KeyboardInterrupt):
             self.assertEqual(self.run_mc("rotate", self.origin, "--key-env", "MK", "--commit"), 130)
         self.assertIn("NOT applied", self.out)
+
+    # The outcome of a push that failed or was interrupted is read back from the remote, never assumed.
+    def push_hook(self, push=None, ls_remote=None):
+        """Patches Run.git: `push(real)` replaces each push; after a push started, `ls_remote(real)` replaces each ls-remote."""
+        real = self.mc.Run.git
+        started = []
+
+        def git(r, *args, **kw):
+            call = lambda: real(r, *args, **kw)  # noqa: E731
+            if args[0] == "push" and push:
+                started.append(True)
+                return push(call)
+            if args[0] == "ls-remote" and started and ls_remote:
+                return ls_remote(call)
+            return real(r, *args, **kw)
+        p = mock.patch.object(self.mc.Run, "git", git)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def run_generated(self, *argv):
+        """encrypt or rotate with KEY2 generated and pasted back from CK."""
+        with mock.patch.object(crypt, "generate_key_text", return_value=KEY2), mock.patch("getpass.getpass", return_value=""):
+            return self.run_mc(*argv, "--confirm-key-env", "CK", "--confirm", "acme/memory", env={"MK": KEY, "CK": KEY2})
+
+    def test_push_interrupted_after_it_went_through_says_applied(self):
+        self.encrypt()
+
+        def push(call):
+            call()
+            raise KeyboardInterrupt
+        self.push_hook(push)
+        self.assertEqual(self.run_generated("rotate", self.origin, "--key-env", "MK", "--commit"), 130)
+        self.assertIn("The new key WAS applied: keep it.", self.out)
+        self.assertNotIn("NOT applied", self.out)
+        self.assertIn("Register the new key", self.out)
+        self.assertTrue(crypt.marker_signed_by(crypt.parse_key_text(KEY2), crypt.parse_marker(self.show(self.origin, crypt.MARKER_PATH))))
+        self.assertEqual(self.out.count(KEY2), 1)
+
+    def test_push_error_after_it_went_through_says_applied_and_finishes(self):
+        def push(call):
+            call()
+            raise self.mc.Abort("git push failed: the remote end hung up unexpectedly")
+        self.push_hook(push)
+        self.assertEqual(self.run_generated("encrypt", self.origin, "--in-place"), 0, self.out)
+        self.assertIn("The new key WAS applied: keep it.", self.out)
+        self.assertIn("Done: acme/memory is encrypted.", self.out)
+        self.assertIn("Register the key", self.out)
+        self.assertNotIn("NOT applied", self.out)
+
+    def test_push_that_never_reached_the_remote_says_not_applied(self):
+        before = self.head(self.origin)
+
+        def push(call):
+            raise KeyboardInterrupt
+        self.push_hook(push)
+        self.assertEqual(self.run_generated("encrypt", self.origin, "--in-place"), 130)
+        self.assertIn("The new key shown above was NOT applied: acme/memory is unchanged. "
+                      "Discard the new key; run memcrypt again to get another.", self.out)
+        self.assertNotIn("still uses its current key", self.out)
+        self.assertEqual(self.head(self.origin), before)
+
+    def test_push_outcome_unknown_says_keep_the_key_until_checked(self):
+        self.encrypt()
+
+        def push(call):
+            raise self.mc.Abort("git push failed: Connection timed out")
+
+        def ls_remote(call):
+            raise self.mc.Abort("git ls-remote failed: Could not resolve host")
+        self.push_hook(push, ls_remote)
+        self.assertNotEqual(self.run_generated("rotate", self.origin, "--key-env", "MK", "--in-place"), 0)
+        kid = crypt.parse_key_text(KEY2).id
+        self.assertIn("The push may have gone through. Keep the new key until you've checked acme/memory on GitHub: "
+                      f"if its encryption marker names key {kid}, the new key is in use.", self.out)
+        self.assertNotIn("NOT applied", self.out)
+        self.assertEqual(self.out.count(KEY2), 1)
+
+    def test_fresh_copy_check_failing_after_the_push_keeps_its_message_and_the_key(self):
+        new = self.bare("acme/memory-new.git")
+
+        def push(call):
+            call()
+            self.seed(self.origin, {"memories/late.md": "---\nname: late\n---\nx\n"}, "late save")
+        self.push_hook(push)
+        self.assertNotEqual(self.run_generated("encrypt", self.origin, "--to", new), 0)
+        self.assertIn("acme/memory changed while its encrypted copy was being written", self.out)
+        self.assertIn("The new key WAS applied: keep it.", self.out)
+        self.assertNotIn("NOT applied", self.out)
+        self.assertNotIn("To finish", self.out)
+
+    def test_leftover_temp_clone_is_named(self):
+        real = shutil.rmtree
+        with mock.patch.object(self.mc.shutil, "rmtree", lambda *a, **kw: None):
+            out, err = io.StringIO(), io.StringIO()
+            os.environ["MK"] = KEY
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = self.mc.main(["encrypt", self.origin, "--in-place", "--key-env", "MK", "--confirm", "acme/memory"])
+        self.assertEqual(code, 0, out.getvalue() + err.getvalue())
+        left = os.listdir(self.scratch)
+        self.assertEqual(len(left), 1)
+        where = os.path.join(str(self.scratch), left[0])
+        self.assertIn(f"memcrypt: couldn't remove its temporary clone, {where}, which may hold your memories in plaintext. Delete it.", err.getvalue())
+        real(where)
 
     def test_decrypt_wrong_key_changes_nothing(self):
         self.encrypt()

@@ -44,6 +44,11 @@ _SET_RE = re.compile(r"(projects/[^/]+/)?(.*)\Z", re.S)
 
 NOT_APPLIED = ("The new key shown above was NOT applied: {repo} still uses its current key. "
                "Discard the new key; run memcrypt again to get another.")
+NOT_APPLIED_ENCRYPT = ("The new key shown above was NOT applied: {repo} is unchanged. "
+                       "Discard the new key; run memcrypt again to get another.")
+APPLIED = "The new key WAS applied: keep it."
+MAYBE_APPLIED = ("The push may have gone through. Keep the new key until you've checked {repo} on GitHub: "
+                 "if its encryption marker names key {key_id}, the new key is in use.")
 
 
 class Abort(Exception):
@@ -313,6 +318,40 @@ def _choose(a: argparse.Namespace, choices: List[str]) -> str:
     return ans
 
 
+def _pushed(r: Run, url: str, branch: str, sha: str, old: Optional[str]) -> Optional[bool]:
+    """Whether a push that failed or was interrupted reached the remote: True if the branch holds `sha` (or a descendant),
+    False if it is still `old` (None: absent) or doesn't contain `sha`, None if the remote can't be read."""
+    try:
+        out = r.out("ls-remote", url, f"refs/heads/{branch}", here=False)
+        now = out.split("\t")[0] if out else None
+        if now == sha:
+            return True
+        if now == old or now is None:
+            return False
+        # Moved elsewhere (someone pushed): only a branch that contains our commit uses the new key.
+        r.git("fetch", "--quiet", url, f"refs/heads/{branch}")
+        anc = subprocess.run(["git", "-C", r.dir, "merge-base", "--is-ancestor", sha, "FETCH_HEAD"], capture_output=True, env=r.env())
+        return {0: True, 1: False}.get(anc.returncode)
+    except (Abort, KeyboardInterrupt, EOFError, OSError):
+        return None
+
+
+def _remove(tmp: str) -> None:
+    """Removes the temporary clone (it can hold the old plaintext history); says so if any of it is left."""
+    shutil.rmtree(tmp, ignore_errors=True)
+    if os.path.exists(tmp):   # read-only files (Windows packs): make everything writable and try once more
+        for root, dirs, names in os.walk(tmp):
+            for n in dirs + names:
+                try:
+                    os.chmod(os.path.join(root, n), 0o700)
+                except OSError:
+                    pass
+        shutil.rmtree(tmp, ignore_errors=True)
+    if os.path.exists(tmp):
+        print(f"memcrypt: couldn't remove its temporary clone, {tmp}, which may hold your memories in plaintext. Delete it.",
+              file=sys.stderr)
+
+
 def _commit(r: Run, files, changes: Dict[str, str], message: str, parent: Optional[str]) -> str:
     r.git("read-tree", "HEAD")
     for path, text in changes.items():
@@ -380,31 +419,54 @@ def run(a: argparse.Namespace) -> int:
                 raise Abort(f"{redact_remote(a.to)} isn't empty. Create a new, empty private repo (no README) and try again. Nothing was changed.")
             # A plain git remote doesn't say whether it is private; the memory tool refuses a public one only after the rename.
             print(f"Make sure {redact_remote(a.to)} is a private repository.")
+        not_applied = (NOT_APPLIED_ENCRYPT if a.cmd == "encrypt" else NOT_APPLIED).format(repo=repo)
+        sha = ""
+        pushing = False
+        interrupted: Optional[KeyboardInterrupt] = None
         try:
             _confirm(r, repo, warning, new_key)
             sha = _commit(r, files, changes, message, head if path == "commit" else None)
+            pushing = True
             if path == "in-place":
                 r.git("push", "--quiet", f"--force-with-lease={branch}:{head}", "origin", f"{sha}:refs/heads/{branch}")
             elif path == "commit":
                 r.git("push", "--quiet", "origin", f"{sha}:refs/heads/{branch}")
             else:
                 r.git("push", "--quiet", a.to, f"{sha}:refs/heads/{branch}")
-                if r.out("ls-remote", "origin", f"refs/heads/{branch}").split("\t")[0] != head:
-                    raise Abort(f"{repo} changed while its encrypted copy was being written, so the copy misses those saves. "
-                                f"Delete and recreate {redact_remote(a.to)} as an empty private repo, then try again.")
-        except (KeyboardInterrupt, EOFError) as e:
-            if r.key_shown:
-                print(NOT_APPLIED.format(repo=repo), file=sys.stderr)
-            if isinstance(e, KeyboardInterrupt):
-                raise
-            raise Abort("No input. Nothing was changed.") from None
-        except Abort as e:
+        except (KeyboardInterrupt, EOFError, Abort) as e:
             if not r.key_shown:
+                if isinstance(e, EOFError):
+                    raise Abort("No input. Nothing was changed.") from None
                 raise
-            extra = ""
-            if "stale info" in str(e):
-                extra = f"\n{repo} changed while memcrypt was waiting (a memory was probably saved). Nothing was changed; run it again."
-            raise Abort(f"{e}{extra}\n{NOT_APPLIED.format(repo=repo)}") from None
+            # Before the push started nothing reached the remote; after, the remote says what it holds.
+            outcome = _pushed(r, a.to if path == "fresh" else a.remote, branch, sha, None if path == "fresh" else head) if pushing else False
+            if outcome is True:
+                print(APPLIED, file=sys.stderr)   # then on as if the push had succeeded
+                interrupted = e if isinstance(e, KeyboardInterrupt) else None
+            else:
+                text = "No input. Nothing was changed." if isinstance(e, EOFError) else str(e) if isinstance(e, Abort) else ""
+                if outcome is False and "stale info" in text:
+                    text += f"\n{repo} changed while memcrypt was waiting (a memory was probably saved). Nothing was changed; run it again."
+                tail = not_applied if outcome is False else MAYBE_APPLIED.format(
+                    repo=repo_name(a.to) if path == "fresh" else repo, key_id=crypt.parse_key_text(new_key or key_text).id)
+                if isinstance(e, KeyboardInterrupt):
+                    print(tail, file=sys.stderr)
+                    raise
+                raise Abort(f"{text}\n{tail}" if text else tail) from None
+        if path == "fresh":
+            # The copy is pushed: a problem from here on leaves the new key in use in the new repo.
+            applied = f"\n{APPLIED}" if r.key_shown else ""
+            try:
+                moved = r.out("ls-remote", "origin", f"refs/heads/{branch}").split("\t")[0] != head
+            except Abort as e:
+                raise Abort(f"{e}{applied}") from None
+            except KeyboardInterrupt:
+                if r.key_shown:
+                    print(APPLIED, file=sys.stderr)
+                raise
+            if moved:
+                raise Abort(f"{repo} changed while its encrypted copy was being written, so the copy misses those saves. "
+                            f"Delete and recreate {redact_remote(a.to)} as an empty private repo, then try again.{applied}")
         if a.cmd == "decrypt":
             print(f"Done: {repo} is decrypted.")
         elif a.cmd == "rotate":
@@ -424,9 +486,11 @@ def run(a: argparse.Namespace) -> int:
                   f"{': ' + page if page else ' on the key page.'}")
         if a.cmd == "rotate" and path != "fresh":
             print(f"Register the new key{': ' + page if page else ' on the key page.'}")
+        if interrupted:
+            raise interrupted
         return 0
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _remove(tmp)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
