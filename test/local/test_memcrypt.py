@@ -203,9 +203,8 @@ class Memcrypt(unittest.TestCase):
         code = self.run_mc("decrypt", self.origin, "--key-env", "MK", "--confirm", "acme/memory", "--server", "https://mem.example")
         self.assertEqual(code, 0, self.out)
         for p, t in SEED.items():
-            if p.endswith("MEMORY.md"):
-                continue
             self.assertEqual(self.show(self.origin, p), t)
+        self.assertIn("Done: acme/memory is decrypted.", self.out)
         key = crypt.parse_key_text(KEY)
         m = crypt.parse_marker(self.show(self.origin, crypt.MARKER_PATH))
         self.assertFalse(m.enabled)
@@ -214,6 +213,67 @@ class Memcrypt(unittest.TestCase):
         self.assertTrue(self.git("--git-dir", self.origin, "log", "-1", "--format=%B").startswith("encrypt: decrypt all\n"))
         self.assertIn("an admin of acme/memory registers this key once more on the key page (https://mem.example/keys?repo=acme/memory), or uses Stop there.", self.out)
         self.assert_key_hidden(KEY)
+
+    def test_decrypt_restores_index_descriptions(self):
+        self.seed(self.origin, {
+            "memories/gamma.md": "---\nname: gamma\ndescription: \"Café é — ünï\"\ntype: user\n---\nbody\n",
+            "MEMORY.md": "# Memory index — general\n\n- [alpha](memories/alpha.md) — SECRET-alpha-desc\n- [gamma](memories/gamma.md) — Café é — ünï\n"
+                         "- [ghost](memories/ghost.md)\n",
+        }, "more")
+        self.encrypt()
+        self.assertIn("- [gamma](memories/gamma.md)\n", self.show(self.origin, "MEMORY.md"))
+        self.assertEqual(self.run_mc("decrypt", self.origin, "--key-env", "MK", "--confirm", "acme/memory"), 0, self.out)
+        self.assertEqual(self.show(self.origin, "MEMORY.md"),
+                         "# Memory index — general\n\n- [alpha](memories/alpha.md) — SECRET-alpha-desc\n"
+                         "- [gamma](memories/gamma.md) — Café é — ünï\n- [ghost](memories/ghost.md)\n")
+        self.assertEqual(self.show(self.origin, "projects/billing/MEMORY.md"), SEED["projects/billing/MEMORY.md"])
+
+    def test_numbered_prompts_and_done_lines(self):
+        self.encrypt()
+        asked, pasted = [], []
+        with mock.patch.object(crypt, "generate_key_text", return_value=KEY2), \
+                mock.patch("getpass.getpass", side_effect=lambda p="": (pasted.append(p), KEY2)[1]), \
+                mock.patch("builtins.input", side_effect=lambda p="": (asked.append(p), "acme/memory")[1]):
+            code = self.run_mc("rotate", self.origin, "--key-env", "MK", "--commit")
+        self.assertEqual(code, 0, self.out)
+        self.assertEqual(pasted, ["Step 1 of 2 \u2014 paste the new key back to prove you saved it (input is hidden): "])
+        self.assertEqual(asked, ["Step 2 of 2 \u2014 type acme/memory to continue: "])
+        self.assertRegex(self.out, r"\n\n(?:.*\n)*\nDone: acme/memory is now encrypted under the new key\.")
+        asked.clear()
+        with mock.patch("builtins.input", side_effect=lambda p="": (asked.append(p), "acme/memory")[1]):
+            self.assertEqual(self.run_mc("rotate", self.origin, "--key-env", "MK", "--new-key-env", "NK", "--commit",
+                                         env={"MK": KEY2, "NK": KEY}), 0, self.out)
+        self.assertEqual(asked, ["Type acme/memory to continue: "])
+
+    def test_done_lines_encrypt(self):
+        self.assertEqual(self.run_mc("encrypt", self.origin, "--in-place", "--key-env", "MK", "--confirm", "acme/memory"), 0, self.out)
+        self.assertIn("Done: acme/memory is encrypted.", self.out)
+        other = self.bare("acme/other.git")
+        fresh = self.bare("acme/fresh.git")
+        self.seed(other, SEED)
+        self.assertEqual(self.run_mc("encrypt", other, "--to", fresh, "--key-env", "MK", "--confirm", "acme/other"), 0, self.out)
+        self.assertIn(f"Done: encrypted copy pushed to {fresh}.", self.out)
+
+    def test_failure_after_generated_key_says_not_applied(self):
+        self.encrypt()
+        real = self.mc._confirm
+
+        def racing(*a, **kw):
+            self.seed(self.origin, {"memories/late.md": "---\nname: late\n---\nx\n"}, "late save")
+            return real(*a, **kw)
+        with mock.patch.object(crypt, "generate_key_text", return_value=KEY2), mock.patch.object(self.mc, "_confirm", side_effect=racing):
+            code = self.run_mc("rotate", self.origin, "--key-env", "MK", "--confirm-key-env", "CK", "--in-place", "--confirm", "acme/memory",
+                               env={"MK": KEY, "CK": KEY2})
+        self.assertNotEqual(code, 0)
+        self.assertIn("The new key shown above was NOT applied: acme/memory still uses its current key. "
+                      "Discard the new key; run memcrypt again to get another.", self.out)
+        self.assertIn("acme/memory changed while memcrypt was waiting (a memory was probably saved). Nothing was changed; run it again.", self.out)
+
+    def test_failure_before_key_shown_has_no_not_applied(self):
+        with mock.patch("getpass.getpass", return_value=""):
+            code = self.run_mc("encrypt", self.origin, "--to", self.origin, "--confirm", "acme/memory", env={})
+        self.assertNotEqual(code, 0)
+        self.assertNotIn("NOT applied", self.out)
 
     def test_decrypt_wrong_key_changes_nothing(self):
         self.encrypt()

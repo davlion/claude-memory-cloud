@@ -176,7 +176,9 @@ memcrypt reads the key from one of:
 
 A generated key (from `encrypt`, or the new key of `rotate`) must be pasted back to prove you saved it; `--confirm-key-env <VAR>` reads that paste-back from an environment variable instead, for scripts.
 
-The key is never passed to git: not in arguments, not in git's environment, not in a file in the repo. memcrypt works in a temporary clone that it deletes afterwards, so no plaintext or key lingers on disk. A generated key is printed once, and you paste it back to prove you saved it.
+The key is never passed to git: not in arguments, not in git's environment, not in a file in the repo. memcrypt works in a temporary clone that it deletes afterwards, so no plaintext or key lingers on disk. A generated key is printed once, and you paste it back to prove you saved it. With a generated key there are two numbered prompts after the warning: `Step 1 of 2` (paste the new key back, hidden) and `Step 2 of 2` (type `<owner>/<repo>`); a successful run ends with a `Done:` line.
+
+If anything fails after a new key was printed, memcrypt says `The new key shown above was NOT applied: <owner>/<repo> still uses its current key.` Discard that key and run memcrypt again to get another (a `stale info` push failure means a memory was saved while memcrypt waited at its prompt).
 
 The `<remote-url>` below is the memory repo's clone URL, e.g. `git@github.com:<owner>/<repo>.git`. memcrypt pushes with your own git credentials, so you need push access (and, for an in-place path, a branch that allows force pushes). Add `--server <server>` to any command to get the key page link in its output.
 
@@ -201,7 +203,7 @@ With `--in-place`, memcrypt refuses if the repo has other branches, tags or pull
 ~/.venvs/memcrypt/bin/python kit/bin/memcrypt.py decrypt <remote-url>
 ```
 
-Writes every memory back in plaintext, in a normal commit, and marks encryption off. That plaintext stays in the repo's history from now on, even if you turn encryption on again later.
+Writes every memory back in plaintext, in a normal commit, and marks encryption off. That plaintext stays in the repo's history from now on, even if you turn encryption on again later. Each `MEMORY.md` index gets its descriptions back from the decrypted memories.
 
 The memory tool keeps encrypting new saves, and health shows `✗ … decrypted outside the memory tool`, until an admin of the repo clicks **Confirm decryption (turn encryption off)** on the key page and pastes the key (whether or not it's already registered), or uses **Stop** there. If someone who isn't an admin registers it, the page answers "Encryption stays on for `<owner>/<repo>`; an admin can turn it off with Stop."
 

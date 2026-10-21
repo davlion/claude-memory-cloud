@@ -74,6 +74,7 @@ class Run:
         self.secrets: List[str] = []
         self.names = {n for n in (a.key_env, getattr(a, "new_key_env", None), getattr(a, "confirm_key_env", None)) if n}
         self.dir = ""
+        self.key_shown = False
 
     def env(self) -> Dict[str, str]:
         return {k: v for k, v in os.environ.items() if k not in self.names and not any(s in v for s in self.secrets)}
@@ -126,14 +127,17 @@ def _ask(prompt: str) -> str:
 
 def _confirm(r: Run, repo: str, warning: str, new_key: Optional[str]) -> None:
     if new_key:
+        r.key_shown = True
         print(f"\nThe new key for {repo}. Save it in your password manager now; it isn't shown again.\n\n  {new_key}\n")
     print(warning + "\n")
     if new_key:
         env = r.a.confirm_key_env
-        back = os.environ.get(env, "") if env else getpass.getpass("Paste the key back: ")
+        back = (os.environ.get(env, "") if env else
+                getpass.getpass("Step 1 of 2 \u2014 paste the new key back to prove you saved it (input is hidden): "))
         if back.strip() != new_key:
             raise Abort("The pasted key doesn't match. Nothing was changed.")
-    typed = r.a.confirm if r.a.confirm is not None else _ask(f"Type {repo} to continue: ")
+    ask = f"Step 2 of 2 \u2014 type {repo} to continue: " if new_key else f"Type {repo} to continue: "
+    typed = r.a.confirm if r.a.confirm is not None else _ask(ask)
     if typed.strip().lower() != repo:
         raise Abort("The repo name didn't match. Nothing was changed.")
 
@@ -205,9 +209,50 @@ def _signed_marker(files, key: crypt.RepoKey, repo: str) -> crypt.Marker:
     return m
 
 
+_NAMES_LINE_RE = re.compile(r"^(- \[([^\]]+)\]\(memories/([^)]+)\.md\))[ \t]*$")
+_DESC_RE = re.compile(r"^description:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
+
+
+def _description(text: str) -> Optional[str]:
+    """The one-line `description:` of a memory's frontmatter, unquoted, or None."""
+    m = re.match(r"---\r?\n(.*?)\r?\n---", text, re.S)
+    d = _DESC_RE.search(m.group(1)) if m else None
+    if not d:
+        return None
+    v = d.group(1)
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        v = v[1:-1]
+    v = re.sub(r"\s+", " ", v.replace("```", " ")).strip()
+    v = re.sub(r"^#+\s*", "", v)
+    if len(v) > 200:
+        v = v[:199] + "\u2026"   # the Worker's MAX_DESCRIPTION
+    return v or None
+
+
+def _describe_index(files, changes: Dict[str, str], path: str, text: str) -> str:
+    """Give each names-only `- [name](memories/name.md)` line its ` — description`, as the Worker's buildIndex writes it."""
+    base = path[: -len("MEMORY.md")]
+    out = []
+    for line in text.split("\n"):
+        m = _NAMES_LINE_RE.match(line.rstrip("\r"))
+        if m:
+            mem = f"{base}memories/{m.group(3)}.md"
+            body = changes.get(mem) or (files[mem][1] if mem in files else None)
+            desc = _description(body) if body and not crypt.is_encrypted_file(body) else None
+            if desc:
+                line = f"{m.group(1)} \u2014 {desc}"
+        out.append(line)
+    return "\n".join(out)
+
+
 def plan_decrypt(files, key: crypt.RepoKey, repo: str) -> Dict[str, str]:
     m = _signed_marker(files, key, repo)
     changes = {p: _open(key, m.repo_id, p, t) for p, (_, t) in files.items() if _kind(p) == "memory" and crypt.is_encrypted_file(t)}
+    for p, (_, t) in files.items():
+        if _kind(p) == "index":
+            fixed = _describe_index(files, changes, p, t)
+            if fixed != t:
+                changes[p] = fixed
     changes[crypt.MARKER_PATH] = crypt.serialize_marker(crypt.sign_marker(key, crypt.Marker(False, m.repo_id, key.id)))
     return changes
 
@@ -323,17 +368,33 @@ def run(a: argparse.Namespace) -> int:
                 raise Abort(f"{redact_remote(a.to)} isn't empty. Create a new, empty private repo (no README) and try again. Nothing was changed.")
             # A plain git remote doesn't say whether it is private; the memory tool refuses a public one only after the rename.
             print(f"Make sure {redact_remote(a.to)} is a private repository.")
-        _confirm(r, repo, warning, new_key)
-        sha = _commit(r, files, changes, message, head if path == "commit" else None)
-        if path == "in-place":
-            r.git("push", "--quiet", f"--force-with-lease={branch}:{head}", "origin", f"{sha}:refs/heads/{branch}")
-        elif path == "commit":
-            r.git("push", "--quiet", "origin", f"{sha}:refs/heads/{branch}")
+        try:
+            _confirm(r, repo, warning, new_key)
+            sha = _commit(r, files, changes, message, head if path == "commit" else None)
+            if path == "in-place":
+                r.git("push", "--quiet", f"--force-with-lease={branch}:{head}", "origin", f"{sha}:refs/heads/{branch}")
+            elif path == "commit":
+                r.git("push", "--quiet", "origin", f"{sha}:refs/heads/{branch}")
+            else:
+                r.git("push", "--quiet", a.to, f"{sha}:refs/heads/{branch}")
+                if r.out("ls-remote", "origin", f"refs/heads/{branch}").split("\t")[0] != head:
+                    raise Abort(f"{repo} changed while its encrypted copy was being written, so the copy misses those saves. "
+                                f"Delete and recreate {redact_remote(a.to)} as an empty private repo, then try again.")
+        except Abort as e:
+            if not r.key_shown:
+                raise
+            extra = ""
+            if "stale info" in str(e):
+                extra = f"\n{repo} changed while memcrypt was waiting (a memory was probably saved). Nothing was changed; run it again."
+            raise Abort(f"{e}{extra}\nThe new key shown above was NOT applied: {repo} still uses its current key. "
+                        "Discard the new key; run memcrypt again to get another.") from None
+        if a.cmd == "decrypt":
+            print(f"Done: {repo} is decrypted.")
+        elif a.cmd == "rotate":
+            print(f"Done: {repo} is now encrypted under the new key." if path != "fresh"
+                  else f"Done: copy encrypted under the new key pushed to {redact_remote(a.to)}.")
         else:
-            r.git("push", "--quiet", a.to, f"{sha}:refs/heads/{branch}")
-            if r.out("ls-remote", "origin", f"refs/heads/{branch}").split("\t")[0] != head:
-                raise Abort(f"{repo} changed while its encrypted copy was being written, so the copy misses those saves. "
-                            f"Delete and recreate {redact_remote(a.to)} as an empty private repo, then try again.")
+            print(f"Done: {repo} is encrypted." if path != "fresh" else f"Done: encrypted copy pushed to {redact_remote(a.to)}.")
         page = _key_page(a, repo)
         if a.cmd == "decrypt":
             print("Encryption is off in the repo. To let the memory tool see it, an admin of "
