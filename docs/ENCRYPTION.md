@@ -223,7 +223,7 @@ Then register the new key on the key page. The old key is refused from now on. U
 
 The marker, `.claude-memory/encryption.json` at the repo root, records that the repo is encrypted, signed with a key derived from the repo key. The memory tool also remembers on its own which repos are encrypted.
 
-- **Deleted, or edited without the key:** the repo stays encrypted. Saves stay encrypted, and health shows `✗ encryption:<scope> — encrypted, but the encryption marker is missing or not signed` (or, for an unsigned marker that says off and can't be checked without the key, `… the encryption marker says off and can't be checked without the key`), with a link to the repo's recent commits. Someone may have tried to turn encryption off.
+- **Deleted, or edited without the key:** the repo stays encrypted. Saves stay encrypted, and health shows `✗ encryption:<scope> — encrypted, but the encryption marker is missing or not signed` (or, for a marker that says off and can't be checked without the key, `… the encryption marker says off and can't be checked without the key`), with a link to the repo's recent commits. Someone may have tried to turn encryption off.
 - **Replaced with a marker for another key** (by someone with write access): saves stop rather than risk the wrong key, and the key page refuses your key for that repo. A marker that differs only in its key looks like a rotate to the memory tool, so health shows the ⚠ "the key was changed (memcrypt rotate?)" line rather than ✗: if nobody ran `memcrypt rotate`, treat it as this case.
 
 To recover, review the recent commits and put the last good marker back from the repo's history, for example in a clone:
