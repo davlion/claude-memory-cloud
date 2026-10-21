@@ -57,11 +57,11 @@ class Vectors(unittest.TestCase):
 
     def test_marker(self):
         key = crypt.parse_key_text(VECTORS[0]["key_text"])
-        m = crypt.sign_marker(key, crypt.Marker(True, "repo0", key.id))
+        m = crypt.sign_marker(key, crypt.Marker(True, VECTORS[0]["aad"].split("\n")[1], key.id))
         self.assertEqual(m.mac, VECTORS[0]["mac"])
         self.assertTrue(crypt.marker_signed_by(key, m))
         text = crypt.serialize_marker(m)
-        self.assertEqual(text, json.dumps({"format": 1, "enabled": True, "repo_id": "repo0", "key_id": key.id, "mac": m.mac}, indent=2) + "\n")
+        self.assertEqual(text, json.dumps({"format": 1, "enabled": True, "repo_id": m.repo_id, "key_id": key.id, "mac": m.mac}, indent=2) + "\n")
         self.assertEqual(crypt.parse_marker(text), m)
         self.assertFalse(crypt.marker_signed_by(key, crypt.Marker(False, m.repo_id, m.key_id, m.mac)))
         self.assertFalse(crypt.marker_signed_by(key, crypt.Marker(True, m.repo_id, m.key_id, "")))
@@ -72,6 +72,18 @@ class Vectors(unittest.TestCase):
             with self.assertRaises(ValueError):
                 crypt.parse_marker(bad)
         self.assertEqual(crypt.MARKER_PATH, ".claude-memory/encryption.json")
+
+    def test_marker_fixed_formats(self):
+        ok = {"format": 1, "enabled": True, "repo_id": "Ab-_" * 5 + "x9", "key_id": "0123456789abcdef", "mac": "a" * 64}
+        self.assertEqual(crypt.parse_marker(json.dumps(ok)), crypt.Marker(True, "Ab-_" * 5 + "x9", "0123456789abcdef", "a" * 64))
+        # The Worker can't tell 1.0 from 1 once parsed, so neither does memcrypt; a boolean isn't a format.
+        self.assertTrue(crypt.parse_marker(json.dumps({**ok, "format": 1.0})).enabled)
+        for over in [{"format": True}, {"repo_id": "repo0"}, {"repo_id": "A" * 21}, {"repo_id": "A" * 23}, {"repo_id": "A" * 21 + "\n"},
+                     {"repo_id": "A" * 21 + "="}, {"key_id": "0123456789ABCDEF"}, {"key_id": "0123456789abcde"},
+                     {"key_id": "0123456789abcdef\n"}, {"key_id": "0123456789abcdeg"}, {"mac": "A" * 64}, {"mac": "a" * 63},
+                     {"mac": "a" * 65}, {"mac": "a" * 64 + "\n"}, {"mac": ""}]:
+            with self.assertRaises(ValueError, msg=over):
+                crypt.parse_marker(json.dumps({**ok, **over}))
 
     def test_memory_file(self):
         key = crypt.parse_key_text(VECTORS[1]["key_text"])

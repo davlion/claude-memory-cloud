@@ -7,11 +7,17 @@ export interface Marker { enabled: boolean; repoId: string; keyId: string; mac: 
 
 const invalidMarker = () => new OpError("internal", "The repo's encryption marker is invalid.", "Restore .claude-memory/encryption.json in the memory repo.");
 
+/** The fixed formats: a repo ID is base64url of 16 bytes, a key ID 8 bytes and a MAC 32 bytes of lower-case hex (none can hold a newline). */
+const REPO_ID_RE = /^[A-Za-z0-9_-]{22}$/;
+const KEY_ID_RE = /^[0-9a-f]{16}$/;
+const MAC_RE = /^[0-9a-f]{64}$/;
+
 export function parseMarker(text: string): Marker {
   let j: Record<string, unknown>;
   try { j = JSON.parse(text) as Record<string, unknown>; } catch { throw invalidMarker(); }
   if (!j || typeof j !== "object" || j.format !== 1 || typeof j.enabled !== "boolean"
-    || typeof j.repo_id !== "string" || typeof j.key_id !== "string" || typeof j.mac !== "string") throw invalidMarker();
+    || typeof j.repo_id !== "string" || typeof j.key_id !== "string" || typeof j.mac !== "string"
+    || !REPO_ID_RE.test(j.repo_id) || !KEY_ID_RE.test(j.key_id) || !MAC_RE.test(j.mac)) throw invalidMarker();
   return { enabled: j.enabled, repoId: j.repo_id, keyId: j.key_id, mac: j.mac };
 }
 

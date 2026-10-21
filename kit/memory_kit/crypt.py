@@ -106,13 +106,18 @@ def _message(m: Marker) -> str:
     return f"claude-memory-marker-v1\n1\n{'true' if m.enabled else 'false'}\n{m.repo_id}\n{m.key_id}"
 
 
+# The fixed formats: a repo ID is base64url of 16 bytes, a key ID 8 bytes and a MAC 32 bytes of lower-case hex (none can hold a newline).
+_MARKER_FIELDS = {"repo_id": re.compile(r"[A-Za-z0-9_-]{22}"), "key_id": re.compile(r"[0-9a-f]{16}"), "mac": re.compile(r"[0-9a-f]{64}")}
+
+
 def parse_marker(text: str) -> Marker:
     try:
         j = json.loads(text)
     except ValueError:
         j = None
-    ok = (isinstance(j, dict) and type(j.get("format")) is int and j["format"] == 1 and isinstance(j.get("enabled"), bool)
-          and all(isinstance(j.get(k), str) for k in ("repo_id", "key_id", "mac")))
+    # 1.0 counts as 1, as it does for the Worker (JSON.parse can't tell them apart); a boolean doesn't.
+    ok = (isinstance(j, dict) and type(j.get("format")) in (int, float) and j["format"] == 1 and isinstance(j.get("enabled"), bool)
+          and all(isinstance(j.get(k), str) and r.fullmatch(j[k]) for k, r in _MARKER_FIELDS.items()))
     if not ok:
         raise ValueError("The repo's encryption marker is invalid.")
     return Marker(j["enabled"], j["repo_id"], j["key_id"], j["mac"])
