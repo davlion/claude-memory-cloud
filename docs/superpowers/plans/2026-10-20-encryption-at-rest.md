@@ -548,9 +548,32 @@
 
 Run by the user with the implementer, against staging and throwaway test repos.
 
-- [ ] **Step 1:** Set the staging master key, add the callback URL to the staging GitHub App, run `npm run deploy:staging`.
-- [ ] **Step 2: Fresh-repo path.** Turn on encryption for a test repo. Saves wait (queued) until the delete and rename; afterwards health shows `✓ encryption:… — encrypted` and save, read and search work in claude.ai and Claude Code.
-- [ ] **Step 3: In-place path** on a second test repo. Confirm one commit and names-only `MEMORY.md` on github.com, and that the activity log shows the force push (it matches the warning).
-- [ ] **Step 4: Tamper.** Delete the marker on github.com. Health shows the ✗ line, and a save stays encrypted.
-- [ ] **Step 5: Key lifecycle.** Remove the key: a save in Claude Code queues with `key_required`. Register it again: the next session flushes. `memcrypt rotate`, then register the new key. `memcrypt decrypt`, then register. Health is clean after each.
-- [ ] **Step 6:** Record the results under a "Staging results" heading in this plan and commit.
+- [x] **Step 1:** Set the staging master key, add the callback URL to the staging GitHub App, run `npm run deploy:staging`.
+- [x] **Step 2: Fresh-repo path.** Turn on encryption for a test repo. Saves wait (queued) until the delete and rename; afterwards health shows `✓ encryption:… — encrypted` and save, read and search work in claude.ai and Claude Code.
+- [x] **Step 3: In-place path** on a second test repo. Confirm one commit and names-only `MEMORY.md` on github.com, and that the activity log shows the force push (it matches the warning).
+- [x] **Step 4: Tamper.** Delete the marker on github.com. Health shows the ✗ line, and a save stays encrypted.
+- [x] **Step 5: Key lifecycle.** Remove the key: a save in Claude Code queues with `key_required`. Register it again: the next session flushes. `memcrypt rotate`, then register the new key. `memcrypt decrypt`, then register. Health is clean after each.
+- [x] **Step 6:** Record the results under a "Staging results" heading in this plan and commit.
+
+## Staging results
+
+Run 2026-10-21 on `claude-memory-staging` (0.1.5) with `davlion/throwaway_1` (personal; in place) and `davlion-test-client/throwaway_2` (org; fresh repo `claude-memory-enc`), seeded with 4 general + 2 project memories (one non-ASCII, one ~8 KB). Checks via the staging connector from Claude Code and on github.com.
+
+| Step | Result |
+|---|---|
+| 1 Setup | ✓ after two fixes found here: **S1** `Referrer-Policy: no-referrer` made browsers send `Origin: null`, so every key-page POST was refused (`53ee1ee`, now `same-origin`); **S2** `/pulls` needs a permission the app doesn't have, so in-place switch-on failed with "Resource not accessible by integration" (`0c3f081`, pull refs via `git/matching-refs/pull/`). Also a bad first master key (clipboard), caught by the key page's misconfiguration message |
+| 2 Fresh repo | ✓ one-commit sealed copy; a save during the move refused `unavailable` with the finish/cancel link, nothing written to the old repo; after delete + rename health ✓, retried save sealed, read exact, search finds body text |
+| 3 In place | ✓ one root commit, all files sealed, names-only `MEMORY.md` (root and project), force push in the activity log, health ✓, read/search/save work |
+| 4 Tamper | ✓ marker deleted → ✗ marker line; save still sealed with the same key; marker restored from history → ✓ |
+| 5 Key lifecycle | ✓ remove → index locked, read/save `key_required`; register → saves work. `memcrypt rotate --in-place`: a save landing while memcrypt waited at its prompt made the force-with-lease push fail ("stale info"), nothing lost; rerun → one commit under the new key, health ⚠ rotated, old key refused, new key accepted. `memcrypt decrypt` → plaintext, record stays on (✗) until an admin registers; registered → encryption off, plaintext save, index rebuilt |
+| Not tested | outbox flush after `key_required`: the outbox replays through the production connector, so staging saves weren't queued |
+
+Follow-ups found in the run:
+- **F1** during a move, the old repo's plaintext memories are labelled "unencrypted, added outside the memory tool", with an extra ⚠ health line; suppress both while moving.
+- **F2** memcrypt: the hidden "Paste the key back:" prompt is easy to miss under the long warning; mark the steps and end with a clear "Done" line.
+- **F3** memcrypt: the new key is shown before the push; when the push fails, say the new key was NOT applied and to discard it.
+- **F4** after a rotate, health shows two ⚠ lines for one cause, and `key_required` says "isn't registered" when an old key is; merge into one "the key was changed" message.
+- **F5** after `memcrypt decrypt`, the ✗ line says "missing or not signed" for a signed `enabled: false` marker, and the ⚠ line calls the memories "added outside the memory tool"; give this state its own wording. `MEMORY.md` stays names-only until the next save rebuilds it.
+- **F6 (bug)** after `memcrypt decrypt` with the key still registered, the key page offers only **Remove key**, so the documented "register the key" step is impossible; offer admins "Confirm decryption (turn encryption off)".
+- **W1** the key page shows no progress while switch-on runs; show an "Encrypting…" state with progress.
+- **W2** the Worker's `/` is a bare 404, so the Cloudflare dashboard's Visit link dead-ends; serve a landing page linking to `/keys`.
