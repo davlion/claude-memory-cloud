@@ -6,7 +6,7 @@ import { GitHub, toOpError } from "./github";
 import { scopeReachabilityDetailed } from "./health";
 import type { KeyAction, KeySession } from "./key-page";
 import { adminOnly, freshDone, inPlaceDone, message, page, turnOnPage } from "./key-page-html";
-import type { EncryptedRepoRecord, KeyRing } from "./keyring";
+import { KV, type EncryptedRepoRecord, type KeyRing } from "./keyring";
 import { REPO_RE } from "./scopes";
 import { GitHubStore } from "./store";
 import { switchOnFresh, switchOnInPlace, trailers } from "./switch-on";
@@ -41,7 +41,7 @@ const fail = (title: string, e: unknown, prefix = "") => {
 };
 const notTheKey = (title: string, repo: string) => message(title, `This isn't the key for ${repo}.`, 400);
 
-interface Target { repo: string; store: GitHubStore }
+interface Target { repo: string; store: GitHubStore; admin: boolean }
 interface RepoState { marker: Marker | null; rec: EncryptedRepoRecord | null; base: string | null }
 
 /** The form's repo, if it is one of the user's memory repos and they can write to it (and, for `change`, are its admin). */
@@ -55,18 +55,23 @@ async function target(env: Env, s: KeySession, form: FormData, change: boolean):
   if (r.reason === "error") return message("Couldn't check access", `${r.error!.message}${r.error!.action ? ` ${r.error!.action}` : ""}`, 503);
   if (!r.reachable || !r.writable) return message("Not allowed", `The memory tool can't write to ${repo}.`, 403);
   if (change && !mayChangeEncryption({ push: r.writable, admin: r.admin })) return message("Not allowed", adminOnly(repo), 403);
-  return { repo, store: new GitHubStore(gh, env.CACHE_KV) };
+  return { repo, store: new GitHubStore(gh, env.CACHE_KV), admin: mayChangeEncryption({ push: r.writable, admin: r.admin }) };
 }
 
 async function readState(t: Target, ring: KeyRing): Promise<RepoState> {
   const snap = await t.store.snapshot(t.repo, "");
-  return { marker: snap.marker === null ? null : parseMarker(snap.marker), rec: await ring.getRecord(t.repo), base: snap.commitSha };
+  let marker: Marker | null = null;
+  try { marker = snap.marker === null ? null : parseMarker(snap.marker); } catch { /* unparseable: the record decides */ }
+  return { marker, rec: await ring.getRecord(t.repo), base: snap.commitSha };
 }
 
-/** The pasted key matches when it signed the marker (then the marker's key ID counts), else the record's key ID. */
+/** With a marker, only the key that signed it matches (an old key after a rotate doesn't); without one, the record's key ID. */
 async function matches(key: RepoKey, st: RepoState): Promise<{ ok: boolean; verified: boolean }> {
-  const verified = Boolean(st.marker && await markerSignedBy(key, st.marker));
-  return { ok: (verified ? st.marker!.keyId : st.rec?.keyId) === key.id, verified };
+  if (st.marker) {
+    const verified = await markerSignedBy(key, st.marker) && st.marker.keyId === key.id;
+    return { ok: verified, verified };
+  }
+  return { ok: st.rec?.keyId === key.id, verified: false };
 }
 
 /** New saves are being sealed: the marker says so, or (with no marker) the record does. */
@@ -165,7 +170,16 @@ const confirm: KeyAction = async (_req, env, ring, s, form) => {
     if (pushed && path === "in-place") {
       return fail("Encryption is on, but didn't finish", e, `${repo} IS encrypted now, but this memory tool couldn't store its key: register the key on this page. `);
     }
-    if (pushed) return fail(NOT_ON, e, `The encrypted copy was written to ${newRepo}, but the switch didn't finish. `);
+    if (pushed) {
+      // Undo the move flag and record, so saves to the old repo aren't held for a move that won't finish.
+      let undone = true;
+      try {
+        await ring.clearMove(repo);
+        if (st.rec) await ring.putRecord(repo, st.rec); else await env.OAUTH_KV.delete(KV.record + repo.toLowerCase());
+      } catch { undone = false; }
+      const now = undone ? `${repo} is unchanged and saves to it continue.` : `Saves to ${repo} may wait until the key page is used again.`;
+      return fail(NOT_ON, e, `The encrypted copy was written to ${newRepo}, but the switch didn't finish. ${now} Delete ${newRepo} and recreate it as an empty private repo before trying again. `);
+    }
     return fail(NOT_ON, e);
   }
 };
@@ -177,11 +191,16 @@ const register: KeyAction = async (_req, env, ring, s, form) => {
   const k = await withKey(form, p.st, p.repo, title);
   if (k instanceof Response) return k;
   const m = p.st.marker;
-  // The marker this key signed is current (after memcrypt decrypt or rotate): the record follows it. Only here may it turn off.
-  if (k.verified && m && (!p.st.rec || p.st.rec.repoId !== m.repoId || p.st.rec.keyId !== m.keyId || p.st.rec.enabled !== m.enabled)) {
-    await ring.putRecord(p.repo, { repoId: m.repoId, keyId: m.keyId, enabled: m.enabled });
+  const rec = p.st.rec;
+  // The marker this key signed is current (after memcrypt decrypt or rotate): the record follows it.
+  // Only an admin may turn the record off this way; write users keep it on.
+  const keptOn = Boolean(k.verified && m && rec?.enabled && !m.enabled && !p.admin);
+  if (k.verified && m) {
+    const want = { repoId: m.repoId, keyId: m.keyId, enabled: m.enabled || keptOn };
+    if (!rec || rec.repoId !== want.repoId || rec.keyId !== want.keyId || rec.enabled !== want.enabled) await ring.putRecord(p.repo, want);
   }
   const { expiresAt } = await ring.put(p.repo, k.text, s.login, Date.now());
+  if (keptOn) return message("Key registered", `Key registered. Encryption stays on for ${p.repo}; an admin can turn it off with Stop.`, 200);
   const until = expiresAt === null ? "" : ` until ${new Date(expiresAt).toISOString().slice(0, 16).replace("T", " ")} UTC`;
   return message("Key registered", `The key for ${p.repo} is registered${until}. The memory tool can read and save its memories.`, 200);
 };

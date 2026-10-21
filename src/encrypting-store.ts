@@ -71,7 +71,9 @@ export class EncryptingStore implements Store {
       }
     }
 
-    const key = !ring ? "unsupported" : !k ? "missing" : !ids?.repoId || k.key.id !== ids.keyId ? "mismatch" : "ok";
+    // A marker the registered key didn't sign, naming another key (rotated elsewhere), means the registered key is stale.
+    const stale = Boolean(m && k && !verified && m.keyId !== k.key.id);
+    const key = !ring ? "unsupported" : !k ? "missing" : stale || !ids?.repoId || k.key.id !== ids.keyId ? "mismatch" : "ok";
     const status: EncryptionStatus = {
       encrypted: enabled || sealed.length > 0, enabled, key, markerProblem: move ? false : problem, sealed: sealed.length, outside: 0,
       ...(move ? { moving: move.to } : {}),

@@ -220,6 +220,17 @@ describe("EncryptingStore", () => {
     expect((await readMemories(store, T, ["a"]))[0]).toMatchObject({ content: mem("a", "first thing", "quiet harbor\n") });
   });
 
+  it("after a rotate, the old registered key with a marker signed by the new key → mismatch, nothing sealed with the old key", async () => {
+    await encrypted(); // registered OLD key, record OLD keyId
+    const next = await parseKeyText(OTHER_TEXT);
+    inner.put(REPO, MARKER_PATH, await marker(true, REPO_ID, next));
+    const before = inner.commits.length;
+    expect((await store.snapshot(REPO, "")).encryption).toMatchObject({ encrypted: true, enabled: true, key: "mismatch" });
+    await expect(save(store, "b")).rejects.toMatchObject({ code: "key_required" });
+    expect(inner.commits.length).toBe(before);
+    expect(files().has("memories/b.md")).toBe(false);
+  });
+
   it("mismatched key is treated as missing", async () => {
     await encrypted();
     await save(store, "a");
