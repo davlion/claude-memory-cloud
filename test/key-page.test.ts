@@ -81,6 +81,7 @@ function repoRoutes(repos: Fake[]) {
         { method: "GET", url: `${B}/branches`, respond: () => json([{ name: "main" }]) },
         { method: "GET", url: `${B}/tags`, respond: () => json([]) },
         { method: "GET", url: `${B}/git/matching-refs/pull/`, respond: () => json([]) },
+        { method: "GET", url: `${B}/git/matching-refs/`, respond: () => json([]) },
         { method: "GET", url: `${B}/git/blobs/`, respond: (req: Request) => json({ content: btoa(texts[req.url.split("/").pop()!] ?? "x"), encoding: "base64" }) },
         { method: "POST", url: `${B}/git/blobs`, respond: () => json({ sha: "copied" }, 201) },
         { method: "POST", url: `${B}/git/trees`, respond: () => json({ sha: "t-new" }) },

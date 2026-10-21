@@ -406,8 +406,9 @@ describe("GitHubStore switch-on helpers", () => {
       { method: "GET", url: `${R}/git/matching-refs/pull/`, respond: () => json([
         { ref: "refs/pull/1/head" }, { ref: "refs/pull/1/merge" }, { ref: "refs/pull/2/head" },
       ]) },
+      { method: "GET", url: `${R}/git/matching-refs/`, respond: () => json([]) },
     ]);
-    expect(await new GitHubStore(new GitHub("t")).extraRefs("dav/mem")).toEqual({ branches: 1, tags: 2, pulls: 2 });
+    expect(await new GitHubStore(new GitHub("t")).extraRefs("dav/mem")).toEqual({ branches: 1, tags: 2, pulls: 2, others: 0 });
     // Pull refs come from the git refs API (Contents permission); /pulls would need the Pull requests permission the app doesn't have.
     expect(calls.some((c) => new URL(c.url).pathname.endsWith("/pulls"))).toBe(false);
   });
@@ -418,8 +419,9 @@ describe("GitHubStore switch-on helpers", () => {
       { method: "GET", url: `${R}/branches`, respond: () => json([]) },
       { method: "GET", url: `${R}/tags`, respond: () => json([]) },
       { method: "GET", url: `${R}/git/matching-refs/pull/`, respond: () => json({ message: "Git Repository is empty." }, 409) },
+      { method: "GET", url: `${R}/git/matching-refs/`, respond: () => json({ message: "Git Repository is empty." }, 409) },
     ]);
-    expect(await new GitHubStore(new GitHub("t")).extraRefs("dav/mem")).toEqual({ branches: 0, tags: 0, pulls: 0 });
+    expect(await new GitHubStore(new GitHub("t")).extraRefs("dav/mem")).toEqual({ branches: 0, tags: 0, pulls: 0, others: 0 });
   });
 
   it("extraRefs: none", async () => {
@@ -428,8 +430,24 @@ describe("GitHubStore switch-on helpers", () => {
       { method: "GET", url: `${R}/branches`, respond: () => json([{ name: "main" }]) },
       { method: "GET", url: `${R}/tags`, respond: () => json([]) },
       { method: "GET", url: `${R}/git/matching-refs/pull/`, respond: () => json([]) },
+      { method: "GET", url: `${R}/git/matching-refs/`, respond: () => json([{ ref: "refs/heads/main" }]) },
     ]);
-    expect(await new GitHubStore(new GitHub("t")).extraRefs("dav/mem")).toEqual({ branches: 0, tags: 0, pulls: 0 });
+    expect(await new GitHubStore(new GitHub("t")).extraRefs("dav/mem")).toEqual({ branches: 0, tags: 0, pulls: 0, others: 0 });
+  });
+
+  it("extraRefs counts refs other than branches, tags and pulls (notes, replace, stash…) from the whole refs list", async () => {
+    mockFetch([
+      { method: "GET", url: R, respond: () => json(META) },
+      { method: "GET", url: `${R}/branches`, respond: () => json([{ name: "main" }]) },
+      { method: "GET", url: `${R}/tags`, respond: () => json([]) },
+      { method: "GET", url: `${R}/git/matching-refs/pull/`, respond: () => json([]) },
+      { method: "GET", url: `${R}/git/matching-refs/`, respond: (req: Request) => {
+        expect(new URL(req.url).pathname).toBe("/repos/dav/mem/git/matching-refs/");
+        return json([{ ref: "refs/heads/main" }, { ref: "refs/heads/x" }, { ref: "refs/tags/v1" }, { ref: "refs/pull/3/head" },
+          { ref: "refs/notes/commits" }, { ref: "refs/replace/0123" }, { ref: "refs/stash" }]);
+      } },
+    ]);
+    expect(await new GitHubStore(new GitHub("t")).extraRefs("dav/mem")).toMatchObject({ others: 3 });
   });
 
   const historyRoutes = (refNow: string, patch: () => Response = () => json({ object: { sha: "c2" } })) => [

@@ -327,22 +327,26 @@ export class GitHubStore implements Store {
   }
 
   /**
-   * Other branches, tags and pull requests (any state): each keeps old commits reachable. Branch and tag counts are of the
-   * first page, so they are lower bounds. Pull requests are counted from their refs/pull/<n>/… refs, which the git refs
-   * API lists under the Contents permission (/pulls would need the Pull requests permission the app doesn't ask for).
+   * Other branches, tags, pull requests (any state) and any other refs (notes, replace, stash…): each keeps old commits
+   * reachable. Branch and tag counts are of the first page, so they are lower bounds. Pull requests and other refs come from
+   * the git refs API, under the Contents permission (/pulls would need the Pull requests permission the app doesn't ask for);
+   * an empty prefix lists every ref.
    */
-  async extraRefs(repo: string): Promise<{ branches: number; tags: number; pulls: number }> {
+  async extraRefs(repo: string): Promise<{ branches: number; tags: number; pulls: number; others: number }> {
     const { branch } = await this.repoMeta(repo);
-    const [branches, tags, pullRefs] = await Promise.all([
+    const refs = (prefix: string) => this.gh.request<{ ref: string }[]>("GET", `/repos/${repo}/git/matching-refs/${prefix}`).catch((e: unknown) => {
+      if (e instanceof GitHubError && e.status === 409) return []; // an empty repo has no refs at all
+      throw e;
+    });
+    const [branches, tags, pullRefs, all] = await Promise.all([
       this.gh.request<{ name: string }[]>("GET", `/repos/${repo}/branches?per_page=100`),
       this.gh.request<unknown[]>("GET", `/repos/${repo}/tags?per_page=100`),
-      this.gh.request<{ ref: string }[]>("GET", `/repos/${repo}/git/matching-refs/pull/`).catch((e: unknown) => {
-        if (e instanceof GitHubError && e.status === 409) return []; // an empty repo has no refs at all
-        throw e;
-      }),
+      refs("pull/"),
+      refs(""),
     ]);
     const pulls = new Set(pullRefs.map((r) => r.ref.split("/")[2])).size;
-    return { branches: branches.filter((b) => b.name !== branch).length, tags: tags.length, pulls };
+    const others = all.filter((r) => !/^refs\/(heads|tags|pull)\//.test(r.ref)).length;
+    return { branches: branches.filter((b) => b.name !== branch).length, tags: tags.length, pulls, others };
   }
 
   private async rootCommit(repo: string, files: TreeWrite[], message: string): Promise<{ sha: string; html_url: string }> {

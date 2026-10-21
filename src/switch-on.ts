@@ -62,14 +62,16 @@ export async function switchOnInPlace(store: GitHubStore, keys: KeyRing, cache: 
     progress?.(`Read ${repo}: ${n}`);
     if (!tree.isPrivate) throw new OpError("repo_public", `${repo} is not private, so encryption wasn't turned on.`, "Make the repo private, then try again.");
     const extra = await store.extraRefs(repo);
-    if (extra.branches || extra.tags || extra.pulls) {
+    if (extra.branches || extra.tags || extra.pulls || extra.others) {
       const what = [
         extra.branches ? plural(extra.branches, "other branch", "other branches") : "",
         extra.tags ? plural(extra.tags, "tag", "tags") : "",
         extra.pulls ? plural(extra.pulls, "pull request", "pull requests") : "",
+        extra.others ? plural(extra.others, "other ref", "other refs") : "",
       ].filter(Boolean).join(", ");
       throw new OpError("invalid", `${repo} has ${what}, which would keep the old plaintext reachable. Nothing was changed.`,
-        extra.pulls ? "Pull requests can't be deleted: move to a fresh repo instead." : "Delete the other branches and tags, then try again, or move to a fresh repo instead.");
+        extra.pulls ? "Pull requests can't be deleted: move to a fresh repo instead."
+          : `Delete the other branches${extra.others ? ", tags and refs" : " and tags"}, then try again, or move to a fresh repo instead.`);
     }
     const plan = await planEncryptedTree(tree.files, key, existingMarker(tree.files), await keys.getRecord(repo));
     progress?.(`Encrypted ${n}`);

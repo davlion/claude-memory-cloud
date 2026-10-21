@@ -73,7 +73,7 @@ The repo's history is replaced by a single commit that holds every memory encryp
 
 The key page refuses the squash, and changes nothing, when:
 - the repo isn't private;
-- it has other branches or tags (delete them first, or use the fresh-repo path);
+- it has other branches, tags or other refs such as `refs/notes/*` (delete them first, or use the fresh-repo path);
 - it has ever had a pull request. Pull requests can't be deleted and keep the old commits reachable, so use the fresh-repo path;
 - a rule blocks force pushes on the branch (branch protection or a ruleset). Lift the rule while encryption is turned on, or use the fresh-repo path.
 
@@ -195,7 +195,7 @@ The same two paths as the key page, with the same warning and confirmation (typi
 
 **With `--to`, saves aren't held.** memcrypt can't hold the memory tool's saves while you finish the move. **Don't save memories to that scope until you've deleted the old repo, renamed the new one, and registered the key:** a save to the old repo would be lost when you delete it. (The key page's fresh-repo path holds saves for you.)
 
-With `--in-place`, memcrypt refuses if the repo has other branches, tags or pull requests (pull requests can't be deleted: use `--to` instead), and its force push fails if the branch changed in the meantime.
+With `--in-place`, memcrypt refuses if the repo has other branches, tags, pull requests or other refs (pull requests can't be deleted: use `--to` instead), and its force push fails if the branch changed in the meantime.
 
 ### decrypt
 

@@ -23,7 +23,7 @@ const uniq = (base: string) => `dav/${base}-${Date.now()}-${seq++}`;
 
 interface FakeRepo {
   name: string; head: string | null; tree: Entry[]; texts: Record<string, string | undefined>;
-  meta: Record<string, unknown>; branches: string[]; tags: string[]; pulls: number;
+  meta: Record<string, unknown>; branches: string[]; tags: string[]; pulls: number; others?: string[];
   /** Returns the ref for the n-th GET (0-based); defaults to `head`. */
   refAt?: (n: number) => string | null;
   patch?: () => Response;
@@ -68,6 +68,7 @@ function routes(repos: FakeRepo[]) {
       { method: "GET", url: `${B}/branches`, respond: () => json(r.branches.map((name) => ({ name }))) },
       { method: "GET", url: `${B}/tags`, respond: () => json(r.tags.map((name) => ({ name }))) },
       { method: "GET", url: `${B}/git/matching-refs/pull/`, respond: () => json(Array.from({ length: r.pulls }, (_, i) => ({ ref: `refs/pull/${i + 1}/head` }))) },
+      { method: "GET", url: `${B}/git/matching-refs/`, respond: () => json([{ ref: "refs/heads/main" }, ...(r.others ?? []).map((ref) => ({ ref }))]) },
       { method: "GET", url: `${B}/git/blobs/`, respond: (req: Request) => {
         const sha = req.url.split("/").pop()!;
         return json({ sha, content: btoa(texts[sha] ?? "x"), encoding: "base64" });
@@ -211,6 +212,8 @@ describe("switchOnInPlace", () => {
     [{ branches: ["main", "feat"] }, /1 other branch/, /delete/i],
     [{ tags: ["v1", "v2"] }, /2 tags/, /delete/i],
     [{ pulls: 1 }, /1 pull request/, /fresh/i],
+    [{ others: ["refs/notes/commits"] }, /1 other ref,/, /delete/i],
+    [{ others: ["refs/notes/commits", "refs/replace/ab"] }, /2 other refs/, /delete/i],
   ])("extra refs %o → invalid before any write", async (over, msg, action) => {
     const r = fakeRepo(uniq("mem"), over as Partial<FakeRepo>);
     const { calls } = mockFetch(routes([r]));
