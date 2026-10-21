@@ -275,6 +275,33 @@ describe("switchOnInPlace", () => {
     expect((await keys.getRecord(r.name))!.enabled).toBe(true);
   });
 
+  it("an unparseable marker counts as absent: plaintext memories get sealed under a new repo ID", async () => {
+    const r = fakeRepo(uniq("mem"));
+    r.tree.push({ path: MARKER_PATH, type: "blob", sha: oid(21), mode: "100644" });
+    r.texts[oid(21)] = "not json";
+    const { calls } = mockFetch(routes([r]));
+    const keyText = generateKeyText();
+    const key = await parseKeyText(keyText);
+    await switchOnInPlace(store(), await ring(), env.CACHE_KV, r.name, keyText, "dav");
+    const tree = await body(calls, "POST", "/git/trees") as unknown as TreeBody;
+    const marker = parseMarker(tree.tree.find((t) => t.path === MARKER_PATH)!.content!);
+    expect(await markerSignedBy(key, marker)).toBe(true);
+    expect(marker.repoId).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  });
+
+  it("an unparseable marker with sealed files → invalid, no writes", async () => {
+    const keyText = generateKeyText();
+    const key = await parseKeyText(keyText);
+    const r = fakeRepo(uniq("mem"));
+    r.tree.push({ path: "memories/b.md", type: "blob", sha: oid(20), mode: "100644" }, { path: MARKER_PATH, type: "blob", sha: oid(21), mode: "100644" });
+    Object.assign(r.texts, { [oid(20)]: await sealMemoryFile(key, "old-id", "memories/b.md", MEM_A.replace("name: a", "name: b")), [oid(21)]: "not json" });
+    const { calls } = mockFetch(routes([r]));
+    const keys = await ring();
+    await expect(switchOnInPlace(store(), keys, env.CACHE_KV, r.name, keyText, "dav")).rejects.toMatchObject({ code: "invalid" });
+    expect(writes(calls, r.name)).toHaveLength(0);
+    expect(await keys.isSwitching(r.name)).toBe(false);
+  });
+
   it("re-enable: keeps the repo ID and the files already sealed with the key", async () => {
     const keyText = generateKeyText();
     const key = await parseKeyText(keyText);
@@ -302,7 +329,7 @@ describe("switchOnFresh", () => {
     const n = fakeRepo(uniq("new"), { head: "x1" });
     const { calls } = mockFetch(routes([r, n]));
     const keys = await ring();
-    await expect(switchOnFresh(store(), keys, r.name, n.name, generateKeyText(), "dav")).rejects.toMatchObject({ code: "invalid" });
+    await expect(switchOnFresh(store(), keys, env.CACHE_KV, r.name, n.name, generateKeyText(), "dav")).rejects.toMatchObject({ code: "invalid" });
     expect([...writes(calls, r.name), ...writes(calls, n.name)]).toHaveLength(0);
     expect(await keys.getMove(r.name)).toBeNull();
     expect(await keys.isSwitching(r.name)).toBe(false);
@@ -315,14 +342,14 @@ describe("switchOnFresh", () => {
     const r = fakeRepo(uniq("mem"));
     const n = fakeRepo(uniq("new"), { head: null, meta });
     const { calls } = mockFetch(routes([r, n]));
-    await expect(switchOnFresh(store(), await ring(), r.name, n.name, generateKeyText(), "dav")).rejects.toMatchObject({ code });
+    await expect(switchOnFresh(store(), await ring(), env.CACHE_KV, r.name, n.name, generateKeyText(), "dav")).rejects.toMatchObject({ code });
     expect([...writes(calls, r.name), ...writes(calls, n.name)]).toHaveLength(0);
   });
 
   it("the same repo as target → invalid", async () => {
     const r = fakeRepo(uniq("mem"));
     mockFetch(routes([r]));
-    await expect(switchOnFresh(store(), await ring(), r.name, r.name.toUpperCase(), generateKeyText(), "dav")).rejects.toMatchObject({ code: "invalid" });
+    await expect(switchOnFresh(store(), await ring(), env.CACHE_KV, r.name, r.name.toUpperCase(), generateKeyText(), "dav")).rejects.toMatchObject({ code: "invalid" });
   });
 
   it("writes one root commit to the new repo, sets the move, record and key under the old name, leaves the old repo untouched", async () => {
@@ -332,7 +359,7 @@ describe("switchOnFresh", () => {
     const key: RepoKey = await parseKeyText(keyText);
     const { calls } = mockFetch(routes([r, n]));
     const keys = await ring();
-    const res = await switchOnFresh(store(), keys, r.name, n.name, keyText, "dav");
+    const res = await switchOnFresh(store(), keys, env.CACHE_KV, r.name, n.name, keyText, "dav");
     expect(res).toEqual({ url: `https://github.com/${n.name}/commit/c-new` });
 
     expect(writes(calls, r.name)).toHaveLength(0);
@@ -352,6 +379,35 @@ describe("switchOnFresh", () => {
     expect(await keys.getRecord(r.name)).toEqual({ repoId: marker.repoId, keyId: key.id, enabled: true });
     expect((await (await ring()).get(r.name))!.key.id).toBe(key.id);
     expect(await keys.get(n.name)).toBeNull();
+    expect(await keys.isSwitching(r.name)).toBe(false);
+  });
+
+  it("deletes the old repo's snapshot cache keys after success, and only those", async () => {
+    const r = fakeRepo(uniq("mem"));
+    const n = fakeRepo(uniq("new"), { head: null });
+    const mine = [`snap:v3:${r.name}:c1:`, `snap:v3:${r.name}:c0:projects/billing/`];
+    const other = `snap:v3:${r.name}x:c1:`;
+    for (const k of [...mine, other]) await env.CACHE_KV.put(k, "{}");
+    mockFetch(routes([r, n]));
+    await switchOnFresh(store(), await ring(), env.CACHE_KV, r.name, n.name, generateKeyText(), "dav");
+    for (const k of mine) expect(await env.CACHE_KV.get(k)).toBeNull();
+    expect(await env.CACHE_KV.get(other)).toBe("{}");
+  });
+
+  it("the old repo moved while the copy was written → unavailable; no move, record or key", async () => {
+    const r = fakeRepo(uniq("mem"), { refAt: (i) => (i === 0 ? "c1" : "c9") });
+    const n = fakeRepo(uniq("new"), { head: null });
+    const { calls } = mockFetch(routes([r, n]));
+    const keys = await ring();
+    await expect(switchOnFresh(store(), keys, env.CACHE_KV, r.name, n.name, generateKeyText(), "dav")).rejects.toMatchObject({
+      code: "unavailable",
+      message: "The memory repo changed while its encrypted copy was being written; nothing was switched.",
+      action: `Delete and recreate ${n.name} as an empty private repo, then try again.`,
+    });
+    expect(writes(calls, r.name)).toHaveLength(0);
+    expect(await keys.getMove(r.name)).toBeNull();
+    expect(await keys.getRecord(r.name)).toBeNull();
+    expect(await keys.get(r.name)).toBeNull();
     expect(await keys.isSwitching(r.name)).toBe(false);
   });
 });

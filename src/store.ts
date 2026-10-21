@@ -291,6 +291,12 @@ export class GitHubStore implements Store {
     })) };
   }
 
+  /** The branch head right now (not memoized); null for an empty repo. */
+  async currentHead(repo: string): Promise<string | null> {
+    this.heads.delete(repo);
+    return this.headSha(repo, (await this.repoMeta(repo)).branch);
+  }
+
   /** Other branches, tags and pull requests (any state): each keeps old commits reachable. Counts are of the first page, so they are lower bounds. */
   async extraRefs(repo: string): Promise<{ branches: number; tags: number; pulls: number }> {
     const { branch } = await this.repoMeta(repo);
