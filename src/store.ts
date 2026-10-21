@@ -26,6 +26,8 @@ export interface EncryptionStatus {
   decrypted?: boolean;
   /** The marker parses and says `enabled: false` but no registered key can verify it (key missing or stale), so it can't be told from a forgery. */
   markerOff?: boolean;
+  /** Only from `status`: a record exists, but the repo has no marker and this set no encrypted file (a record learned from files since removed?); an admin may forget it on the key page. */
+  recordOnly?: boolean;
 }
 export interface HeadCommit { sha: string; message: string; author: string; date: string; url: string }
 export interface Snapshot {

@@ -12,7 +12,7 @@ Encryption is optional and set per memory repo. Once it's on, each memory's desc
 
 - **A password manager** (1Password or similar). This is a precondition, not a suggestion. The key is shown once, and **without it your memories can't be read by anyone, including you.** Sharing the key through the password manager's sharing is how several people get access to one repo.
 - **A memory tool with encryption turned on.** Open `<server>/keys`. If it says "Encryption isn't turned on for this memory server", ask the memory server's operator to turn it on ([QUICKSTART.md](QUICKSTART.md), "Turning on encryption at rest").
-- **Admin access to the memory repo** to turn encryption on, turn it back on, stop it, confirm a decryption, or register a changed key (after `memcrypt rotate`). Registering and removing the repo's current key need write access plus the key. For a client repo, the client's admin turns encryption on. `memory_scopes` shows `admin: true` for each memory repo where you have it.
+- **Admin access to the memory repo** to turn encryption on, turn it back on, stop it, confirm a decryption, register a changed key (after `memcrypt rotate`), or forget encryption for a repo that holds nothing encrypted. Registering and removing the repo's current key need write access plus the key. For a client repo, the client's admin turns encryption on. `memory_scopes` shows `admin: true` for each memory repo where you have it.
 - **The local kit at version 0.1.5 or later** on each machine where you use Claude Code (rerun `./setup.sh`; see "When do I need to rerun setup?" in the [FAQ](FAQ.md)). Older kits keep descriptions in the local snapshot, and may report a save that waits for a key as "not saved" instead of queuing it.
 
 ---
@@ -239,6 +239,8 @@ git commit -m "Restore the encryption marker" && git push
 If a rule (branch protection or a ruleset) blocks direct pushes to the branch, push to a new branch and open a pull request instead.
 
 Then check that health is clean, and look at who could write to the repo.
+
+**Treated as encrypted, but nothing in it is.** Someone with write access can make the memory tool treat a repo that was never encrypted as encrypted, by committing an encryption marker or a file that looks encrypted. The memory tool remembers that even after the files are removed, and saves then wait for a key nobody has. Remove the planted files first; once the repo holds no encryption marker and no encrypted memory file, an admin of the repo clicks **Forget encryption for this repo** on the key page, which answers "`<owner>/<repo>` isn't treated as encrypted any more." The key page refuses while anything encrypted or marked is left, and says what.
 
 ---
 

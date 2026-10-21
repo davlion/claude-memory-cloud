@@ -30,7 +30,7 @@ export function saveBlocked(repo: string, s: EncryptionStatus | undefined, keysU
 }
 
 /** A repo's encryption state for one snapshot; `key`/`repoId` are set only when sealed files can be opened and new ones sealed. */
-interface State { status: EncryptionStatus; key: RepoKey | null; repoId: string | null }
+interface State { status: EncryptionStatus; key: RepoKey | null; repoId: string | null; recordOnly: boolean }
 
 const sameIds = (a: { enabled: boolean; repoId: string; keyId: string }, b: { enabled: boolean; repoId: string; keyId: string }) =>
   a.enabled === b.enabled && a.repoId === b.repoId && a.keyId === b.keyId;
@@ -114,7 +114,8 @@ export class EncryptingStore implements Store {
       ...(move ? { moving: move.to } : {}), ...(moveStale ? { moveStale } : {}), ...(rotated && !move ? { rotated } : {}),
       ...(decrypted && !move ? { decrypted } : {}), ...(markerOff && !move ? { markerOff } : {}),
     };
-    return { status, key: key === "ok" ? k!.key : null, repoId: key === "ok" ? ids!.repoId : null };
+    const recordOnly = Boolean(rec) && raw.marker === null && sealed.length === 0 && !move;
+    return { status, key: key === "ok" ? k!.key : null, repoId: key === "ok" ? ids!.repoId : null, recordOnly };
   }
 
   async snapshot(repo: string, prefix: string): Promise<Snapshot> {
@@ -149,7 +150,7 @@ export class EncryptingStore implements Store {
     if (!st) return null;
     const s = st.status;
     const outside = s.enabled && !s.moving ? [...raw.files.values()].filter((f) => !f.unreadable && !isEncryptedFile(f.content)).length : 0;
-    return { ...st.status, outside };
+    return { ...st.status, outside, ...(st.recordOnly ? { recordOnly: true } : {}) };
   }
 
   async commit(repo: string, prefix: string, base: string | null, changes: Change[], message: string): Promise<CommitResult> {

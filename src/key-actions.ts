@@ -1,5 +1,5 @@
 import { generateKeyText, parseKeyText, toB64Url, type RepoKey } from "./crypto";
-import { MARKER_PATH, markerSignedBy, parseMarker, serializeMarker, signMarker, type Marker } from "./encrypted-files";
+import { isEncryptedFile, MARKER_PATH, markerSignedBy, parseMarker, serializeMarker, signMarker, type Marker } from "./encrypted-files";
 import type { Env } from "./env";
 import type { ErrorCode } from "./errors";
 import { GitHub, toOpError } from "./github";
@@ -7,8 +7,9 @@ import { scopeReachabilityDetailed } from "./health";
 import type { KeyAction, KeySession } from "./key-page";
 import { adminOnly, errorBody, freshDoneBody, inPlaceDoneBody, message, page, stepItem, turningOnEnd, turningOnHead, turnOnPage } from "./key-page-html";
 import type { EncryptedRepoRecord, KeyRing } from "./keyring";
+import { parseMemoryPath } from "./memory";
 import { REPO_RE } from "./scopes";
-import { clearSnapshots, GitHubStore } from "./store";
+import { clearSnapshots, GitHubStore, splitSet } from "./store";
 import { checkFreshTarget, switchOnFresh, switchOnInPlace, trailers, type Progress } from "./switch-on";
 
 const PENDING_TTL = 900;
@@ -335,7 +336,38 @@ const cancelMove: KeyAction = async (_req, env, ring, s, form) => {
   return message("Move cancelled", `The move of ${t.repo} to ${move.to} is cancelled, and saves to ${t.repo} go through again as before. You can delete ${move.to}. To encrypt, start again from the key page with a new, empty private repo.`, 200);
 };
 
+/**
+ * Drops a record the memory tool learned from repo content (a planted marker or encrypted-looking file, since removed), so
+ * the repo is no longer treated as encrypted. Only while nothing in the whole repo is encrypted or marked; any marker file
+ * counts, even one that doesn't parse, since the next read would learn the record again from it.
+ */
+const forget: KeyAction = async (_req, env, ring, s, form) => {
+  const title = "Encryption wasn't forgotten";
+  const t = await target(env, s, form, true);
+  if (t instanceof Response) return t;
+  if (await ring.isSwitching(t.repo)) return message("Busy", `Encryption is being turned on for ${t.repo}. Finish or wait for that first.`, 409);
+  if (!(await ring.getRecord(t.repo))) return message(title, `${t.repo} isn't treated as encrypted.`, 409);
+  let files;
+  try { files = (await t.store.readTree(t.repo)).files; } catch (e) { return fail(title, e); }
+  const memory = files.filter((f) => parseMemoryPath(splitSet(f.path).rel) !== null);
+  const sealed = memory.filter((f) => f.text !== null && isEncryptedFile(f.text)).map((f) => f.path);
+  const unreadable = memory.filter((f) => f.text === null).map((f) => f.path);
+  const still = [
+    files.some((f) => f.path === MARKER_PATH) ? `an encryption marker (${MARKER_PATH})` : "",
+    sealed.length ? `${sealed.length} encrypted memory ${sealed.length === 1 ? "file" : "files"} (${sealed.join(", ")})` : "",
+    unreadable.length ? `${unreadable.length} memory ${unreadable.length === 1 ? "file" : "files"} that couldn't be read (${unreadable.join(", ")})` : "",
+  ].filter(Boolean);
+  if (still.length) {
+    return message(title, `${t.repo} still has ${still.join(" and ")}, so it stays encrypted. Nothing was changed.`, 409);
+  }
+  await ring.deleteRecord(t.repo);
+  await ring.remove(t.repo);
+  await ring.clearMove(t.repo);
+  try { await clearSnapshots(env.CACHE_KV, t.repo); } catch { /* they expire by TTL */ }
+  return message("Encryption forgotten", `${t.repo} isn't treated as encrypted any more.`, 200);
+};
+
 /** POST /keys/<name> handlers; key-page.ts runs them only after the Origin, session and csrf checks. */
 export const actions: Record<string, KeyAction> = {
-  "turn-on": turnOn, "turn-on/confirm": confirm, register, remove, stop, "cancel-move": cancelMove, "confirm-decryption": confirmDecryption,
+  "turn-on": turnOn, "turn-on/confirm": confirm, register, remove, stop, "cancel-move": cancelMove, "confirm-decryption": confirmDecryption, forget,
 };

@@ -870,7 +870,7 @@ describe("key page actions", () => {
   it("a repo not in SCOPES → 403 on every action", async () => {
     const { calls, sent } = github({ admin: true }, [fake(REPO)]);
     await signIn();
-    for (const path of ["turn-on", "turn-on/confirm", "register", "remove", "stop", "cancel-move", "confirm-decryption"]) {
+    for (const path of ["turn-on", "turn-on/confirm", "register", "remove", "stop", "cancel-move", "confirm-decryption", "forget"]) {
       const res = await act(`/keys/${path}`, { repo: "someone/else", key: generateKeyText(), confirm_repo: "someone/else", path: "in-place" });
       expect(res.status, path).toBe(403);
     }
@@ -890,6 +890,86 @@ describe("key page actions", () => {
     expect((await act("/keys/register", { repo: REPO, key: text })).status).toBe(200);
     expect((await act("/keys/remove", { repo: REPO, key: text })).status).toBe(200);
     expect(writes(sent)).toEqual([]);
+  });
+
+  /** A record the memory tool learned from files a write user planted (and has since removed): no marker, nothing sealed. */
+  const learned = async () => {
+    const rec = { repoId: "", keyId: "0123456789abcdef", enabled: true };
+    await (await ring()).putRecord(REPO, rec);
+    return rec;
+  };
+  const SEALED = "---\nencrypted: claude-memory-v1\nname: b\nkey_id: 0123456789abcdef\n---\nAAAA\n";
+  const FORGET = "Forget encryption for this repo";
+
+  it("forget: an admin drops a record when nothing in the repo is encrypted or marked", async () => {
+    await learned();
+    const r = await ring();
+    await r.put(REPO, generateKeyText(), "dav", Date.now());
+    github({ admin: true }, [fake(REPO)]);
+    await signIn();
+    const page = await (await go(`/keys?repo=${encodeURIComponent(REPO)}`)).text();
+    expect(page).toMatch(new RegExp(`action="/keys/forget"[\\s\\S]*${FORGET}`));
+    // The form shows only when nothing is moving (cancel the move there instead), but forgetting also drops a move flag.
+    await r.setMove(REPO, { to: NEW, repoId: "x", head: null, prevRecord: null });
+    await env.CACHE_KV.put(`snap:v3:${REPO}:c1:`, "{}");
+    const res = await act("/keys/forget", { repo: REPO });
+    const text = await res.text();
+    expect(res.status, text).toBe(200);
+    expect(text).toContain(`${REPO} isn&#39;t treated as encrypted any more.`);
+    expect(await r.getRecord(REPO)).toBeNull();
+    expect(await (await ring()).get(REPO)).toBeNull();
+    expect(await r.getMove(REPO)).toBeNull();
+    expect(await env.CACHE_KV.get(`snap:v3:${REPO}:c1:`)).toBeNull();
+    const after = await (await go(`/keys?repo=${encodeURIComponent(REPO)}`)).text();
+    expect(after).toContain("Not encrypted.");
+    expect(after).not.toContain(FORGET);
+  });
+
+  it("forget: refused while any memory file in the repo is encrypted, in any set", async () => {
+    const rec = await learned();
+    const repo = fake(REPO);
+    repo.tree.push({ path: "projects/x/memories/b.md", type: "blob", sha: oid(9), mode: "100644" });
+    repo.texts[oid(9)] = SEALED;
+    const { sent } = github({ admin: true }, [repo]);
+    await signIn();
+    const res = await act("/keys/forget", { repo: REPO });
+    const text = await res.text();
+    expect(res.status, text).toBe(409);
+    expect(text).toContain(`${REPO} still has 1 encrypted memory file (projects/x/memories/b.md)`);
+    expect(await (await ring()).getRecord(REPO)).toEqual(rec);
+    expect(writes(sent)).toEqual([]);
+  });
+
+  it("forget: refused while the repo has an encryption marker, signed or not", async () => {
+    const rec = await learned();
+    const unsigned = JSON.stringify({ format: 1, enabled: true, repo_id: "A".repeat(22), key_id: "0123456789abcdef", mac: "0".repeat(64) });
+    for (const marker of [unsigned, "not json"]) {
+      github({ admin: true }, [fake(REPO, { marker })]);
+      if (!jar.has("__Host-keys")) await signIn();
+      const page = await (await go(`/keys?repo=${encodeURIComponent(REPO)}`)).text();
+      expect(page).not.toContain(FORGET);
+      const res = await act("/keys/forget", { repo: REPO });
+      const text = await res.text();
+      expect(res.status, text).toBe(409);
+      expect(text).toContain(`${REPO} still has an encryption marker (.claude-memory/encryption.json)`);
+      expect(await (await ring()).getRecord(REPO)).toEqual(rec);
+    }
+  });
+
+  it("forget: admin only, and only for a repo the memory tool treats as encrypted", async () => {
+    const rec = await learned();
+    github({ push: true, admin: false }, [fake(REPO)]);
+    await signIn();
+    const page = await (await go(`/keys?repo=${encodeURIComponent(REPO)}`)).text();
+    expect(page).not.toContain(FORGET);
+    const res = await act("/keys/forget", { repo: REPO });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain(esc(ADMIN_ONLY));
+    expect(await (await ring()).getRecord(REPO)).toEqual(rec);
+    await (await ring()).deleteRecord(REPO);
+    github({ admin: true }, [fake(REPO)]);
+    const none = await act("/keys/forget", { repo: REPO });
+    expect(none.status).toBe(409);
   });
 
   /** A fresh move in progress for REPO: key registered, record for the new repo, move flag naming the previous record. */

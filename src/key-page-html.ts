@@ -147,6 +147,10 @@ ${hidden("csrf", csrf)}${hidden("repo", v.repo)}${withKey ? keyInput : ""}<butto
   if ((st.decrypted || st.markerOff) && v.admin) out.push(form("confirm-decryption", "Confirm decryption (turn encryption off)", true));
   out.push(change(st.moving ? form("cancel-move", "Cancel the move")
     : st.enabled ? form("stop", "Stop encrypting new memories", true) : form("turn-on", "Turn encryption back on")));
+  // Nothing in the repo is encrypted or marked: the record may have been learned from files a write user planted.
+  if (st.recordOnly && v.admin) {
+    out.push(`<p>Nothing in this repo is encrypted or marked as encrypted. If it shouldn't be treated as encrypted, an admin can forget its encryption.</p>\n${form("forget", "Forget encryption for this repo")}`);
+  }
   return out.join("\n");
 }
 
