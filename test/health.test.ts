@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { GitHub } from "../src/github";
-import { formatHealth, isServerCommit, provenanceChecks, runHealth, scopeReachability } from "../src/health";
+import { encryptionChecks, formatHealth, isServerCommit, provenanceChecks, runHealth, scopeReachability } from "../src/health";
 import type { Check } from "../src/health";
+import type { Target } from "../src/scopes";
+import type { EncryptionStatus } from "../src/store";
 import { json, mockFetch } from "./setup";
 
 const cfg = { general: "dav/claude-memory", acme: "acme-org/claude-memory" };
@@ -220,5 +222,54 @@ describe("provenance", () => {
     expect(out).not.toContain("curl");
     expect(out).not.toContain("garbage");
     expect(out).not.toContain("evil.example");
+  });
+});
+
+describe("encryptionChecks", () => {
+  const t: Target = { scopeLabel: "general", displayLabel: "general", repo: "dav/mem", prefix: "" };
+  const URL = "https://memory.test/keys";
+  const KEY_PAGE = `${URL}?repo=dav/mem`;
+  const st = (o: Partial<EncryptionStatus> = {}): EncryptionStatus =>
+    ({ encrypted: true, enabled: true, key: "ok", markerProblem: false, sealed: 2, outside: 0, ...o });
+  const run = (o?: Partial<EncryptionStatus>) => encryptionChecks(t, "dav/mem", st(o), URL);
+  const REGISTER = `Register the key from your password manager: ${KEY_PAGE}. Saves are queued until then.`;
+
+  it("healthy: one ok line", () => {
+    expect(run()).toEqual([{ check: "encryption:general", status: "ok", detail: "encrypted" }]);
+  });
+  it("marker problem: fail, saves stay encrypted", () => {
+    expect(run({ markerProblem: true })).toEqual([{ check: "encryption:general", status: "fail",
+      detail: "encrypted, but the encryption marker is missing or not signed",
+      action: "Someone may have tried to turn encryption off. Saves stay encrypted. Review recent commits: https://github.com/dav/mem/commits" }]);
+  });
+  it("unsupported key ring: fail", () => {
+    expect(run({ key: "unsupported" })).toEqual([{ check: "encryption:general", status: "fail",
+      detail: "encrypted repo, but this memory server doesn't support encryption", action: "Ask the memory server's operator to turn on encryption." }]);
+  });
+  it("key missing and mismatch: warn with the key page link", () => {
+    expect(run({ key: "missing" })).toEqual([{ check: "encryption:general", status: "warn", detail: "encrypted, key not registered", action: REGISTER }]);
+    expect(run({ key: "mismatch" })).toEqual([{ check: "encryption:general", status: "warn",
+      detail: "encrypted, the registered key doesn't match (rotated?)", action: REGISTER }]);
+  });
+  it("outside files: warn", () => {
+    expect(run({ outside: 3 })).toEqual([{ check: "encryption:general", status: "warn",
+      detail: "encrypted, 3 memories unencrypted, added outside the memory tool", action: "Review them; saving one through Claude encrypts it." }]);
+  });
+  it("encryption off with sealed files left: warn", () => {
+    expect(run({ enabled: false, sealed: 4 })).toEqual([{ check: "encryption:general", status: "warn",
+      detail: "encryption off, 4 memories still encrypted",
+      action: `Turn it back on at ${KEY_PAGE}, or decrypt the repo with memcrypt (docs/ENCRYPTION.md).` }]);
+  });
+  it("several lines can apply at once", () => {
+    const cs = run({ markerProblem: true, key: "missing", outside: 1 });
+    expect(cs.map((c) => c.status)).toEqual(["fail", "warn", "warn"]);
+  });
+  it("moving: takes the place of the marker problem and is never ok", () => {
+    expect(run({ moving: "dav/mem2", markerProblem: true })).toEqual([{ check: "encryption:general", status: "warn",
+      detail: "encrypted copy written to dav/mem2; finish the move",
+      action: `Delete dav/mem, then rename dav/mem2 to dav/mem. Saves wait until then. ${KEY_PAGE}` }]);
+  });
+  it("encrypted off and nothing sealed: no lines", () => {
+    expect(run({ enabled: false, sealed: 0, encrypted: false })).toEqual([]);
   });
 });

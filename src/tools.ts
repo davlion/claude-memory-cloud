@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Props } from "./env";
 import { errorPayload, OpError, RETRYABLE } from "./errors";
 import { GitHub, toOpError } from "./github";
-import { formatHealth, KV_WRITE_CHECK, notReachableAction, provenanceChecks, runHealth, scopeReachability, type Check, type ScopeReach } from "./health";
+import { encryptionChecks, formatHealth, KV_WRITE_CHECK, notReachableAction, provenanceChecks, runHealth, scopeReachability, type Check, type ScopeReach } from "./health";
 import { instructionsFor } from "./instructions";
 import {
   deleteMemory, getIndex, getIndexVersioned, readMemories, saveMemory, scopeFailure, searchMemories, type GuardContext, type OpResult, type ScopeFailure,
@@ -12,7 +12,7 @@ import { dataBlock, newNonce, preamble, serverHeading } from "./render";
 import { contextScopes, resolveTarget, type ScopeConfig, type Target } from "./scopes";
 import type { HeadCommit, Store } from "./store";
 
-export interface ToolDeps { store: Store; gh: GitHub; cfg: ScopeConfig; props: Props; appSlug: string; now?: () => Date }
+export interface ToolDeps { store: Store; gh: GitHub; cfg: ScopeConfig; props: Props; appSlug: string; keysUrl: string; now?: () => Date }
 export interface ToolResult { text: string; isError: boolean; notes?: string }
 
 /** At most this many `since` keys are checked per call (each costs a snapshot). */
@@ -50,7 +50,8 @@ function unknownScopeChecks(d: ToolDeps, unknown: string[]): Check[] {
 const healthBlock = (checks: Check[], nonce: string) => `${serverHeading("Health", nonce)}\n${formatHealth(checks)}`;
 const sinceBlock = (m: Record<string, string>, nonce: string) =>
   `${serverHeading("Since", nonce)}\nPass this as since on later memory tool calls:\n\`\`\`json\n${JSON.stringify(m)}\n\`\`\``;
-const indexBlock = (t: Target, text: string, nonce: string) => dataBlock("memory-index", { scope: t.scopeLabel, repo: t.repo }, text, nonce);
+const indexBlock = (t: Target, text: string, nonce: string, encrypted = false) =>
+  dataBlock("memory-index", { scope: t.scopeLabel, repo: t.repo, encrypted: encrypted ? "true" : undefined }, text, nonce);
 
 function targetForKey(cfg: ScopeConfig, key: string): Target {
   return key.startsWith("project:") ? resolveTarget(cfg, "project", key.slice("project:".length)) : resolveTarget(cfg, key);
@@ -74,7 +75,7 @@ async function changesSince(d: ToolDeps, since: Record<string, string>, nonce: s
       try { t = targetForKey(d.cfg, key); } catch { delete next[key]; continue; }
       try {
         const cur = await getIndexVersioned(d.store, t);
-        if (cur.version !== version) { parts.push(indexBlock(t, cur.text, nonce)); next[key] = cur.version; }
+        if (cur.version !== version) { parts.push(indexBlock(t, cur.text, nonce, cur.encryption?.encrypted)); next[key] = cur.version; }
       } catch { /* keep this key's old version */ }
     }
     if (!parts.length) return undefined;
@@ -117,7 +118,8 @@ async function gather(d: ToolDeps, a: Record<string, unknown>, nonce: string): P
   for (const t of targets) {
     try {
       const idx = await getIndexVersioned(d.store, t, guardContext(d.cfg, t).kind);
-      blocks.push(indexBlock(t, idx.text, nonce));
+      blocks.push(indexBlock(t, idx.text, nonce, idx.encryption?.encrypted));
+      if (idx.encryption) health.push(...encryptionChecks(t, t.repo, idx.encryption, d.keysUrl));
       since[t.scopeLabel] = idx.version;
       if (idx.flagged.length) {
         health.push({ check: `personal:${t.scopeLabel}`, status: "warn",
@@ -142,9 +144,9 @@ async function memoryIndex(d: ToolDeps, a: Record<string, unknown>, nonce: strin
 
 async function memoryRead(d: ToolDeps, a: Record<string, unknown>, nonce: string): Promise<string> {
   const t = resolveTarget(d.cfg, (a.scope as string | undefined) ?? "general", a.project as string | undefined);
-  const rows = await readMemories(d.store, t, (a.names as string[]).slice(0, 20));
+  const rows = await readMemories(d.store, t, (a.names as string[]).slice(0, 20), d.keysUrl);
   const blocks = rows.map((r) => "error" in r
-    ? dataBlock("memory", { scope: t.scopeLabel, name: r.name, error: r.error, message: "message" in r ? r.message : undefined }, "", nonce)
+    ? dataBlock("memory", { scope: t.scopeLabel, name: r.name, error: r.error, message: "message" in r ? r.message : undefined, action: "action" in r ? r.action : undefined }, "", nonce)
     : dataBlock("memory", { scope: t.scopeLabel, name: r.name, version: r.version }, r.content, nonce));
   return [preamble(nonce), ...blocks].join("\n\n");
 }
@@ -167,7 +169,7 @@ async function memorySearch(d: ToolDeps, a: Record<string, unknown>, nonce: stri
       if (pt) targets.push(pt);
     } catch (e) { failures.push(scopeFailure("project", e)); }
   }
-  const r = await searchMemories(d.store, targets, String(a.query ?? ""));
+  const r = await searchMemories(d.store, targets, String(a.query ?? ""), d.keysUrl);
   failures.push(...r.failures);
   const parts = [preamble(nonce)];
   parts.push(r.results.length
@@ -294,7 +296,8 @@ export function createServer(d: ToolDeps): McpServer {
   reg("memory_save", "Create a memory (no version) or update one (pass version from memory_read). scope is required. " +
     "If it returns similar_found or exists, update instead unless the user wants a separate memory. " +
     "When a lesson from one repo goes to general, keep its example and name the repo it came from; if it's a client's repo, " +
-    "keep the lesson but leave out the client's name and details, since general loads in every session.", {
+    "keep the lesson but leave out the client's name and details, since general loads in every session. " +
+    "In a scope marked encrypted, choose names that don't give away the content: names stay readable.", {
     scope: requiredScopeArg, project: projectArg, name: z.string(), description: z.string().describe("One line, at most 200 characters."),
     type: z.enum(["user", "feedback", "project", "reference"]), body: z.string(),
     version: z.string().optional(), force: z.boolean().optional(),

@@ -1,3 +1,4 @@
+import { keyRequired } from "./encrypting-store";
 import { OpError, RETRYABLE, type ErrorCode } from "./errors";
 import { toOpError } from "./github";
 import { scanCrossClient, scanPersonal } from "./guard";
@@ -7,7 +8,7 @@ import {
 } from "./memory";
 import type { Target } from "./scopes";
 import { scanForSecrets } from "./secrets";
-import type { Change, HeadCommit, Snapshot, Store } from "./store";
+import type { Change, EncryptionStatus, HeadCommit, Snapshot, Store } from "./store";
 
 export const MAX_ATTEMPTS = 3;
 const UNREADABLE_MESSAGE = "This file is binary, truncated or otherwise can't be read as text by the memory server.";
@@ -22,7 +23,8 @@ export interface OpResult {
 }
 
 export interface SearchHit { scope: string; name: string; description: string; snippet: string }
-export interface IndexResult { text: string; version: string; head: HeadCommit | null; /** Names of memories that look personal (restricted, or candid in a client/project scope). Names only; empty unless an audit kind was passed. */ flagged: string[] }
+export interface IndexResult { text: string; version: string; head: HeadCommit | null; /** Present only for an encrypted or marked repo. */ encryption?: EncryptionStatus;
+  /** Names of memories that look personal (restricted, or candid in a client/project scope). Names only; empty unless an audit kind was passed. */ flagged: string[] }
 export interface ScopeFailure { scope: string; error: ErrorCode; message: string; action?: string; retryable: boolean }
 
 export function scopeFailure(scope: string, e: unknown): ScopeFailure {
@@ -38,9 +40,10 @@ function entries(snap: Snapshot): { list: IndexEntry[]; conflicts: string[] } {
     if (!p) continue;
     if (p.conflict) { conflicts.push(path); continue; }
     if (f.unreadable) continue; // binary, truncated or missing text: not indexed, and never overwritten blind
+    if (f.locked) { list.push({ name: p.name, description: "(encrypted; key not registered)" }); continue; }
     try {
       const m = parseMemory(f.content);
-      list.push({ name: p.name, description: cleanDescription(m.description) });
+      list.push({ name: p.name, description: (f.outside ? "(unencrypted, added outside the memory tool) " : "") + cleanDescription(m.description) });
     } catch {
       list.push({ name: p.name, description: "(unparseable frontmatter — fix by hand)" });
     }
@@ -53,7 +56,7 @@ function flaggedNames(snap: Snapshot, kind: GuardContext["kind"]): string[] {
   const out: string[] = [];
   for (const [path, f] of snap.files) {
     const p = parseMemoryPath(path);
-    if (!p || p.conflict || f.unreadable) continue;
+    if (!p || p.conflict || f.unreadable || f.locked) continue;
     let text: string;
     try { const m = parseMemory(f.content); text = `${p.name}\n${m.description}\n${m.body}`; } catch { text = `${p.name}\n${f.content}`; }
     const hit = scanPersonal(text);
@@ -169,12 +172,13 @@ export async function deleteMemory(store: Store, t: Target, name: string, versio
   });
 }
 
-export async function readMemories(store: Store, t: Target, names: string[]) {
+export async function readMemories(store: Store, t: Target, names: string[], keysUrl = "") {
   const snap = await store.snapshot(t.repo, t.prefix);
   return names.map((name) => {
     const f = snap.files.get(memoryPath(name));
     if (!f) return { name, error: "not_found" as const };
     if (f.unreadable) return { name, error: "unreadable" as const, message: UNREADABLE_MESSAGE };
+    if (f.locked) return { name, error: "key_required" as const, message: `${t.repo} is encrypted and its key isn't registered, so this can't be read.`, action: keyRequired(t.repo, keysUrl).action };
     return { name, content: f.content, version: f.sha };
   });
 }
@@ -189,7 +193,8 @@ export async function getIndexVersioned(store: Store, t: Target, audit?: GuardCo
   const { list, conflicts } = entries(snap);
   const text = buildIndex(t.displayLabel, list, conflicts);
   // The personal audit scans every memory, so it runs only for callers that report it (memory_index / memory_health).
-  return { text, version: snap.files.size === 0 ? "none" : await sha1Hex(text), head: snap.head, flagged: audit ? flaggedNames(snap, audit) : [] };
+  return { text, version: snap.files.size === 0 ? "none" : await sha1Hex(text), head: snap.head, flagged: audit ? flaggedNames(snap, audit) : [],
+    ...(snap.encryption ? { encryption: snap.encryption } : {}) };
 }
 
 async function sha1Hex(s: string): Promise<string> {
@@ -201,7 +206,7 @@ export async function getIndex(store: Store, t: Target): Promise<string> {
   return (await getIndexVersioned(store, t)).text;
 }
 
-export async function searchMemories(store: Store, targets: Target[], query: string): Promise<{ results: SearchHit[]; failures: ScopeFailure[] }> {
+export async function searchMemories(store: Store, targets: Target[], query: string, keysUrl = ""): Promise<{ results: SearchHit[]; failures: ScopeFailure[] }> {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
   const results: SearchHit[] = [];
   const failures: ScopeFailure[] = [];
@@ -213,9 +218,16 @@ export async function searchMemories(store: Store, targets: Target[], query: str
       failures.push(scopeFailure(t.displayLabel, e));
       continue;
     }
+    let locked = false;
     for (const [path, f] of snap.files) {
       const p = parseMemoryPath(path);
       if (!p || p.conflict || f.unreadable) continue;
+      if (f.locked) {
+        if (!locked) failures.push({ scope: t.displayLabel, error: "key_required", message: `${t.repo} is encrypted and its key isn't registered, so its memories can't be searched.`,
+          action: keyRequired(t.repo, keysUrl).action, retryable: true });
+        locked = true;
+        continue;
+      }
       let description = "";
       let searchable = f.content;
       try {

@@ -1,13 +1,20 @@
 import { createMcpHandler } from "agents/mcp/server";
 import type { Env, Props } from "./env";
-import { errorPayload, OpError, SCOPES_MISCONFIGURED } from "./errors";
+import { EncryptingStore } from "./encrypting-store";
+import { errorPayload, MASTER_KEY_MISCONFIGURED, OpError, SCOPES_MISCONFIGURED } from "./errors";
 import { GitHub } from "./github";
+import { KeyRing } from "./keyring";
 import { idPinKey, parseScopeMap, scopesFor } from "./scopes";
-import { GitHubStore } from "./store";
+import { GitHubStore, type Store } from "./store";
 import { createServer } from "./tools";
 
 const denied = () => Response.json(
   errorPayload(new OpError("access_denied", "This GitHub account is no longer on this memory server's allowlist.")), { status: 403 });
+
+/** The memory store for a request: GitHub, sealed and opened per repo by EncryptingStore. Throws if MEMORY_MASTER_KEY is malformed. */
+export async function buildStore(gh: GitHub, env: Env): Promise<Store> {
+  return new EncryptingStore(new GitHubStore(gh, env.CACHE_KV), await KeyRing.fromEnv(env), `${env.PUBLIC_URL}/keys`);
+}
 
 /** API handler for /mcp. OAuthProvider calls fetch(request, env, ctx) with ctx.props set (decrypted). */
 export const mcpApi = {
@@ -39,7 +46,13 @@ export const mcpApi = {
       }
     }
     const gh = new GitHub(props.githubToken);
-    const deps = { store: new GitHubStore(gh, env.CACHE_KV), gh, cfg, props, appSlug: env.GITHUB_APP_SLUG };
+    let store: Store;
+    try {
+      store = await buildStore(gh, env);
+    } catch {
+      return Response.json(errorPayload(MASTER_KEY_MISCONFIGURED), { status: 503 });
+    }
+    const deps = { store, gh, cfg, props, appSlug: env.GITHUB_APP_SLUG, keysUrl: `${env.PUBLIC_URL}/keys` };
     // createMcpHandler's .fetch takes (request, options); call the handler itself with (request, env, ctx).
     const handler = createMcpHandler(() => createServer(deps), { route: "/mcp" });
     return handler(request, env, ctx);

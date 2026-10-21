@@ -1,5 +1,7 @@
 import { env, exports } from "cloudflare:workers";
-import { mcpApi } from "../src/mcp-api";
+import { EncryptingStore } from "../src/encrypting-store";
+import { GitHub } from "../src/github";
+import { buildStore, mcpApi } from "../src/mcp-api";
 import { describe, expect, it } from "vitest";
 
 describe("worker wiring", () => {
@@ -123,5 +125,26 @@ describe("a broken server configuration is a shaped response, not a 500", () => 
       kv as never, { props: { ...props, githubId: 1 } } as never);
     expect(res.status).toBe(503);
     expect(await res.json()).toMatchObject({ error: "unavailable", retryable: true });
+  });
+});
+
+describe("encryption wiring", () => {
+  const gh = new GitHub("t");
+  it("builds an EncryptingStore with the key page URL; the key ring is null without the master key", async () => {
+    const s = (await buildStore(gh, env)) as unknown as { keys: unknown; keysUrl: string };
+    expect(await buildStore(gh, env)).toBeInstanceOf(EncryptingStore);
+    expect(s.keys).not.toBeNull();
+    expect(s.keysUrl).toBe(`${env.PUBLIC_URL}/keys`);
+    const bare = (await buildStore(gh, { ...env, MEMORY_MASTER_KEY: undefined })) as unknown as { keys: unknown };
+    expect(bare.keys).toBeNull();
+  });
+  it("a malformed master key answers 503 without echoing it", async () => {
+    const props = { login: "erin", githubToken: "t", githubRefreshToken: "r", githubTokenExpiresAt: Date.now() + 3600_000 };
+    const bad = { ...env, MEMORY_MASTER_KEY: "not-a-key-SECRET" };
+    const res = await mcpApi.fetch(new Request("https://memory.test/mcp", { method: "POST", body: "{}" }), bad, { props } as never);
+    expect(res.status).toBe(503);
+    const text = await res.text();
+    expect(JSON.parse(text)).toMatchObject({ error: "internal", message: "memory server misconfigured: MEMORY_MASTER_KEY is invalid", retryable: false });
+    expect(text).not.toContain("SECRET");
   });
 });

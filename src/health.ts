@@ -1,8 +1,8 @@
 import type { Props } from "./env";
 import { OpError } from "./errors";
 import { GitHub, GitHubError, RECONNECT_ACTION, toOpError } from "./github";
-import { resolveTarget, type ScopeConfig } from "./scopes";
-import type { HeadCommit } from "./store";
+import { resolveTarget, type ScopeConfig, type Target } from "./scopes";
+import type { EncryptionStatus, HeadCommit } from "./store";
 
 export interface Check { check: string; status: "ok" | "warn" | "fail"; detail: string; action?: string }
 export interface ScopeReach {
@@ -228,5 +228,36 @@ export function provenanceChecks(heads: Map<string, HeadCommit>): Check[] {
       action: `${repo} was changed outside claude-memory. Review that change before relying on these memories: https://github.com/${repo}/commit/${encodeURIComponent(h.sha)}`,
     });
   }
+  return out;
+}
+
+/** Encryption lines for one scope's repo; several can apply. `ok` only when nothing else does. */
+export function encryptionChecks(t: Target, repo: string, s: EncryptionStatus, keysUrl: string): Check[] {
+  const check = `encryption:${t.scopeLabel}`;
+  const page = `${keysUrl}?repo=${repo}`;
+  const register = `Register the key from your password manager: ${page}. Saves are queued until then.`;
+  const out: Check[] = [];
+  if (s.moving) {
+    out.push({ check, status: "warn", detail: `encrypted copy written to ${s.moving}; finish the move`,
+      action: `Delete ${repo}, then rename ${s.moving} to ${repo}. Saves wait until then. ${page}` });
+  } else if (s.markerProblem) {
+    out.push({ check, status: "fail", detail: "encrypted, but the encryption marker is missing or not signed",
+      action: `Someone may have tried to turn encryption off. Saves stay encrypted. Review recent commits: https://github.com/${repo}/commits` });
+  }
+  if (s.key === "unsupported") {
+    out.push({ check, status: "fail", detail: "encrypted repo, but this memory server doesn't support encryption", action: "Ask the memory server's operator to turn on encryption." });
+  } else if (s.key === "missing") {
+    out.push({ check, status: "warn", detail: "encrypted, key not registered", action: register });
+  } else if (s.key === "mismatch") {
+    out.push({ check, status: "warn", detail: "encrypted, the registered key doesn't match (rotated?)", action: register });
+  }
+  if (s.outside > 0) {
+    out.push({ check, status: "warn", detail: `encrypted, ${s.outside} memories unencrypted, added outside the memory tool`, action: "Review them; saving one through Claude encrypts it." });
+  }
+  if (!s.enabled && s.sealed > 0) {
+    out.push({ check, status: "warn", detail: `encryption off, ${s.sealed} memories still encrypted`,
+      action: `Turn it back on at ${page}, or decrypt the repo with memcrypt (docs/ENCRYPTION.md).` });
+  }
+  if (!out.length && s.enabled) out.push({ check, status: "ok", detail: "encrypted" });
   return out;
 }

@@ -1,10 +1,15 @@
+import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
+import { generateKeyText, newRepoId, parseKeyText } from "../src/crypto";
+import { EncryptingStore } from "../src/encrypting-store";
+import { MARKER_PATH, serializeMarker, signMarker } from "../src/encrypted-files";
+import { KeyRing, KV } from "../src/keyring";
 import { GitHub, GitHubError } from "../src/github";
 import { serializeMemory } from "../src/memory";
 import { saveMemory } from "../src/operations";
 import { resolveTarget } from "../src/scopes";
 import { callTool, createServer, guardContext, type ToolDeps } from "../src/tools";
-import { INSTRUCTIONS, instructionsFor } from "../src/instructions";
+import { INSTRUCTIONS, instructionsFor, MAX_INSTRUCTIONS } from "../src/instructions";
 import { FakeStore } from "./fake-store";
 import { json, mockFetch } from "./setup";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
@@ -32,7 +37,7 @@ beforeEach(() => {
   store = new FakeStore();
   store.put("dav/mem", "README.md", "r");
   store.put("acme-org/claude-memory", "README.md", "r");
-  deps = { store, gh: new GitHub("t"), cfg, props, appSlug: "dav-claude-memory", now: () => new Date("2026-10-13T18:04:05Z") };
+  deps = { store, gh: new GitHub("t"), cfg, props, appSlug: "dav-claude-memory", keysUrl: "https://memory.test/keys", now: () => new Date("2026-10-13T18:04:05Z") };
 });
 
 const save = (args: Record<string, unknown>) =>
@@ -351,6 +356,11 @@ describe("instructions tier rule (personal memory guard)", () => {
     expect(INSTRUCTIONS).toContain("claude.ai chat (web, Desktop, mobile)");
   });
 
+  it("lists key_required among the retryable errors and stays within the limit with 30 clients", () => {
+    expect(INSTRUCTIONS).toContain("unavailable, reauth_required, server_limit, key_required");
+    const cfg30 = Object.fromEntries([["general", "dav/mem"], ...Array.from({ length: 30 }, (_, i) => [`client-number-${i}`, `o${i}/r`])]);
+    expect(instructionsFor(cfg30).length).toBeLessThanOrEqual(MAX_INSTRUCTIONS);
+  });
   it("puts the tier rule right after the save rules, ahead of source and errors", () => {
     const t = instructionsFor({ general: "dav/mem", acme: "a/b" });
     expect(t.indexOf("built-in memory")).toBeGreaterThan(t.indexOf("Save lasting facts"));
@@ -741,5 +751,61 @@ describe("memory_save guard wiring", () => {
 
   it("restricted text is refused through the tool", async () => {
     expect(jsonOf((await save({ name: "r", body: "my mortgage is 6%\n", force: true })).text)).toMatchObject({ status: "rejected_personal", category: "finances" });
+  });
+});
+
+describe("encrypted scopes", () => {
+  const KEYS_URL = "https://memory.test/keys";
+  const KEY_TEXT = generateKeyText();
+  const REPO_ID = newRepoId();
+  let ring: KeyRing;
+  beforeEach(async () => {
+    for (const p of Object.values(KV)) await env.OAUTH_KV.delete(p + "dav/mem");
+    ring = (await KeyRing.fromEnv(env))!;
+    const key = await parseKeyText(KEY_TEXT);
+    await ring.put("dav/mem", KEY_TEXT, "dav", Date.now());
+    await ring.putRecord("dav/mem", { repoId: REPO_ID, keyId: key.id, enabled: true });
+    store.put("dav/mem", MARKER_PATH, serializeMarker(await signMarker(key, { enabled: true, repoId: REPO_ID, keyId: key.id })));
+    deps = { ...deps, store: new EncryptingStore(store, ring, KEYS_URL) };
+    await save({ name: "a", description: "secret thing" });
+  });
+
+  it("index tag is encrypted, entries are decrypted, Health says encrypted; plain scopes are untouched", async () => {
+    healthyGitHub();
+    const t = (await callTool(deps, "memory_index", { scopes: ["acme"] })).text;
+    expect(t).toContain('<memory-index scope="general" repo="dav/mem" encrypted="true">');
+    expect(t).toContain('<memory-index scope="acme" repo="acme-org/claude-memory">');
+    expect(t).toContain("[a](memories/a.md) — secret thing");
+    expect(t).toContain("✓ encryption:general — encrypted");
+  });
+  it("key missing: entries, read and search report it; save is retryable key_required", async () => {
+    await ring.remove("dav/mem");
+    healthyGitHub();
+    const idx = (await callTool(deps, "memory_index", {})).text;
+    expect(idx).toContain("(encrypted; key not registered)");
+    expect(idx).toContain(`⚠ encryption:general — encrypted, key not registered → Register the key from your password manager: ${KEYS_URL}?repo=dav/mem.`);
+    const read = (await callTool(deps, "memory_read", { names: ["a"] })).text;
+    expect(read).toMatch(/<memory scope="general" name="a" error="key_required" message="[^"]*" action="[^"]*\?repo=dav\/mem[^"]*"><\/memory:/);
+    healthyGitHub();
+    const found = (await callTool(deps, "memory_search", { query: "secret" })).text;
+    expect(found).toContain("No matching memories.");
+    expect(found).toMatch(/✗ general — key_required: .*repo=dav\/mem/);
+    const r = await save({ name: "b" });
+    expect(r.isError).toBe(true);
+    expect(JSON.parse(r.text)).toMatchObject({ error: "key_required", retryable: true, action: expect.stringContaining(`${KEYS_URL}?repo=dav/mem`) });
+  });
+  it("an outside file is listed with the prefix and the warn line appears", async () => {
+    store.put("dav/mem", "memories/plain.md", serializeMemory({ name: "plain", description: "hand written", type: "user", body: "x\n" }));
+    healthyGitHub();
+    const t = (await callTool(deps, "memory_index", {})).text;
+    expect(t).toContain("[plain](memories/plain.md) — (unencrypted, added outside the memory tool) hand written");
+    expect(t).toContain("⚠ encryption:general — encrypted, 1 memories unencrypted, added outside the memory tool");
+  });
+  it("memory_save tells Claude to pick names that don't give the content away", async () => {
+    const c = new Client({ name: "t", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([createServer(deps).connect(a), c.connect(b)]);
+    const tool = (await c.listTools()).tools.find((x) => x.name === "memory_save")!;
+    expect(tool.description).toContain("In a scope marked encrypted, choose names that don't give away the content: names stay readable.");
   });
 });

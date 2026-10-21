@@ -10,7 +10,7 @@ Save work facts only. Personal facts (health, money, family, sexuality, where th
 
 const TAIL = `Always pass source, e.g. "claude-code on <hostname>", "claude.ai chat".
 
-After every save attempt, end with exactly one of: "saved to <scope>", "queued in outbox for <scope>", or "not saved: <reason>". Errors marked retryable (unavailable, reauth_required, server_limit) are temporary: tell the user plainly; in local Claude Code follow the outbox rule in the user's CLAUDE.md; elsewhere there is no outbox, so say the memory was not saved. Other errors (for example write_rejected, repo_public, internal) will not succeed on retry: say "not saved" with the reason and the action given.
+After every save attempt, end with exactly one of: "saved to <scope>", "queued in outbox for <scope>", or "not saved: <reason>". Errors marked retryable (unavailable, reauth_required, server_limit, key_required) are temporary: tell the user plainly; in local Claude Code follow the outbox rule in the user's CLAUDE.md; elsewhere there is no outbox, so say the memory was not saved. Other errors (for example write_rejected, repo_public, internal) will not succeed on retry: say "not saved" with the reason and the action given.
 
 If the memory index has left your context (for example it was summarized), call memory_index again.
 

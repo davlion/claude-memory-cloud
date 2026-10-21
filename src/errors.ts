@@ -27,3 +27,9 @@ export const SCOPES_MISCONFIGURED = new OpError(
   "internal", "memory server misconfigured: SCOPES is invalid",
   "The server owner must fix the SCOPES secret (see SELF-HOSTING/QUICKSTART)",
 );
+
+/** Shown when MEMORY_MASTER_KEY can't be parsed; never echoes the secret. */
+export const MASTER_KEY_MISCONFIGURED = new OpError(
+  "internal", "memory server misconfigured: MEMORY_MASTER_KEY is invalid",
+  "The server owner must fix the MEMORY_MASTER_KEY secret: standard base64 of 32 bytes (openssl rand -base64 32), or remove it to turn encryption off",
+);

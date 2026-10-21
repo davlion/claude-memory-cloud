@@ -1,4 +1,9 @@
+import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
+import { generateKeyText, newRepoId, parseKeyText } from "../src/crypto";
+import { EncryptingStore } from "../src/encrypting-store";
+import { MARKER_PATH, serializeMarker, signMarker } from "../src/encrypted-files";
+import { KeyRing, KV } from "../src/keyring";
 import { GitHubError } from "../src/github";
 import { MAX_BODY, serializeMemory } from "../src/memory";
 import { type GuardContext, deleteMemory, getIndex, getIndexVersioned, readMemories, saveMemory, searchMemories } from "../src/operations";
@@ -382,5 +387,53 @@ describe("saveMemory: personal and cross-client guard", () => {
   it("a client naming itself, and ordinary work text, save normally", async () => {
     expect((await saveMemory(store, T, gm({ body: "acme deploys on fridays\n" }), NOW, CLIENT)).status).toBe("created");
     expect((await saveMemory(store, T, gm({ name: "h", description: "rate limit", body: "the finance team's API rate limit; the health check endpoint\n" }), NOW, CLIENT)).status).toBe("created");
+  });
+});
+
+describe("encrypted scopes", () => {
+  const KEYS_URL = "https://memory.test/keys";
+  const KEY_TEXT = generateKeyText();
+  const REPO_ID = newRepoId();
+  let ring: KeyRing;
+  let enc: EncryptingStore;
+  beforeEach(async () => {
+    for (const p of Object.values(KV)) await env.OAUTH_KV.delete(p + "dav/mem");
+    ring = (await KeyRing.fromEnv(env))!;
+    const key = await parseKeyText(KEY_TEXT);
+    await ring.put("dav/mem", KEY_TEXT, "dav", Date.now());
+    await ring.putRecord("dav/mem", { repoId: REPO_ID, keyId: key.id, enabled: true });
+    store.put("dav/mem", MARKER_PATH, serializeMarker(await signMarker(key, { enabled: true, repoId: REPO_ID, keyId: key.id })));
+    enc = new EncryptingStore(store, ring, KEYS_URL);
+    await saveMemory(enc, T, { name: "a", ...base, description: "secret thing" }, NOW, G);
+  });
+
+  it("index shows decrypted descriptions and carries the encryption status", async () => {
+    const r = await getIndexVersioned(enc, T);
+    expect(r.text).toContain("[a](memories/a.md) — secret thing");
+    expect(r.encryption).toMatchObject({ encrypted: true, enabled: true, key: "ok", sealed: 1 });
+    expect((await getIndexVersioned(store, T)).encryption).toBeUndefined();
+  });
+  it("a locked file is listed as such, read says key_required, search skips it and fails once", async () => {
+    await saveMemory(enc, T, { name: "b", ...base, description: "other thing" }, NOW, G);
+    await ring.remove("dav/mem");
+    expect((await getIndexVersioned(enc, T)).text).toContain("- [a](memories/a.md) — (encrypted; key not registered)");
+    const [row] = await readMemories(enc, T, ["a"], KEYS_URL);
+    expect(row).toMatchObject({ name: "a", error: "key_required", message: expect.stringContaining("dav/mem"), action: expect.stringContaining(`${KEYS_URL}?repo=dav/mem`) });
+    const s = await searchMemories(enc, [T], "secret", KEYS_URL);
+    expect(s.results).toEqual([]);
+    expect(s.failures).toEqual([{ scope: "general", error: "key_required", message: expect.any(String), action: expect.stringContaining(`${KEYS_URL}?repo=dav/mem`), retryable: true }]);
+  });
+  it("a locked file keeps its version for update and delete, and is skipped by the personal audit", async () => {
+    await ring.remove("dav/mem");
+    const [row] = await readMemories(enc, T, ["a"], KEYS_URL);
+    expect((await getIndexVersioned(enc, T, "general")).flagged).toEqual([]);
+    await expect(deleteMemory(enc, T, "a", "stale")).resolves.toMatchObject({ status: "conflict", version: expect.any(String) });
+    expect(row).toMatchObject({ error: "key_required" });
+  });
+  it("an outside file is listed with the prefix and still searchable", async () => {
+    store.put("dav/mem", "memories/plain.md", serializeMemory({ name: "plain", description: "hand written", type: "user", body: "findme\n" }));
+    expect((await getIndexVersioned(enc, T)).text).toContain("- [plain](memories/plain.md) — (unencrypted, added outside the memory tool) hand written");
+    expect((await searchMemories(enc, [T], "findme", KEYS_URL)).results).toHaveLength(1);
+    expect((await readMemories(enc, T, ["plain"], KEYS_URL))[0]).toMatchObject({ name: "plain", version: expect.any(String) });
   });
 });

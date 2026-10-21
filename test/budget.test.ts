@@ -43,7 +43,7 @@ it("memory_index for general + client + project stays within 20 GitHub calls on 
   ]);
   const gh = new GitHub("t");
   const deps: ToolDeps = { store: new GitHubStore(gh), gh, cfg: { general: "dav/mem", acme: "acme-org/claude-memory" },
-    props: { login: "dav", githubToken: "t", githubRefreshToken: "r", githubTokenExpiresAt: Date.now() + 8 * 3600_000 }, appSlug: "s" };
+    props: { login: "dav", githubToken: "t", githubRefreshToken: "r", githubTokenExpiresAt: Date.now() + 8 * 3600_000 }, appSlug: "s", keysUrl: "https://memory.test/keys" };
   const r = await callTool(deps, "memory_index", { project: "acme-org/billing" });
   expect(r.text).toContain("# Memory index — general");
   expect(r.text).toContain("# Memory index — acme");
