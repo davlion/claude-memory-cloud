@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildIndex, cleanDescription, conflictPath, findSimilar, isValidName, MAX_DESCRIPTION, MemoryFormatError,
-  memoryPath, parseMemory, parseMemoryPath, serializeMemory, type Memory,
+  memoryPath, namesOnlyIndex, parseMemory, parseMemoryPath, serializeMemory, type Memory,
 } from "../src/memory";
 
 const sample: Memory = {
@@ -121,4 +121,16 @@ describe("cleanDescription", () => {
   });
   it("buildIndex applies it", () =>
     expect(buildIndex("general", [{ name: "a", description: `### ${"y".repeat(300)}` }], [])).toContain(`— ${"y".repeat(199)}…\n`));
+});
+
+describe("namesOnlyIndex", () => {
+  it("drops descriptions but keeps the heading and Conflicts", () => {
+    const idx = buildIndex("billing", [{ name: "a", description: "secret thing" }], ["memories/a.conflict-20261020T101010Z.md"]);
+    const out = namesOnlyIndex(idx);
+    expect(out).toContain("# Memory index — billing");
+    expect(out).toContain("- [a](memories/a.md)\n");
+    expect(out).not.toContain("secret thing");
+    expect(out).toContain("## Conflicts");
+    expect(out).toContain("- memories/a.conflict-20261020T101010Z.md — reconcile with a.md");
+  });
 });

@@ -104,3 +104,6 @@ export function findSimilar(c: IndexEntry, existing: IndexEntry[], threshold = 0
     .slice(0, limit)
     .map((x) => x.e);
 }
+
+/** Drops each entry's description (` — …`) so an index can be shown without them. */
+export const namesOnlyIndex = (text: string): string => text.replace(/^(- \[[^\]]+\]\([^)]+\)) — .*$/gm, "$1");
