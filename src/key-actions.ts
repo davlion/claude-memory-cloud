@@ -5,11 +5,11 @@ import type { ErrorCode } from "./errors";
 import { GitHub, toOpError } from "./github";
 import { scopeReachabilityDetailed } from "./health";
 import type { KeyAction, KeySession } from "./key-page";
-import { adminOnly, freshDone, inPlaceDone, message, page, turnOnPage } from "./key-page-html";
+import { adminOnly, errorBody, freshDoneBody, inPlaceDoneBody, message, page, stepItem, turningOnEnd, turningOnHead, turnOnPage } from "./key-page-html";
 import type { EncryptedRepoRecord, KeyRing } from "./keyring";
 import { REPO_RE } from "./scopes";
 import { clearSnapshots, GitHubStore } from "./store";
-import { switchOnFresh, switchOnInPlace, trailers } from "./switch-on";
+import { checkFreshTarget, switchOnFresh, switchOnInPlace, trailers, type Progress } from "./switch-on";
 
 const PENDING_TTL = 900;
 const NOT_ON = "Encryption wasn't turned on";
@@ -35,10 +35,36 @@ const field = (form: FormData, name: string) => {
 const statusOf = (code: ErrorCode) =>
   code === "unavailable" || code === "server_limit" || code === "reauth_required" ? 503 : code === "internal" ? 500 : code === "write_rejected" ? 409 : 400;
 /** The error's own message and action; OpErrors and GitHub errors never carry key text. */
-const fail = (title: string, e: unknown, prefix = "") => {
+const errorText = (e: unknown, prefix = "") => {
   const err = toOpError(e);
-  return message(title, `${prefix}${err.message}${err.action ? ` ${err.action}` : ""}`, statusOf(err.code));
+  return { text: `${prefix}${err.message}${err.action ? ` ${err.action}` : ""}`, status: statusOf(err.code) };
 };
+const fail = (title: string, e: unknown, prefix = "") => {
+  const { text, status } = errorText(e, prefix);
+  return message(title, text, status);
+};
+
+/**
+ * The page shown while encryption is turned on, streamed: its head at once, a list item per finished step, then the HTML
+ * `run` returns. No JavaScript (the CSP has none), so streaming is the progress bar. The work isn't tied to the browser:
+ * writes to a closed page are ignored, `ctx.waitUntil` keeps it running, and the writer always closes.
+ */
+function streamTurnOn(repo: string, ctx: ExecutionContext | undefined, run: (step: Progress) => Promise<string>): Response {
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const w = writable.getWriter();
+  const enc = new TextEncoder();
+  const write = (html: string) => { w.write(enc.encode(html)).catch(() => { /* the browser left */ }); };
+  write(turningOnHead(repo));
+  const work = (async () => {
+    let end: string;
+    try { end = await run((step) => write(stepItem(step))); } catch {
+      end = errorBody("This page couldn't finish", `Reload the key page to see whether encryption is on for ${repo}.`);
+    }
+    write(turningOnEnd(end));
+  })().finally(() => { w.close().catch(() => { /* the browser left */ }); });
+  ctx?.waitUntil(work);
+  return page(readable);
+}
 const notTheKey = (title: string, repo: string) => message(title, `This isn't the key for ${repo}.`, 400);
 
 interface Target { repo: string; store: GitHubStore; admin: boolean }
@@ -111,7 +137,7 @@ const turnOn: KeyAction = async (_req, env, ring, s, form) => {
   return page(turnOnPage({ repo: p.repo, csrf: s.csrf, key }));
 };
 
-const confirm: KeyAction = async (_req, env, ring, s, form) => {
+const confirm: KeyAction = async (_req, env, ring, s, form, ctx) => {
   const t = await target(env, s, form, true);
   if (t instanceof Response) return t;
   const { repo, store } = t;
@@ -136,6 +162,9 @@ const confirm: KeyAction = async (_req, env, ring, s, form) => {
   // A fresh copy would keep the repo's ID, and the old repo's "off" marker would then end the move before the rename.
   if (path === "fresh" && (st.marker || st.rec)) {
     return message(NOT_ON, "Turning encryption back on works in place only. Nothing was changed.", 400);
+  }
+  if (path === "fresh") {
+    try { await checkFreshTarget(store, repo, newRepo); } catch (e) { return fail(NOT_ON, e); }
   }
 
   const h = await sidHash(s.sid);
@@ -162,30 +191,34 @@ const confirm: KeyAction = async (_req, env, ring, s, form) => {
     const orig = store[m].bind(store) as (...a: unknown[]) => Promise<{ sha: string; url: string }>;
     store[m] = (async (...a: unknown[]) => { const r = await orig(...a); pushed = true; return r; }) as never;
   }
-  try {
-    if (path === "fresh") {
-      await switchOnFresh(store, ring, env.CACHE_KV, repo, newRepo, keyText, s.login);
-      return page(freshDone(repo, newRepo));
+  // Validation is done: from here the page streams each step as it finishes.
+  return streamTurnOn(repo, ctx, async (step) => {
+    try {
+      if (path === "fresh") {
+        await switchOnFresh(store, ring, env.CACHE_KV, repo, newRepo, keyText, s.login, step);
+        return freshDoneBody(repo, newRepo, "h2");
+      }
+      const { url } = await switchOnInPlace(store, ring, env.CACHE_KV, repo, keyText, s.login, step);
+      return inPlaceDoneBody(repo, url, "h2");
+    } catch (e) {
+      const failed = (title: string, prefix = "") => errorBody(title, errorText(e, prefix).text);
+      if (pending && !pushed) await env.OAUTH_KV.put(pendingKey(h, repo), pending, { expirationTtl: PENDING_TTL }); // retry with the same key
+      if (pushed && path === "in-place") {
+        return failed("Encryption is on, but didn't finish", `${repo} IS encrypted now, but this memory tool couldn't store its key: register the key on this page. `);
+      }
+      if (pushed) {
+        // Undo the move flag and record, so saves to the old repo aren't held for a move that won't finish.
+        let undone = true;
+        try {
+          await ring.clearMove(repo);
+          if (st.rec) await ring.putRecord(repo, st.rec); else await ring.deleteRecord(repo);
+        } catch { undone = false; }
+        const now = undone ? `${repo} is unchanged and saves to it continue.` : `Saves to ${repo} may wait until the key page is used again.`;
+        return failed(NOT_ON, `The encrypted copy was written to ${newRepo}, but the switch didn't finish. ${now} Delete ${newRepo} and recreate it as an empty private repo before trying again. `);
+      }
+      return failed(NOT_ON);
     }
-    const { url } = await switchOnInPlace(store, ring, env.CACHE_KV, repo, keyText, s.login);
-    return page(inPlaceDone(repo, url));
-  } catch (e) {
-    if (pending && !pushed) await env.OAUTH_KV.put(pendingKey(h, repo), pending, { expirationTtl: PENDING_TTL }); // retry with the same key
-    if (pushed && path === "in-place") {
-      return fail("Encryption is on, but didn't finish", e, `${repo} IS encrypted now, but this memory tool couldn't store its key: register the key on this page. `);
-    }
-    if (pushed) {
-      // Undo the move flag and record, so saves to the old repo aren't held for a move that won't finish.
-      let undone = true;
-      try {
-        await ring.clearMove(repo);
-        if (st.rec) await ring.putRecord(repo, st.rec); else await ring.deleteRecord(repo);
-      } catch { undone = false; }
-      const now = undone ? `${repo} is unchanged and saves to it continue.` : `Saves to ${repo} may wait until the key page is used again.`;
-      return fail(NOT_ON, e, `The encrypted copy was written to ${newRepo}, but the switch didn't finish. ${now} Delete ${newRepo} and recreate it as an empty private repo before trying again. `);
-    }
-    return fail(NOT_ON, e);
-  }
+  });
 };
 
 const register: KeyAction = async (_req, env, ring, s, form) => {

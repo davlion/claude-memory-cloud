@@ -55,7 +55,7 @@ export default {
       const res = new Response("Too many sign-in requests; try again in a minute.", { status: 429, headers: { "retry-after": "60" } });
       return isKeyPage(url.pathname) ? harden(res) : res;
     }
-    if (isKeyPage(url.pathname)) return keyPage.fetch(request, env);
+    if (isKeyPage(url.pathname)) return keyPage.fetch(request, env, ctx);
     return getProvider(env).fetch(request, env, ctx);
   },
 };

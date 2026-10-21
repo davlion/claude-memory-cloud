@@ -88,17 +88,22 @@ export async function switchOnInPlace(store: GitHubStore, keys: KeyRing, cache: 
   }
 }
 
+/** Throws unless `newRepo` is another repo that is private, writable and empty. The key page runs it before streaming. */
+export async function checkFreshTarget(store: GitHubStore, repo: string, newRepo: string): Promise<void> {
+  if (newRepo.toLowerCase() === repo.toLowerCase()) throw new OpError("invalid", "The new repo must be a different repo.", "Create a new, empty private repo.");
+  const target = await store.readTree(newRepo);
+  if (!target.isPrivate) throw new OpError("repo_public", `${newRepo} is not private.`, "Make it private, then try again.");
+  if (!target.canWrite) throw new OpError("invalid", `You can't write to ${newRepo}.`, "Add it to the app installation and make sure you have write access, then try again.");
+  if (target.head !== null) throw new OpError("invalid", `${newRepo} isn't empty.`, "Create a new, empty private repo (no README) and try again.");
+}
+
 /**
  * Turns encryption on by writing an encrypted copy of `repo` into the empty private `newRepo`. The user then deletes `repo`
  * and renames `newRepo` to it, so the record and key are stored under `repo`; saves to `repo` wait for that (the move flag).
  */
 export async function switchOnFresh(store: GitHubStore, keys: KeyRing, cache: KVNamespace, repo: string, newRepo: string, keyText: string, login: string, progress?: Progress): Promise<{ url: string }> {
   const key = await parseKeyText(keyText);
-  if (newRepo.toLowerCase() === repo.toLowerCase()) throw new OpError("invalid", "The new repo must be a different repo.", "Create a new, empty private repo.");
-  const target = await store.readTree(newRepo);
-  if (!target.isPrivate) throw new OpError("repo_public", `${newRepo} is not private.`, "Make it private, then try again.");
-  if (!target.canWrite) throw new OpError("invalid", `You can't write to ${newRepo}.`, "Add it to the app installation and make sure you have write access, then try again.");
-  if (target.head !== null) throw new OpError("invalid", `${newRepo} isn't empty.`, "Create a new, empty private repo (no README) and try again.");
+  await checkFreshTarget(store, repo, newRepo);
   await keys.setSwitching(repo);
   try {
     const tree = await store.readTree(repo);

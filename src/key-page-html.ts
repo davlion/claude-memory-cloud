@@ -17,7 +17,7 @@ export const doc = (title: string, body: string, head = "") => `<!doctype html>
 <style>body{font:16px system-ui;max-width:40rem;margin:3rem auto;padding:0 1rem}section{border-top:1px solid #ccc;padding:.5rem 0}form{margin:.5rem 0}input,button{font:inherit;padding:.4rem .6rem;margin-right:.5rem}.sel{background:#ffd}</style>
 ${body}`;
 
-export const page = (body: string, status = 200, cookies: string[] = []) => {
+export const page = (body: BodyInit, status = 200, cookies: string[] = []) => {
   const h = new Headers({ "content-type": "text/html; charset=utf-8" });
   for (const c of cookies) h.append("Set-Cookie", c);
   return new Response(body, { status, headers: h });
@@ -65,19 +65,35 @@ ${form("in-place", "", "Encrypt in place")}
 
 const link = (url: string) => `<a href="${esc(url)}">${esc(url)}</a>`;
 
-export const inPlaceDone = (repo: string, commitUrl: string) => doc("Encryption is on", `<h1>Encryption is on for ${esc(repo)}</h1>
+type Heading = "h1" | "h2";
+/** The done content, emitted after the step list on the streamed page (there with `h` = h2). */
+export const inPlaceDoneBody = (repo: string, commitUrl: string, h: Heading = "h1") => `<${h}>Encryption is on for ${esc(repo)}</${h}>
 <p>Its history is now one commit: ${commitUrl.startsWith("https://github.com/") ? link(commitUrl) : "see the repo's commits"}.</p>
 <p>Ask GitHub Support to purge the old commits: ${link("https://support.github.com/request")}. Until then anyone with read access can still find them through the repo's activity log.</p>
-<p><a href="/keys">Back to the key page</a></p>`);
+<p><a href="/keys">Back to the key page</a></p>`;
 
-export const freshDone = (repo: string, newRepo: string) => doc("Finish the move", `<h1>Finish moving ${esc(repo)}</h1>
+export const freshDoneBody = (repo: string, newRepo: string, h: Heading = "h1") => `<${h}>Finish moving ${esc(repo)}</${h}>
 <p>The encrypted copy is in <strong>${esc(newRepo)}</strong>. Saves to ${esc(repo)} wait until you finish:</p>
 <ol>
 <li>Delete <strong>${esc(repo)}</strong>: ${link(`https://github.com/${repo}/settings`)} → Danger Zone → Delete this repository. GitHub keeps a deleted repo restorable by its owner for 90 days.</li>
 <li>Rename <strong>${esc(newRepo)}</strong> to <strong>${esc(repo.split("/")[1]!)}</strong>: ${link(`https://github.com/${newRepo}/settings`)} → Repository name.</li>
 </ol>
 <p>Before step 1, wait a minute and reload the key page: delete ${esc(repo)} only when it says the encrypted copy is current. To change your mind, cancel the move there.</p>
-<p><a href="/keys">Back to the key page</a></p>`);
+<p><a href="/keys">Back to the key page</a></p>`;
+
+/**
+ * The start of the streamed page shown while encryption is turned on: heading, advice and the opening of the step list.
+ * Padded past 1 KB, since browsers wait for about that much before they render a streamed page.
+ */
+export const turningOnHead = (repo: string) => `${doc("Turning on encryption", `<h1>Turning on encryption for ${esc(repo)}</h1>
+<p>This can take a minute. Keep this page open.</p>`)}
+<!--${" ".repeat(1024)}-->
+<ol>
+`;
+export const stepItem = (step: string) => `<li>${esc(step)}</li>\n`;
+/** After the step list: the done content, or an error as a heading and a paragraph of plain text. Ends the document. */
+export const turningOnEnd = (html: string) => `</ol>\n${html}\n</html>\n`;
+export const errorBody = (title: string, text: string) => `<h2>${esc(title)}</h2>\n<p>${esc(text)}</p>`;
 
 export const notOnPage = () => doc("Encryption isn't turned on",
   "<h1>Encryption isn't turned on for this memory server</h1><p>Ask the memory server's operator to turn on encryption at rest.</p>");

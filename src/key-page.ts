@@ -27,8 +27,8 @@ const SECURITY: Record<string, string> = {
 
 /** A signed-in key page browser. `token` is the unwrapped GitHub token; `id` is the numeric GitHub user ID. */
 export interface KeySession { sid: string; login: string; id: number; csrf: string; token: string; cfg: ScopeConfig }
-/** POST /keys/<action> handlers, run only after the session and its csrf check out. */
-export type KeyAction = (req: Request, env: Env, ring: KeyRing, s: KeySession, form: FormData) => Promise<Response>;
+/** POST /keys/<action> handlers, run only after the session and its csrf check out. `ctx` keeps streamed work alive. */
+export type KeyAction = (req: Request, env: Env, ring: KeyRing, s: KeySession, form: FormData, ctx?: ExecutionContext) => Promise<Response>;
 export const keyActions: Record<string, KeyAction> = actions;
 export { mayChangeEncryption } from "./key-actions";
 export { message, messageHtml };
@@ -172,7 +172,7 @@ async function home(req: Request, url: URL, env: Env, ring: KeyRing): Promise<Re
   return page(keysHome({ login: s.login, csrf: s.csrf, repos: views, selected, problem }));
 }
 
-async function post(req: Request, url: URL, env: Env, ring: KeyRing): Promise<Response> {
+async function post(req: Request, url: URL, env: Env, ring: KeyRing, ctx?: ExecutionContext): Promise<Response> {
   const origin = req.headers.get("origin");
   if (origin !== null && origin !== new URL(env.PUBLIC_URL).origin) return message("Not allowed", "This form came from another site.", 403);
   const s = await requireSession(req, env, ring);
@@ -185,10 +185,10 @@ async function post(req: Request, url: URL, env: Env, ring: KeyRing): Promise<Re
   }
   const name = url.pathname.slice("/keys/".length);
   const action = Object.hasOwn(keyActions, name) ? keyActions[name] : undefined;
-  return action ? action(req, env, ring, s, form) : message("Not found", "Unknown action.", 404);
+  return action ? action(req, env, ring, s, form, ctx) : message("Not found", "Unknown action.", 404);
 }
 
-async function route(req: Request, env: Env): Promise<Response> {
+async function route(req: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
   let ring: KeyRing | null;
   try { ring = await KeyRing.fromEnv(env); } catch {
     return message("The key page is unavailable", `${MASTER_KEY_MISCONFIGURED.message}.`, 503);
@@ -199,14 +199,14 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (req.method === "GET" && p === "/keys") return home(req, url, env, ring);
   if (req.method === "GET" && p === "/keys/login") return login(url, env);
   if (req.method === "GET" && p === "/keys/callback") return callback(req, url, env, ring);
-  if (req.method === "POST") return post(req, url, env, ring);
+  if (req.method === "POST") return post(req, url, env, ring, ctx);
   return messageHtml("Not found", '<a href="/keys">Key page</a>.', 404);
 }
 
 export const keyPage = {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     try {
-      return harden(await route(req, env));
+      return harden(await route(req, env, ctx));
     } catch {
       // Never echo the error: it could carry request details. KV or GitHub trouble lands here.
       return harden(unavailable());

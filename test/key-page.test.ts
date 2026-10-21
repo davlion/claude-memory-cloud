@@ -7,6 +7,8 @@ import { keyPage, mayChangeEncryption, message, messageHtml } from "../src/key-p
 import { repoSection } from "../src/key-page-html";
 import { toB64Url } from "../src/crypto";
 import { EncryptingStore } from "../src/encrypting-store";
+import { OpError } from "../src/errors";
+import { GitHubStore } from "../src/store";
 import { isEncryptedFile } from "../src/encrypted-files";
 import { KeyRing, KV } from "../src/keyring";
 import { saveMemory } from "../src/operations";
@@ -382,6 +384,43 @@ const FRESH_WARNING = "Your encrypted memories will be written to a new, empty p
 const ADMIN_ONLY = `Only an admin of ${REPO} can turn encryption on or off.`;
 const KEY_RE = /cmk1_[A-Za-z0-9_-]{43}/;
 
+/** Reads a streamed response chunk by chunk: the first chunk, its size in bytes, and the whole body. */
+async function readStream(res: Response) {
+  const reader = res.body!.getReader();
+  const dec = new TextDecoder();
+  const parts: string[] = [];
+  let firstBytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!parts.length) firstBytes = value.byteLength;
+    parts.push(dec.decode(value, { stream: true }));
+  }
+  return { first: parts[0] ?? "", firstBytes, text: parts.join("") + dec.decode() };
+}
+/** Each of `want` appears in `text`, in this order. */
+const expectInOrder = (text: string, want: string[]) => {
+  let at = 0;
+  for (const w of want) {
+    const i = text.indexOf(w, at);
+    expect(i, `${w} after offset ${at}`).toBeGreaterThanOrEqual(0);
+    at = i + w.length;
+  }
+};
+const expectStreamed = async (res: Response) => {
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+  expect(res.headers.get("content-length")).toBeNull();
+  expectHardened(res);
+  const out = await readStream(res);
+  expect(out.firstBytes).toBeGreaterThanOrEqual(1024);
+  expect(out.first).toContain(`<h1>Turning on encryption for ${REPO}</h1>`);
+  expect(out.first).toContain("<p>This can take a minute. Keep this page open.</p>");
+  expect(out.text.startsWith("<!doctype html>")).toBe(true);
+  expect(out.text.trimEnd().endsWith("</html>")).toBe(true);
+  return out;
+};
+
 describe("key page actions", () => {
   const ring = async () => (await KeyRing.fromEnv(env))!;
   const act = async (path: string, fields: Record<string, string>) => {
@@ -430,8 +469,11 @@ describe("key page actions", () => {
     expect(await (await ring()).unwrapText(pending, `keypending-v1\n${hash}\n${REPO}`)).toBe(key);
 
     const conf = await act("/keys/turn-on/confirm", { repo: REPO, key, confirm_repo: REPO.toUpperCase(), path: "in-place" });
-    const text = await conf.text();
-    expect(conf.status, text).toBe(200);
+    const { text } = await expectStreamed(conf);
+    expectInOrder(text, [`<h1>Turning on encryption for ${REPO}</h1>`, "<ol>", `<li>Read ${REPO}: 1 memory</li>`, "<li>Encrypted 1 memory</li>",
+      "<li>Wrote the new history (one commit)</li>", "<li>Stored the key</li>", "</ol>", `<h2>Encryption is on for ${REPO}</h2>`,
+      `https://github.com/${REPO}/commit/c-new`, '<a href="/keys">Back to the key page</a>']);
+    for (const [, v] of conf.headers) expect(v).not.toContain(key);
     expect(text).toContain(`https://github.com/${REPO}/commit/c-new`);
     expect(text).toContain("https://support.github.com/request");
     expect(text).not.toContain(key);
@@ -457,9 +499,9 @@ describe("key page actions", () => {
     const { key } = await turnOn();
     vi.spyOn(KeyRing.prototype, "putRecord").mockRejectedValueOnce(new Error("KV write failed"));
     const res = await act("/keys/turn-on/confirm", { repo: REPO, key, confirm_repo: REPO, path: "in-place" });
-    const text = await res.text();
-    expect(res.status).toBe(500);
-    expect(text).toContain(`${REPO} IS encrypted now`);
+    const { text } = await expectStreamed(res);
+    expectInOrder(text, ["<li>Wrote the new history (one commit)</li>", "</ol>", "<h2>Encryption is on, but didn&#39;t finish</h2>", `${REPO} IS encrypted now`]);
+    expect(text).not.toContain("<li>Stored the key</li>");
     expect(text).toMatch(/register the key on this page/);
     expect(text).not.toContain(key);
   });
@@ -470,12 +512,31 @@ describe("key page actions", () => {
     const { key } = await turnOn();
     vi.spyOn(KeyRing.prototype, "putRecord").mockRejectedValueOnce(new Error("KV write failed"));
     const res = await act("/keys/turn-on/confirm", { repo: REPO, key, confirm_repo: REPO, path: "fresh", new_repo: NEW });
-    const text = await res.text();
-    expect(res.status).toBe(500);
-    expect(text).toContain(`The encrypted copy was written to ${NEW}, but the switch didn&#39;t finish`);
+    const { text } = await expectStreamed(res);
+    expectInOrder(text, [`<li>Checked ${REPO} didn&#39;t change during the copy</li>`, "</ol>", "<h2>Encryption wasn&#39;t turned on</h2>",
+      `The encrypted copy was written to ${NEW}, but the switch didn&#39;t finish`]);
     expect(text).toContain(`${REPO} is unchanged and saves to it continue`);
     expect(await (await ring()).getMove(REPO)).toBeNull();
     expect(text).not.toContain(key);
+  });
+
+  it("GitHub rejecting the commit: the error is streamed, the page is complete, and the same key works on retry", async () => {
+    github({ admin: true }, [fake(REPO)]);
+    await signIn();
+    const { key } = await turnOn();
+    vi.spyOn(GitHubStore.prototype, "replaceHistory").mockRejectedValueOnce(
+      new OpError("write_rejected", "GitHub rejected the commit.", "Lift the rule that blocks force pushes, then try again."));
+    const res = await act("/keys/turn-on/confirm", { repo: REPO, key, confirm_repo: REPO, path: "in-place" });
+    const { text } = await expectStreamed(res);
+    expectInOrder(text, [`<li>Read ${REPO}: 1 memory</li>`, "<li>Encrypted 1 memory</li>", "</ol>",
+      "<h2>Encryption wasn&#39;t turned on</h2>", "<p>GitHub rejected the commit. Lift the rule that blocks force pushes, then try again.</p>"]);
+    expect(text).not.toContain("<li>Wrote");
+    expect(text).not.toContain(key);
+    expect(await (await ring()).get(REPO)).toBeNull();
+    const hash = await hashed(jar.get("__Host-keys")!);
+    expect(await env.OAUTH_KV.get(`keypending:${hash}:${REPO}`)).not.toBeNull();
+    const again = await act("/keys/turn-on/confirm", { repo: REPO, key, confirm_repo: REPO, path: "in-place" });
+    expect((await expectStreamed(again)).text).toContain(`Encryption is on for ${REPO}`);
   });
 
   it("turn on fresh: writes only to new_repo, sets the move and lists the rename steps", async () => {
@@ -483,8 +544,13 @@ describe("key page actions", () => {
     await signIn();
     const { key } = await turnOn();
     const conf = await act("/keys/turn-on/confirm", { repo: REPO, key, confirm_repo: REPO, path: "fresh", new_repo: NEW });
-    const text = await conf.text();
-    expect(conf.status, text).toBe(200);
+    const { text } = await expectStreamed(conf);
+    expectInOrder(text, [`<h1>Turning on encryption for ${REPO}</h1>`, "<ol>", `<li>Read ${REPO}: 1 memory</li>`, "<li>Encrypted 1 memory</li>",
+      `<li>Wrote the encrypted copy to ${NEW}</li>`, `<li>Checked ${REPO} didn&#39;t change during the copy</li>`, "<li>Stored the key</li>",
+      "</ol>", `<h2>Finish moving ${REPO}</h2>`, `The encrypted copy is in <strong>${NEW}</strong>`, '<a href="/keys">Back to the key page</a>']);
+    expect(text).not.toContain(key);
+    for (const c of calls) expect(c.url).not.toContain(key);
+    for (const c of sent) expect(c.body).not.toContain(key);
     const w = writes(sent);
     expect(w.length).toBeGreaterThan(0);
     for (const c of w) expect(c.url.startsWith(`https://api.github.com/repos/${NEW}/`)).toBe(true);
@@ -508,7 +574,8 @@ describe("key page actions", () => {
     for (const [fields, want] of cases) {
       const res = await act("/keys/turn-on/confirm", { repo: REPO, ...fields });
       const text = await res.text();
-      expect(res.status, text).toBeGreaterThanOrEqual(400);
+      expect(res.status, text).toBe(400);
+      expect(text).not.toContain("Turning on encryption");
       expect(text).toMatch(want);
       expect(text).not.toContain(key);
     }
@@ -542,7 +609,7 @@ describe("key page actions", () => {
     expect(await wrong.text()).toContain(`This isn&#39;t the key for ${REPO}.`);
     expect(writes(sent)).toEqual([]);
     const ok = await act("/keys/turn-on/confirm", { repo: REPO, key: text, confirm_repo: REPO, path: "in-place" });
-    expect(ok.status, await ok.clone().text()).toBe(200);
+    expect((await expectStreamed(ok)).text).toContain(`Encryption is on for ${REPO}`);
     const tree = (await bodyOf(sent, "POST", "/git/trees")) as { tree: { path: string; content?: string }[] };
     expect(parseMarker(tree.tree.find((f) => f.path === MARKER_PATH)!.content!)).toMatchObject({ enabled: true, repoId: marker.repoId });
     expect(await (await ring()).getRecord(REPO)).toMatchObject({ enabled: true, repoId: marker.repoId });
