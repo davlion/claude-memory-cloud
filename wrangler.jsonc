@@ -17,6 +17,9 @@
     { "name": "AUTH_RATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }
   ],
   // SCOPES is a secret (it names clients): npx wrangler secret put SCOPES [--env production] < scopes.<env>.json
+  // MEMORY_MASTER_KEY is a secret that wraps registered repo keys (encryption at rest); without it encryption is off:
+  //   openssl rand -base64 32 | npx wrangler secret put MEMORY_MASTER_KEY [--env production]
+  // Optional var REPO_KEY_TTL_SECONDS (min 60): how long a registered repo key is kept. Unset = no expiry (not added by default).
   "vars": {
     "PUBLIC_URL": "https://claude-memory-staging.<subdomain>.workers.dev",
     "GITHUB_APP_SLUG": "<staging app slug>",

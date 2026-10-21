@@ -10,6 +10,10 @@ export interface Env {
   PUBLIC_URL: string;
   /** Worker secret: JSON {"<github login>": {"<scope>": "<owner>/<repo>"}}. The per-user scope map and the sign-in allowlist. */
   SCOPES: string;
+  /** Worker secret: standard base64 of 32 bytes. Wraps registered repo keys; unset = encryption unavailable. */
+  MEMORY_MASTER_KEY?: string;
+  /** Optional var: seconds a registered repo key lives (min 60). Unset or 0 = no expiry. */
+  REPO_KEY_TTL_SECONDS?: string;
   GITHUB_APP_SLUG: string;
   WORKER_VERSION: string;
   MIN_HOOK_VERSION: string;

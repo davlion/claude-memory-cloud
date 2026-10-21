@@ -14,6 +14,7 @@ export default defineProject({
             carol: { general: "carol/claude-memory" },
             erin: { general: "erin/claude-memory" },
           }),
+          MEMORY_MASTER_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
           GITHUB_CLIENT_ID: "Iv1.testclient",
           GITHUB_CLIENT_SECRET: "test-secret",
           GITHUB_TEST_TOKEN: process.env.GITHUB_TEST_TOKEN ?? "",
