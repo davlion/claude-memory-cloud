@@ -1,5 +1,6 @@
 import { generateKeyText, parseKeyText, toB64Url, type RepoKey } from "./crypto";
 import { isEncryptedFile, MARKER_PATH, markerSignedBy, parseMarker, serializeMarker, signMarker, type Marker } from "./encrypted-files";
+import { EncryptingStore } from "./encrypting-store";
 import type { Env } from "./env";
 import type { ErrorCode } from "./errors";
 import { GitHub, toOpError } from "./github";
@@ -130,13 +131,27 @@ const turnOn: KeyAction = async (_req, env, ring, s, form) => {
   if (blocked) return blocked;
   if (sealing(p.st)) return message("Already encrypted", `${p.repo} is already encrypted.`, 409);
   let key: string | null = null;
+  let outside: string[] = [];
   if (!p.st.marker && !p.st.rec) {
     key = generateKeyText();
     const h = await sidHash(s.sid);
     await env.OAUTH_KV.put(pendingKey(h, p.repo), await ring.wrapText(key, pendingAad(h, p.repo)), { expirationTtl: PENDING_TTL });
+  } else {
+    try { outside = await flaggedOutside(env, ring, p); } catch (e) { return fail(NOT_ON, e); }
   }
-  return page(turnOnPage({ repo: p.repo, csrf: s.csrf, key }));
+  return page(turnOnPage({ repo: p.repo, csrf: s.csrf, key, outside }));
 };
+
+/**
+ * Turning back on seals every plaintext memory, including any the memory tool flags as added outside it (it flags them
+ * while the record is on): their paths, for the admin to review first. Names only.
+ */
+async function flaggedOutside(env: Env, ring: KeyRing, t: Target): Promise<string[]> {
+  const status = await new EncryptingStore(t.store, ring, `${env.PUBLIC_URL}/keys`, env.CACHE_KV).status(t.repo, "");
+  if (!status?.enabled || status.moving) return [];
+  return (await t.store.readTree(t.repo)).files
+    .filter((f) => parseMemoryPath(splitSet(f.path).rel) !== null && f.text !== null && !isEncryptedFile(f.text)).map((f) => f.path);
+}
 
 const confirm: KeyAction = async (_req, env, ring, s, form, ctx) => {
   const t = await target(env, s, form, true);

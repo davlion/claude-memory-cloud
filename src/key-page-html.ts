@@ -38,11 +38,17 @@ const hidden = (name: string, value: string) => `<input type="hidden" name="${na
 const keyInput = `<input type="password" name="key" autocomplete="off" spellcheck="false" placeholder="cmk1_…" required>`;
 
 /** Step one of turning on: the new key (shown only here, once) or a request for the existing one, then both paths with their warnings. */
-export function turnOnPage(o: { repo: string; csrf: string; key: string | null }): string {
+export function turnOnPage(o: { repo: string; csrf: string; key: string | null; outside?: string[] }): string {
   const r = esc(o.repo);
+  const n = o.outside?.length ?? 0;
+  const outside = !n ? "" : `\n<p>${n === 1 ? "This file was added outside the memory tool and will be encrypted too. Review it first:"
+    : `These ${n} files were added outside the memory tool and will be encrypted too. Review them first:`}</p>
+<ul>
+${o.outside!.map((p) => `<li>${esc(p)}</li>`).join("\n")}
+</ul>`;
   const intro = o.key
     ? `<p>The new key for <strong>${r}</strong>. Save this in your password manager now; it isn't shown again.</p>\n<p><code>${esc(o.key)}</code></p>`
-    : `<p>Encryption was turned off for <strong>${r}</strong>. Paste its existing key from your password manager to turn it back on.</p>`;
+    : `<p>Encryption was turned off for <strong>${r}</strong>. Paste its existing key from your password manager to turn it back on.</p>${outside}`;
   const form = (path: string, extra: string, label: string) => `<form method="post" action="/keys/turn-on/confirm">
 ${hidden("csrf", o.csrf)}${hidden("repo", o.repo)}${hidden("path", path)}
 <p><label>Key ${keyInput}</label></p>${extra}

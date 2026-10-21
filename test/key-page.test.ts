@@ -616,6 +616,33 @@ describe("key page actions", () => {
     expect(await (await ring()).getRecord(REPO)).toMatchObject({ enabled: true, repoId: marker.repoId });
   });
 
+  it("turning back on lists the memories flagged as added outside the memory tool, names only", async () => {
+    const text = generateKeyText();
+    const key = await parseKeyText(text);
+    const repoId = newRepoId();
+    // Decrypted outside (the key verifies an off marker, the record is on): the plaintext memories are flagged.
+    await (await ring()).put(REPO, text, "dav", Date.now());
+    await (await ring()).putRecord(REPO, { repoId, keyId: key.id, enabled: true });
+    const repo = fake(REPO, { marker: serializeMarker(await signMarker(key, { enabled: false, repoId, keyId: key.id })) });
+    github({ admin: true }, [repo]);
+    await signIn();
+    let body = await (await act("/keys/turn-on", { repo: REPO })).text();
+    expect(body).toContain("This file was added outside the memory tool and will be encrypted too. Review it first:");
+    expect(body).toContain("<li>memories/a.md</li>");
+    expect(body).not.toContain("alpha secret");
+    repo.tree.push({ path: "projects/x/memories/b.md", type: "blob", sha: oid(9), mode: "100644" });
+    repo.texts[oid(9)] = MEM.replace("name: a", "name: b");
+    github({ admin: true }, [repo]);
+    body = await (await act("/keys/turn-on", { repo: REPO })).text();
+    expect(body).toContain("These 2 files were added outside the memory tool and will be encrypted too. Review them first:");
+    expectInOrder(body, ["<li>memories/a.md</li>", "<li>projects/x/memories/b.md</li>"]);
+    // After Stop the record is off: plaintext saves are the memory tool's own, nothing is flagged.
+    await (await ring()).putRecord(REPO, { repoId, keyId: key.id, enabled: false });
+    github({ admin: true }, [repo]);
+    body = await (await act("/keys/turn-on", { repo: REPO })).text();
+    expect(body).not.toContain("added outside the memory tool");
+  });
+
   it("an already encrypted repo can't be turned on again", async () => {
     const { repo } = await encrypted(generateKeyText());
     const { calls, sent } = github({ admin: true }, [repo]);
