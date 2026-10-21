@@ -30,7 +30,7 @@ export class EncryptingStore implements Store {
 
   /** null: not encrypted and no move in progress, so everything passes through unchanged. */
   private async state(repo: string, raw: Snapshot): Promise<State | null> {
-    const sealed = [...raw.files.values()].filter((f) => !f.unreadable && isEncryptedFile(f.content)).length;
+    const sealed = [...raw.files.values()].filter((f) => !f.unreadable && isEncryptedFile(f.content));
     let m: Marker | null = null;
     let badMarker = false;
     if (raw.marker !== null) { try { m = parseMarker(raw.marker); } catch { badMarker = true; } }
@@ -45,24 +45,35 @@ export class EncryptingStore implements Store {
     let problem = false;
     let ids: { repoId: string; keyId: string } | null;
     if (verified && m && ring) {
-      enabled = m.enabled; ids = m;
-      if (!rec || !sameIds(rec, m)) await ring.putRecord(repo, { repoId: m.repoId, keyId: m.keyId, enabled: m.enabled });
+      // A verified marker never downgrades an enabled record: an old signed `enabled: false` could be replayed from history.
+      const downgrade = Boolean(rec?.enabled && !m.enabled);
+      enabled = m.enabled || downgrade; ids = m; problem = downgrade;
+      const want = { repoId: m.repoId, keyId: m.keyId, enabled };
+      if (!rec || !sameIds(rec, want)) await ring.putRecord(repo, want);
       if (move && move.repoId === m.repoId) { await ring.clearMove(repo); move = null; }
-    } else if (rec) {
-      enabled = rec.enabled; ids = rec;
-      problem = !m || !sameIds(m, rec) || forged;
-    } else if (m) {
-      enabled = m.enabled || sealed > 0; ids = m;
-      problem = (!m.enabled && sealed > 0) || forged;
-    } else if (badMarker || sealed > 0) {
-      enabled = true; ids = null; problem = true;
-    } else if (move) {
-      enabled = false; ids = null;
-    } else return null;
+    } else {
+      if (rec) {
+        enabled = rec.enabled; ids = rec;
+        problem = !m || !sameIds(m, rec);
+      } else if (m) {
+        enabled = m.enabled || sealed.length > 0; ids = m;
+        problem = !m.enabled && sealed.length > 0;
+      } else if (badMarker || sealed.length > 0) {
+        enabled = true; ids = null; problem = true;
+      } else if (move) {
+        enabled = false; ids = null;
+      } else return null;
+      if (forged) { enabled = true; problem = true; }
+      // Sticky: once seen encrypted, the repo stays encrypted for every prefix, even one with no sealed files.
+      if (ring && !rec && (enabled || sealed.length > 0)) {
+        const keyId = m?.keyId ?? sealed.map((f) => /^key_id: ([0-9a-f]{16})$/m.exec(f.content)?.[1]).find(Boolean) ?? "";
+        await ring.putRecord(repo, { repoId: m?.repoId ?? "", keyId, enabled: true });
+      }
+    }
 
-    const key = !ring ? "unsupported" : !k ? "missing" : !ids || k.key.id !== ids.keyId ? "mismatch" : "ok";
+    const key = !ring ? "unsupported" : !k ? "missing" : !ids?.repoId || k.key.id !== ids.keyId ? "mismatch" : "ok";
     const status: EncryptionStatus = {
-      encrypted: enabled || sealed > 0, enabled, key, markerProblem: move ? false : problem, sealed, outside: 0,
+      encrypted: enabled || sealed.length > 0, enabled, key, markerProblem: move ? false : problem, sealed: sealed.length, outside: 0,
       ...(move ? { moving: move.to } : {}),
     };
     return { status, key: key === "ok" ? k!.key : null, repoId: key === "ok" ? ids!.repoId : null };

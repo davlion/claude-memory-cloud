@@ -155,9 +155,10 @@ describe("EncryptingStore", () => {
     });
   });
 
-  it("legit stop: a signed enabled: false marker", async () => {
+  it("legit stop: record already disabled (as the key page writes it) + signed enabled: false marker", async () => {
     await encrypted();
     await save(store, "a", "first thing", "quiet harbor\n");
+    await ring.putRecord(REPO, { repoId: REPO_ID, keyId: key.id, enabled: false });
     inner.put(REPO, MARKER_PATH, await marker(false));
     const snap = await store.snapshot(REPO, "");
     expect(snap.encryption).toEqual({ encrypted: true, enabled: false, key: "ok", markerProblem: false, sealed: 1, outside: 0 });
@@ -169,11 +170,54 @@ describe("EncryptingStore", () => {
     expect((await readMemories(store, T, ["a"]))[0]).toMatchObject({ content: mem("a", "first thing", "quiet harbor\n") });
   });
 
+  it("a replayed signed enabled: false marker never downgrades an enabled record", async () => {
+    await encrypted();
+    inner.put(REPO, MARKER_PATH, await marker(false));
+    expect((await store.snapshot(REPO, "")).encryption).toMatchObject({ enabled: true, key: "ok", markerProblem: true });
+    await save(store, "a", "first thing", "quiet harbor\n");
+    expect(isEncryptedFile(files().get("memories/a.md")!)).toBe(true);
+    expect(await ring.getRecord(REPO)).toEqual({ repoId: REPO_ID, keyId: key.id, enabled: true });
+  });
+
   it("a signed marker updates a stale record", async () => {
     await ring.put(REPO, KEY_TEXT, "dav", Date.now());
     inner.put(REPO, MARKER_PATH, await marker(true));
     await store.snapshot(REPO, "");
     expect(await ring.getRecord(REPO)).toEqual({ repoId: REPO_ID, keyId: key.id, enabled: true });
+    await ring.putRecord(REPO, { repoId: REPO_ID, keyId: key.id, enabled: false });
+    await store.snapshot(REPO, "");
+    expect(await ring.getRecord(REPO)).toEqual({ repoId: REPO_ID, keyId: key.id, enabled: true });
+  });
+
+  it("with no record, a signed enabled: false marker creates a disabled record", async () => {
+    await ring.put(REPO, KEY_TEXT, "dav", Date.now());
+    inner.put(REPO, MARKER_PATH, await marker(false));
+    expect((await store.snapshot(REPO, "")).encryption).toMatchObject({ encrypted: false, enabled: false, markerProblem: false });
+    expect(await ring.getRecord(REPO)).toEqual({ repoId: REPO_ID, keyId: key.id, enabled: false });
+  });
+
+  it("sealed files under one prefix keep another prefix encrypted (sticky record)", async () => {
+    inner.put(REPO, "memories/a.md", await sealMemoryFile(key, REPO_ID, "memories/a.md", mem("a", "x", "y\n")));
+    expect((await store.snapshot(REPO, "")).encryption).toMatchObject({ encrypted: true, enabled: true, markerProblem: true });
+    expect(await ring.getRecord(REPO)).toEqual({ repoId: "", keyId: key.id, enabled: true });
+    const s = new EncryptingStore(inner, ring, KEYS_URL);
+    expect((await s.snapshot(REPO, "projects/x/")).encryption).toMatchObject({ encrypted: true, enabled: true });
+    const before = inner.commits.length;
+    await expect(save(s, "p", "about p", "quiet harbor\n", { ...P, prefix: "projects/x/" })).rejects.toMatchObject({ code: "key_required" });
+    // With the key registered, the repo ID is still unknown: never sealed under a guessed ID, never plaintext.
+    await ring.put(REPO, KEY_TEXT, "dav", Date.now());
+    await expect(save(new EncryptingStore(inner, ring, KEYS_URL), "p", "about p", "quiet harbor\n", { ...P, prefix: "projects/x/" })).rejects.toMatchObject({ code: "key_required" });
+    expect(inner.commits.length).toBe(before);
+    expect([...files().keys()].some((k) => k.startsWith("projects/x/"))).toBe(false);
+  });
+
+  it("a forged marker naming the registered key forces encryption on", async () => {
+    await ring.put(REPO, KEY_TEXT, "dav", Date.now());
+    inner.put(REPO, MARKER_PATH, JSON.stringify({ format: 1, enabled: false, repo_id: REPO_ID, key_id: key.id, mac: "00".repeat(32) }));
+    expect((await store.snapshot(REPO, "")).encryption).toMatchObject({ encrypted: true, enabled: true, key: "ok", markerProblem: true });
+    await save(store, "a", "first thing", "quiet harbor\n");
+    expect(isEncryptedFile(files().get("memories/a.md")!)).toBe(true);
+    expect((await readMemories(store, T, ["a"]))[0]).toMatchObject({ content: mem("a", "first thing", "quiet harbor\n") });
   });
 
   it("mismatched key is treated as missing", async () => {
