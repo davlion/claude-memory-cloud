@@ -41,7 +41,7 @@ Use the key page. ([memcrypt](#memcrypt-encrypt-decrypt-and-rotate-from-your-mac
 1. Open `<server>/keys` (the server's front page, `/`, links to it) and sign in with GitHub. The page lists the memory repos you can write to.
 2. Next to the repo, click **Turn on encryption**. (If you aren't an admin of the repo, the page says "Only an admin of `<owner>/<repo>` can turn encryption on or off.")
 3. The page shows the new key once, starting with `cmk1_`. **Save it in your password manager now.**
-4. Choose a path (below), **Move to a fresh repo** or **Encrypt in place** (squash), paste the key back (proof that it was saved), type the repo name to confirm, and click the button.
+4. Choose a path (below), **Move to a fresh repo** or **Encrypt in place** (squash), paste the key back (proof that it was saved), type the repo name to confirm, and click the button. The page shows each step as it finishes; keep it open until it says encryption is on (for a fresh repo, until it shows how to finish the move).
 
 Turning on encrypts every existing memory and leaves the old plaintext history behind, by one of two paths.
 
