@@ -19,7 +19,8 @@ const HEADERS = {
   "cache-control": "no-store",
   "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
   "x-frame-options": "DENY",
-  "referrer-policy": "no-referrer",
+  // Not no-referrer: under it browsers send "Origin: null" on this page's own form posts, which the Origin check refuses.
+  "referrer-policy": "same-origin",
   "x-content-type-options": "nosniff",
 };
 const hashed = async (sid: string) => toB64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sid))));
@@ -291,6 +292,18 @@ describe("key page", () => {
     expect(bad.status).toBe(403);
     expectHardened(bad);
     expect((await post({ repo: REPO })).status).toBe(403);
+  });
+
+  it("a POST from another origin, or with Origin: null, → 403 even with a valid csrf", async () => {
+    github();
+    await signIn();
+    const csrf = JSON.parse((await sessionRecord())!).csrf as string;
+    for (const origin of ["https://evil.example", "null"]) {
+      const res = await go("/keys/register", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin },
+        body: new URLSearchParams({ csrf, repo: REPO }) });
+      expect(res.status).toBe(403);
+      expect(await res.text()).toMatch(/another site/);
+    }
   });
 
   it("a POST without a session → 403", async () => {

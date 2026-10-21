@@ -21,7 +21,7 @@ const SECURITY: Record<string, string> = {
   "Cache-Control": "no-store",
   "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
   "X-Frame-Options": "DENY",
-  "Referrer-Policy": "no-referrer",
+  "Referrer-Policy": "same-origin",
   "X-Content-Type-Options": "nosniff",
 };
 
