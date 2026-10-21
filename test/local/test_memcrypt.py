@@ -141,6 +141,9 @@ class Memcrypt(unittest.TestCase):
         self.assertRegex(self.show(new, "memories/alpha.md"), FILE_RE)
         self.assertNotIn("\nparent ", self.git("--git-dir", new, "cat-file", "-p", "main"))
         self.assertIn("Until you finish, don't save memories to this scope: saves to the old repo would be lost when you delete it.", self.out)
+        # memcrypt can't check a plain git remote's visibility: it says so before the confirmation.
+        self.assertIn(f"Make sure {new} is a private repository.", self.out)
+        self.assertLess(self.out.index("Make sure"), self.out.index(self.mc.FRESH_WARNING[:40]))
         self.assert_key_hidden(KEY)
 
     def test_fresh_target_must_be_empty(self):
@@ -183,6 +186,15 @@ class Memcrypt(unittest.TestCase):
         before = self.head(self.origin)
         self.assertNotEqual(self.run_mc("encrypt", self.origin, "--in-place", "--key-env", "MK", "--confirm", "acme/memory"), 0)
         self.assertIn("1 tag", self.out)
+        self.assertEqual(self.head(self.origin), before)
+
+    def test_in_place_refuses_pull_requests(self):
+        self.git("--git-dir", self.origin, "update-ref", "refs/pull/1/head", self.head(self.origin))
+        before = self.head(self.origin)
+        self.assertNotEqual(self.run_mc("encrypt", self.origin, "--in-place", "--key-env", "MK", "--confirm", "acme/memory"), 0)
+        self.assertIn("1 pull request", self.out)
+        self.assertIn("Pull requests can't be deleted: use --to with a fresh repo instead.", self.out)
+        self.assertNotIn("Delete them and try again", self.out)
         self.assertEqual(self.head(self.origin), before)
 
     def test_decrypt_restores_bytes(self):

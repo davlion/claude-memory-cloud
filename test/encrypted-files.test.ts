@@ -80,3 +80,16 @@ describe("encrypted memory file", () => {
     expect(isEncryptedFile(await sealMemoryFile(key, "r1", P, "x"))).toBe(true);
   });
 });
+
+describe("files sealed by the Python kit (test/fixtures/python-sealed.json, made with kit/memory_kit/crypt.py)", () => {
+  it("openMemoryFile opens the memory and markerSignedBy accepts the marker", async () => {
+    const fx = (await import("./fixtures/python-sealed.json")).default;
+    const key = await parseKeyText(fx.key_text);
+    expect(isEncryptedFile(fx.file_text)).toBe(true);
+    expect(await openMemoryFile(key, fx.repo_id, fx.path, fx.file_text)).toBe(fx.plaintext);
+    const m = parseMarker(fx.marker_text);
+    expect(m).toMatchObject({ enabled: true, repoId: fx.repo_id, keyId: key.id });
+    expect(await markerSignedBy(key, m)).toBe(true);
+    expect(serializeMarker(m)).toBe(fx.marker_text);
+  });
+});

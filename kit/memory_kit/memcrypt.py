@@ -234,8 +234,9 @@ def _extra_refs(r: Run, url: str, branch: str) -> None:
     found = [f"{n} {'other ' if k == 'branch' else ''}{k}{'es' if k == 'branch' and n != 1 else 's' if n != 1 else ''}"
              for k, n in counts.items() if n]
     if found:
-        raise Abort(f"The repo has {', '.join(found)}, which would keep the old history reachable. Nothing was changed. "
-                    "Delete them and try again, or use --to with a fresh repo instead.")
+        how = ("Pull requests can't be deleted: use --to with a fresh repo instead." if counts["pull request"]
+               else "Delete them and try again, or use --to with a fresh repo instead.")
+        raise Abort(f"The repo has {', '.join(found)}, which would keep the old history reachable. Nothing was changed. {how}")
 
 
 def _choose(a: argparse.Namespace, choices: List[str]) -> str:
@@ -320,6 +321,8 @@ def run(a: argparse.Namespace) -> int:
                 raise Abort("The new repo must be a different repo. Nothing was changed.")
             if r.out("ls-remote", a.to, here=False):
                 raise Abort(f"{redact_remote(a.to)} isn't empty. Create a new, empty private repo (no README) and try again. Nothing was changed.")
+            # A plain git remote doesn't say whether it is private; the memory tool refuses a public one only after the rename.
+            print(f"Make sure {redact_remote(a.to)} is a private repository.")
         _confirm(r, repo, warning, new_key)
         sha = _commit(r, files, changes, message, head if path == "commit" else None)
         if path == "in-place":

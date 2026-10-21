@@ -28,6 +28,13 @@ class Vectors(unittest.TestCase):
             self.assertEqual(crypt.open_sealed(key.file_key, v["sealed"], v["aad"]), v["plaintext"])
             self.assertEqual(crypt.hmac_hex(key.mac_key, v["mac_message"]), v["mac"])
 
+    def test_python_sealed_fixture(self):
+        # The fixture the TS tests open (test/encrypted-files.test.ts); kept stable here too.
+        fx = json.loads((REPO / "test" / "fixtures" / "python-sealed.json").read_text(encoding="utf-8"))
+        key = crypt.parse_key_text(fx["key_text"])
+        self.assertEqual(crypt.open_memory_file(key, fx["repo_id"], fx["path"], fx["file_text"]), fx["plaintext"])
+        self.assertTrue(crypt.marker_signed_by(key, crypt.parse_marker(fx["marker_text"])))
+
     def test_key_text(self):
         t = crypt.generate_key_text()
         self.assertRegex(t, r"^cmk1_[A-Za-z0-9_-]{43}$")

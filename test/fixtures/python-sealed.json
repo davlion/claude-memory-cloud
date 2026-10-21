@@ -1,0 +1,8 @@
+{
+  "key_text": "cmk1_ilgjnXgGnkk8etUmP4pYCuzQuyTluQ5ZnTUxXWBu63o",
+  "repo_id": "WqbP4pHkQNbMXnEvcUZyOg",
+  "path": "projects/billing/memories/python-made.md",
+  "plaintext": "---\nname: python-made\ndescription: Sealed by the Python kit — é ✓\nmetadata:\n  type: project\n---\n\nBody written by crypt.py: 記憶\n",
+  "file_text": "---\nencrypted: claude-memory-v1\nname: python-made\nkey_id: 29a0edb93f5a998c\n---\nocMWPR8COzD/1ZnElE7viXoVJEYPoj5pwcLD62ZeuoULxtHzUDbIjQQfywuFctiPJPYgjgwvJY1JQ0LDFP5Nw3DHrAhV4vS7/JDuDUAHaQrCqw5MA8R84kg3Q5htUzv8LE6cDK4ghYSpCeC5k6iAz1QQt8yfbsmO4mkB8eMUbI5L1La28mLFWBPXKYdhE7vpJP9rPpg79HdbrWY5osnwzTTilQ==\n",
+  "marker_text": "{\n  \"format\": 1,\n  \"enabled\": true,\n  \"repo_id\": \"WqbP4pHkQNbMXnEvcUZyOg\",\n  \"key_id\": \"29a0edb93f5a998c\",\n  \"mac\": \"3aa6acb5e7611425b2555e0593264ba78beffcd968648d926bd361c6818e4ced\"\n}\n"
+}
