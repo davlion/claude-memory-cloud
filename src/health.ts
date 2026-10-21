@@ -248,6 +248,8 @@ export function encryptionChecks(t: Target, repo: string, s: EncryptionStatus, k
   } else if (s.markerProblem) {
     out.push({ check, status: "fail", detail: "encrypted, but the encryption marker is missing or not signed",
       action: `Someone may have tried to turn encryption off. Saves stay encrypted. Review recent commits: https://github.com/${repo}/commits` });
+  } else if (s.rotated) {
+    out.push({ check, status: "warn", detail: "encrypted, the marker names a different key (rotated?)", action: `Register the repo's current key: ${page}` });
   }
   if (s.key === "unsupported") {
     out.push({ check, status: "fail", detail: "encrypted repo, but this memory server doesn't support encryption", action: "Ask the memory server's operator to turn on encryption." });

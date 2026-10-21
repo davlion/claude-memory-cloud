@@ -323,6 +323,31 @@ describe("switchOnInPlace", () => {
   });
 });
 
+describe("turning back on without a usable marker", () => {
+  it("keeps the record's repo ID when the key is the record's key, so files already sealed still open", async () => {
+    const keyText = generateKeyText();
+    const key = await parseKeyText(keyText);
+    const sealedB = await sealMemoryFile(key, "keep-this-id", "memories/b.md", MEM_A.replace("name: a", "name: b"));
+    const r = fakeRepo(uniq("mem"));
+    r.tree.push({ path: "memories/b.md", type: "blob", sha: oid(20), mode: "100644" });
+    r.texts[oid(20)] = sealedB; // marker deleted
+    const { calls } = mockFetch(routes([r]));
+    const keys = await ring();
+    await keys.putRecord(r.name, { repoId: "keep-this-id", keyId: key.id, enabled: false });
+    await switchOnInPlace(store(), keys, env.CACHE_KV, r.name, keyText, "dav");
+    const tree = await body(calls, "POST", "/git/trees") as unknown as TreeBody;
+    expect(parseMarker(tree.tree.find((t) => t.path === MARKER_PATH)!.content!)).toMatchObject({ enabled: true, repoId: "keep-this-id" });
+  });
+
+  it("planEncryptedTree: the record's repo ID only for the record's key", async () => {
+    const key = await parseKeyText(generateKeyText());
+    const rec = { repoId: "rec-id", keyId: key.id, enabled: false };
+    expect((await planEncryptedTree([], key, null, rec)).marker.repoId).toBe("rec-id");
+    expect((await planEncryptedTree([], key, null, { ...rec, keyId: "0".repeat(16) })).marker.repoId).not.toBe("rec-id");
+    expect((await planEncryptedTree([], key, null, null)).marker.repoId).not.toBe("rec-id");
+  });
+});
+
 describe("switchOnFresh", () => {
   it("a non-empty target → invalid, nothing written anywhere", async () => {
     const r = fakeRepo(uniq("mem"));

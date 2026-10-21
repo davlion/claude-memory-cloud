@@ -20,6 +20,8 @@ export interface EncryptionStatus {
   moving?: string;
   /** Only while moving: the old repo changed after its encrypted copy was written, so the copy lacks those changes. */
   moveStale?: boolean;
+  /** The marker is the record's except for its key ID (memcrypt rotate, new key not registered yet): not a marker problem. */
+  rotated?: boolean;
 }
 export interface HeadCommit { sha: string; message: string; author: string; date: string; url: string }
 export interface Snapshot {

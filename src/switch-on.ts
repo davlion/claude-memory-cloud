@@ -1,7 +1,7 @@
 import { newRepoId, parseKeyText, type RepoKey } from "./crypto";
 import { isEncryptedFile, MARKER_PATH, markerSignedBy, openMemoryFile, parseMarker, sealMemoryFile, serializeMarker, signMarker, type Marker } from "./encrypted-files";
 import { OpError } from "./errors";
-import type { KeyRing } from "./keyring";
+import type { EncryptedRepoRecord, KeyRing } from "./keyring";
 import { namesOnlyIndex, parseMemoryPath } from "./memory";
 import { clearSnapshots, splitSet, type GitHubStore, type TreeFile, type TreeWrite } from "./store";
 
@@ -12,9 +12,10 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * The repo's whole tree with every memory sealed under `key`, names-only `MEMORY.md` files and a signed `enabled: true` marker.
  * Files already sealed must open with `key`; anything else is kept by SHA and mode.
  */
-export async function planEncryptedTree(files: TreeFile[], key: RepoKey, existing: Marker | null): Promise<{ files: TreeWrite[]; marker: Marker }> {
-  // An existing marker's repo ID is kept only when this key signed it; sealed files then still open.
-  const repoId = existing && await markerSignedBy(key, existing) ? existing.repoId : newRepoId();
+export async function planEncryptedTree(files: TreeFile[], key: RepoKey, existing: Marker | null, rec: EncryptedRepoRecord | null = null): Promise<{ files: TreeWrite[]; marker: Marker }> {
+  // The repo ID is kept from a marker this key signed or, without one (deleted or unparseable), from the record when it
+  // names this key; files already sealed then still open.
+  const repoId = existing && await markerSignedBy(key, existing) ? existing.repoId : rec?.keyId === key.id && rec.repoId ? rec.repoId : newRepoId();
   const unreadable: string[] = [];
   const out: TreeWrite[] = [];
   for (const f of files) {
@@ -38,7 +39,7 @@ export async function planEncryptedTree(files: TreeFile[], key: RepoKey, existin
   return { files: out, marker };
 }
 
-/** The current marker; an unparseable one counts as absent (a new repo ID, so files sealed under the old one fail to open). */
+/** The current marker; an unparseable one counts as absent (the record's repo ID, if it names the key, or a new one). */
 const existingMarker = (files: TreeFile[]): Marker | null => {
   const f = files.find((x) => x.path === MARKER_PATH);
   if (!f) return null;
@@ -62,7 +63,7 @@ export async function switchOnInPlace(store: GitHubStore, keys: KeyRing, cache: 
       throw new OpError("invalid", `${repo} has ${what}, which would keep the old plaintext reachable. Nothing was changed.`,
         extra.pulls ? "Pull requests can't be deleted: move to a fresh repo instead." : "Delete the other branches and tags, then try again, or move to a fresh repo instead.");
     }
-    const plan = await planEncryptedTree(tree.files, key, existingMarker(tree.files));
+    const plan = await planEncryptedTree(tree.files, key, existingMarker(tree.files), await keys.getRecord(repo));
     const message = `encrypt: switch on, history squashed${trailers(login)}`;
     const res = tree.head === null
       ? await store.writeFirstCommit(repo, plan.files, message)
@@ -90,14 +91,15 @@ export async function switchOnFresh(store: GitHubStore, keys: KeyRing, cache: KV
   await keys.setSwitching(repo);
   try {
     const tree = await store.readTree(repo);
-    const plan = await planEncryptedTree(tree.files, key, existingMarker(tree.files));
+    const prevRecord = await keys.getRecord(repo);
+    const plan = await planEncryptedTree(tree.files, key, existingMarker(tree.files), prevRecord);
     const res = await store.writeFirstCommit(newRepo, plan.files, `encrypt: fresh encrypted copy of ${repo}${trailers(login)}`, repo);
     // A save that landed in `repo` during the copy would be lost with the old repo.
     if (await store.currentHead(repo) !== tree.head) {
       throw new OpError("unavailable", "The memory repo changed while its encrypted copy was being written; nothing was switched.",
         `Delete and recreate ${newRepo} as an empty private repo, then try again.`);
     }
-    await keys.setMove(repo, { to: newRepo, repoId: plan.marker.repoId, head: tree.head, prevRecord: await keys.getRecord(repo) });
+    await keys.setMove(repo, { to: newRepo, repoId: plan.marker.repoId, head: tree.head, prevRecord });
     await keys.putRecord(repo, { repoId: plan.marker.repoId, keyId: key.id, enabled: true });
     await keys.put(repo, keyText, login, Date.now());
     await clearSnapshots(cache, repo);

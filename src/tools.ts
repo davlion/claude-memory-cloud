@@ -233,7 +233,7 @@ async function dispatch(d: ToolDeps, name: string, a: Record<string, unknown>, n
         return ok(framedResult(await saveMemory(d.store, target, {
           name: String(a.name ?? ""), description: String(a.description ?? ""), type: String(a.type ?? ""), body: String(a.body ?? ""),
           version: versionArg(a.version), force: Boolean(a.force), confirmed: a.confirmed === true, source: a.source as string | undefined,
-        }, now, guardContext(d.cfg, target)), nonce));
+        }, now, guardContext(d.cfg, target), d.keysUrl), nonce));
       }
       case "memory_delete":
         return ok(framedResult(await deleteMemory(d.store, resolveTarget(d.cfg, scope, project), String(a.name ?? ""), versionArg(a.version), a.source as string | undefined), nonce));

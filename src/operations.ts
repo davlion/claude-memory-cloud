@@ -1,4 +1,4 @@
-import { keyRequired } from "./encrypting-store";
+import { keyRequired, saveBlocked } from "./encrypting-store";
 import { OpError, RETRYABLE, type ErrorCode } from "./errors";
 import { toOpError } from "./github";
 import { scanCrossClient, scanPersonal } from "./guard";
@@ -101,7 +101,7 @@ async function withRetry(
   throw new OpError("unavailable", `could not commit after ${MAX_ATTEMPTS} attempts (concurrent writes)`, "Try again in a moment.");
 }
 
-export async function saveMemory(store: Store, t: Target, input: SaveInput, now: Date, guard: GuardContext): Promise<OpResult> {
+export async function saveMemory(store: Store, t: Target, input: SaveInput, now: Date, guard: GuardContext, keysUrl = ""): Promise<OpResult> {
   const r = (status: OpResult["status"], extra: Partial<OpResult> = {}): OpResult => ({ status, name: input.name, scope: t.displayLabel, ...extra });
   const description = (input.description ?? "").replace(/\s+/g, " ").trim();
   if (!isValidName(input.name)) return r("invalid", { message: "name must match ^[a-z0-9][a-z0-9-]{0,63}$" });
@@ -136,6 +136,8 @@ export async function saveMemory(store: Store, t: Target, input: SaveInput, now:
   const path = memoryPath(input.name);
 
   return withRetry(store, t, (snap) => {
+    const blocked = saveBlocked(t.repo, snap.encryption, keysUrl);
+    if (blocked) throw blocked;
     const existing = snap.files.get(path);
     if (existing?.unreadable) {
       throw new OpError("write_rejected", `${memoryPath(input.name)} is unreadable to the memory server (binary or truncated), so it is not overwritten. Not saved.`,

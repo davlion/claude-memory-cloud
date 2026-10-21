@@ -23,7 +23,7 @@ const OTHER_TEXT = generateKeyText();
 const REPO_ID = newRepoId();
 const mem = (name: string, description: string, body: string) => serializeMemory({ name, description, type: "project", body });
 const save = (s: Store, name: string, description = `about ${name}`, body = `${name} body\n`, t = T) =>
-  saveMemory(s, t, { name, description, type: "project", body, source: "test", force: true }, NOW, G);
+  saveMemory(s, t, { name, description, type: "project", body, source: "test", force: true }, NOW, G, KEYS_URL);
 
 let key: RepoKey;
 let ring: KeyRing;
@@ -229,6 +229,35 @@ describe("EncryptingStore", () => {
     await expect(save(store, "b")).rejects.toMatchObject({ code: "key_required" });
     expect(inner.commits.length).toBe(before);
     expect(files().has("memories/b.md")).toBe(false);
+  });
+
+  it("a legit rotate (new key not registered yet) is flagged rotated, not as a marker problem", async () => {
+    await encrypted();
+    await ring.remove(REPO);
+    inner.put(REPO, MARKER_PATH, await marker(true, REPO_ID, await parseKeyText(OTHER_TEXT)));
+    const s = new EncryptingStore(inner, ring, KEYS_URL);
+    expect((await s.snapshot(REPO, "")).encryption).toMatchObject({ enabled: true, key: "missing", markerProblem: false, rotated: true });
+    // The old key still registered: the same, with a mismatch.
+    await ring.put(REPO, KEY_TEXT, "dav", Date.now());
+    expect(await new EncryptingStore(inner, ring, KEYS_URL).status(REPO, "")).toMatchObject({ key: "mismatch", markerProblem: false, rotated: true });
+    // Anything more than the key ID changed stays a marker problem.
+    inner.put(REPO, MARKER_PATH, await marker(true, newRepoId(), await parseKeyText(OTHER_TEXT)));
+    const changed = await new EncryptingStore(inner, ring, KEYS_URL).status(REPO, "");
+    expect(changed).toMatchObject({ markerProblem: true });
+    expect(changed).not.toHaveProperty("rotated");
+  });
+
+  it("key missing: a save fails key_required before the exists and similar checks (locked placeholders)", async () => {
+    await encrypted();
+    await save(store, "harbor-notes", "quiet harbor notes");
+    await ring.remove(REPO);
+    const s = new EncryptingStore(inner, ring, KEYS_URL);
+    const plain = (name: string) => saveMemory(s, T, { name, description: "quiet harbor notes", type: "project", body: "x\n", source: "t" }, NOW, G, KEYS_URL);
+    await expect(plain("harbor-notes")).rejects.toMatchObject({ code: "key_required", action: expect.stringContaining(`${KEYS_URL}?repo=dav/mem`) });
+    await expect(plain("harbor-note")).rejects.toMatchObject({ code: "key_required" });
+    // During a move the move's own error comes first.
+    await ring.setMove(REPO, { to: "dav/mem-encrypted", repoId: newRepoId(), head: null, prevRecord: null });
+    await expect(plain("harbor-notes")).rejects.toMatchObject({ code: "unavailable", action: `Finish or cancel the move on the key page: ${KEYS_URL}?repo=dav/mem` });
   });
 
   it("mismatched key is treated as missing", async () => {

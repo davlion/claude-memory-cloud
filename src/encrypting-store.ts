@@ -9,9 +9,19 @@ export const keyRequired = (repo: string, keysUrl: string) => new OpError("key_r
   `${repo} is encrypted and its key isn't registered, so this can't be saved yet.`,
   `Register the repo's key (from your password manager) at ${keysUrl}?repo=${repo}, then try again.`);
 
+const moveWait = (repo: string, keysUrl: string) => new OpError("unavailable", "Encryption is being turned on for this memory repo.",
+  `Finish or cancel the move on the key page: ${keysUrl}?repo=${repo}`);
+
 const unsupported = (repo: string) => new OpError("write_rejected",
   `${repo} is an encrypted memory repo and this memory server doesn't support encryption. Not saved.`,
   "Ask the memory server's operator to turn on encryption, or use one that has it.");
+
+/** Why nothing can be saved to a repo whose snapshot says `s`, checked before anything else (locked placeholders mustn't answer exists or similar_found); null if saves can go on. */
+export function saveBlocked(repo: string, s: EncryptionStatus | undefined, keysUrl: string): OpError | null {
+  if (!s?.enabled || s.key === "ok") return null;
+  if (s.moving) return moveWait(repo, keysUrl);
+  return s.key === "unsupported" ? unsupported(repo) : keyRequired(repo, keysUrl);
+}
 
 /** A repo's encryption state for one snapshot; `key`/`repoId` are set only when sealed files can be opened and new ones sealed. */
 interface State { status: EncryptionStatus; key: RepoKey | null; repoId: string | null }
@@ -50,6 +60,7 @@ export class EncryptingStore implements Store {
 
     let enabled: boolean;
     let problem = false;
+    let rotated = false;
     let ids: { repoId: string; keyId: string } | null;
     if (verified && m && ring) {
       // A verified marker never downgrades an enabled record: an old signed `enabled: false` could be replayed from history.
@@ -63,6 +74,8 @@ export class EncryptingStore implements Store {
       if (rec) {
         enabled = rec.enabled; ids = rec;
         problem = !m || !sameIds(m, rec);
+        // memcrypt rotate: only the key ID moved on, and the registered key (if any) didn't sign it.
+        if (problem && m?.enabled && !forged && sameIds(m, { ...rec, keyId: m.keyId })) { problem = false; rotated = true; }
       } else if (m) {
         enabled = m.enabled || sealed.length > 0; ids = m;
         problem = !m.enabled && sealed.length > 0;
@@ -88,7 +101,7 @@ export class EncryptingStore implements Store {
     const moveStale = Boolean(move && raw.commitSha !== move.head && m?.repoId !== move.repoId);
     const status: EncryptionStatus = {
       encrypted: enabled || sealed.length > 0, enabled, key, markerProblem: move ? false : problem, sealed: sealed.length, outside: 0,
-      ...(move ? { moving: move.to } : {}), ...(moveStale ? { moveStale } : {}),
+      ...(move ? { moving: move.to } : {}), ...(moveStale ? { moveStale } : {}), ...(rotated && !move ? { rotated } : {}),
     };
     return { status, key: key === "ok" ? k!.key : null, repoId: key === "ok" ? ids!.repoId : null };
   }
@@ -127,10 +140,8 @@ export class EncryptingStore implements Store {
   async commit(repo: string, prefix: string, base: string | null, changes: Change[], message: string): Promise<CommitResult> {
     if (this.keys) {
       const [switching, move] = await Promise.all([this.keys.isSwitching(repo), this.keys.getMove(repo)]);
-      if (switching || move) {
-        throw new OpError("unavailable", "Encryption is being turned on for this memory repo.",
-          switching ? "Try again in a minute." : `Finish or cancel the move on the key page: ${this.keysUrl}?repo=${repo}`);
-      }
+      if (switching) throw new OpError("unavailable", "Encryption is being turned on for this memory repo.", "Try again in a minute.");
+      if (move) throw moveWait(repo, this.keysUrl);
     }
     const memo = this.last.get(`${repo}\n${prefix}`);
     const raw = memo && memo.commitSha === base ? memo : await this.inner.snapshot(repo, prefix);

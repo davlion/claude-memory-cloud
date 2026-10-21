@@ -279,6 +279,10 @@ describe("encryptionChecks", () => {
       detail: "encrypted copy written to dav/mem2, but dav/mem changed after the copy",
       action: `Don't delete dav/mem. Cancel the move on the key page and start it again: ${KEY_PAGE}` }]);
   });
+  it("rotated: a warning to register the current key, not the tamper alarm", () => {
+    expect(run({ rotated: true })).toEqual([{ check: "encryption:general", status: "warn",
+      detail: "encrypted, the marker names a different key (rotated?)", action: `Register the repo's current key: ${KEY_PAGE}` }]);
+  });
   it("encrypted off and nothing sealed: no lines", () => {
     expect(run({ enabled: false, sealed: 0, encrypted: false })).toEqual([]);
   });
