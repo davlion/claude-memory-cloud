@@ -34,8 +34,11 @@ function rateLimitKey(request: Request, url: URL): string | null {
   const p = url.pathname;
   const get = request.method === "GET";
   const limited = (p === "/register" && request.method === "POST") || (p === "/authorize" && get)
-    || (get && (p === "/keys/login" || p === "/keys/callback")) || (request.method === "POST" && isKeyPage(p));
-  return limited ? `${url.pathname}:${request.headers.get("cf-connecting-ip") ?? "unknown"}` : null;
+    || (get && (p === "/keys/login" || p === "/keys/callback"));
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  // One bucket for every key page POST, so varying the path doesn't buy more attempts.
+  if (request.method === "POST" && isKeyPage(p)) return `keys-post:${ip}`;
+  return limited ? `${p}:${ip}` : null;
 }
 
 export default {

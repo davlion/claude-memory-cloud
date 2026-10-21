@@ -5,6 +5,7 @@ import { MASTER_KEY_MISCONFIGURED, SCOPES_MISCONFIGURED } from "./errors";
 import { GitHub, toOpError } from "./github";
 import { exchangeCode, isAllowedUser, notAllowed, s256, ScopesError } from "./github-auth";
 import { scopeReachabilityDetailed } from "./health";
+import { esc } from "./consent";
 import { doc, keysHome, notOnPage, reloadPage, type RepoView } from "./key-page-html";
 import { KeyRing } from "./keyring";
 import { idPinKey, parseScopeMap, REPO_RE, scopesFor, type ScopeConfig } from "./scopes";
@@ -21,6 +22,7 @@ const SECURITY: Record<string, string> = {
   "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "no-referrer",
+  "X-Content-Type-Options": "nosniff",
 };
 
 /** A signed-in key page browser. `token` is the unwrapped GitHub token; `id` is the numeric GitHub user ID. */
@@ -30,6 +32,9 @@ export type KeyAction = (req: Request, env: Env, ring: KeyRing, s: KeySession, f
 export const keyActions: Record<string, KeyAction> = {};
 
 export const sessionAad = (sid: string) => `keysession-v1\n${sid}`;
+/** KV holds the session under a hash of its id, so reading KV never yields a working cookie. */
+const sessionKey = async (sid: string) =>
+  `keysession:${toB64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sid))))}`;
 const random = () => toB64Url(crypto.getRandomValues(new Uint8Array(32)));
 const validRepo = (v: string | null | undefined) => (v && REPO_RE.test(v) ? v : null);
 const keysPath = (repo: string | null) => (repo ? `/keys?repo=${encodeURIComponent(repo)}` : "/keys");
@@ -44,8 +49,11 @@ const redirect = (location: string, cookies: string[] = []) => {
   for (const c of cookies) h.append("Set-Cookie", c);
   return new Response(null, { status: 302, headers: h });
 };
-const message = (title: string, text: string, status: number, cookies: string[] = []) =>
-  page(doc(title, `<h1>${title}</h1><p>${text}</p>`), status, cookies);
+/** A one-paragraph page; `html` is trusted markup, never request or GitHub text. */
+export const messageHtml = (title: string, html: string, status: number, cookies: string[] = []) =>
+  page(doc(title, `<h1>${esc(title)}</h1><p>${html}</p>`), status, cookies);
+/** A one-paragraph page with plain text, escaped. */
+export const message = (title: string, text: string, status: number, cookies: string[] = []) => messageHtml(title, esc(text), status, cookies);
 const unavailable = () => message("The key page is unavailable", "The memory server couldn't check its settings right now. Try again in a moment.", 503);
 const scopesBroken = () => message("The key page is unavailable", `${SCOPES_MISCONFIGURED.message}. ${SCOPES_MISCONFIGURED.action}.`, 503);
 
@@ -73,7 +81,7 @@ function same(a: string, b: string): boolean {
 export async function requireSession(req: Request, env: Env, ring?: KeyRing): Promise<KeySession | Response> {
   const keys = ring ?? (await KeyRing.fromEnv(env))!;
   const sid = cookie(req, SESSION_COOKIE);
-  const raw = sid && TOKEN_RE.test(sid) ? await env.OAUTH_KV.get(`keysession:${sid}`) : null;
+  const raw = sid && TOKEN_RE.test(sid) ? await env.OAUTH_KV.get(await sessionKey(sid)) : null;
   let s: Omit<KeySession, "sid" | "cfg"> | null = null;
   if (sid && raw) {
     try {
@@ -83,7 +91,7 @@ export async function requireSession(req: Request, env: Env, ring?: KeyRing): Pr
     } catch { /* unreadable session: none */ }
   }
   if (!s) {
-    if (req.method !== "GET") return message("Sign in again", 'Your key page session ended. <a href="/keys">Sign in again</a>.', 403);
+    if (req.method !== "GET") return messageHtml("Sign in again", 'Your key page session ended. <a href="/keys">Sign in again</a>.', 403);
     const path = keysPath(validRepo(new URL(req.url).searchParams.get("repo")));
     // A link from another site carries no SameSite=Strict cookie; a reload from this page does.
     if (req.headers.get("sec-fetch-site") === "cross-site") return page(reloadPage(path));
@@ -93,7 +101,7 @@ export async function requireSession(req: Request, env: Env, ring?: KeyRing): Pr
   try { cfg = scopesFor(parseScopeMap(env.SCOPES), s.login); } catch { return scopesBroken(); }
   const pinned = await env.OAUTH_KV.get(idPinKey(s.login));
   if (!cfg || (pinned !== null && pinned !== String(s.id))) {
-    await env.OAUTH_KV.delete(`keysession:${sid}`);
+    await env.OAUTH_KV.delete(await sessionKey(sid!));
     return notAllowed(s.login);
   }
   return { ...s, sid: sid!, cfg };
@@ -115,7 +123,7 @@ async function login(url: URL, env: Env): Promise<Response> {
 async function callback(req: Request, url: URL, env: Env, ring: KeyRing): Promise<Response> {
   const state = url.searchParams.get("state") ?? "";
   const bound = cookie(req, LOGIN_COOKIE);
-  const expired = () => message("Sign-in could not continue",
+  const expired = () => messageHtml("Sign-in could not continue",
     'This sign-in expired, was already used, or was started in another browser. <a href="/keys">Start again</a>.', 400, [CLEAR_LOGIN]);
   if (!TOKEN_RE.test(state) || !bound || !same(state, bound)) return expired();
   const raw = await env.OAUTH_KV.get(`keystate:${state}`);
@@ -124,7 +132,7 @@ async function callback(req: Request, url: URL, env: Env, ring: KeyRing): Promis
   const { verifier, repo } = JSON.parse(raw) as { verifier: string; repo: string | null };
   const code = url.searchParams.get("code");
   if (url.searchParams.get("error") || !code) {
-    return message("Sign-in was cancelled", '<a href="/keys">Start again</a>.', 400, [CLEAR_LOGIN]);
+    return messageHtml("Sign-in was cancelled", '<a href="/keys">Start again</a>.', 400, [CLEAR_LOGIN]);
   }
   let token: string;
   let user: { login: string; id: number };
@@ -136,7 +144,7 @@ async function callback(req: Request, url: URL, env: Env, ring: KeyRing): Promis
     if (!res.ok) throw new Error("user lookup failed");
     user = (await res.json()) as { login: string; id: number };
   } catch {
-    return message("Sign-in failed", '<a href="/keys">Try again</a>.', 502, [CLEAR_LOGIN]);
+    return messageHtml("Sign-in failed", '<a href="/keys">Try again</a>.', 502, [CLEAR_LOGIN]);
   }
   let allowed: boolean;
   try {
@@ -151,8 +159,9 @@ async function callback(req: Request, url: URL, env: Env, ring: KeyRing): Promis
   }
   const sid = random();
   const session = { login: user.login, id: user.id, csrf: random(), token: await ring.wrapText(token, sessionAad(sid)) };
-  await env.OAUTH_KV.put(`keysession:${sid}`, JSON.stringify(session), { expirationTtl: SESSION_TTL });
-  return redirect(keysPath(validRepo(repo)), [`${SESSION_COOKIE}=${sid}; Path=/; Secure; HttpOnly; SameSite=Strict`, CLEAR_LOGIN]);
+  await env.OAUTH_KV.put(await sessionKey(sid), JSON.stringify(session), { expirationTtl: SESSION_TTL });
+  // Not a 302: after GitHub's redirect chain some browsers withhold the new Strict cookie; a reload from this page sends it.
+  return page(reloadPage(keysPath(validRepo(repo))), 200, [`${SESSION_COOKIE}=${sid}; Path=/; Secure; HttpOnly; SameSite=Strict`, CLEAR_LOGIN]);
 }
 
 async function home(req: Request, url: URL, env: Env, ring: KeyRing): Promise<Response> {
@@ -186,7 +195,7 @@ async function post(req: Request, url: URL, env: Env, ring: KeyRing): Promise<Re
   try { form = await req.formData(); } catch { return message("Bad request", "The form couldn't be read.", 400); }
   const csrf = form.get("csrf");
   if (typeof csrf !== "string" || !same(csrf, s.csrf)) {
-    return message("Not allowed", 'This form is out of date. <a href="/keys">Reload the key page</a> and try again.', 403);
+    return messageHtml("Not allowed", 'This form is out of date. <a href="/keys">Reload the key page</a> and try again.', 403);
   }
   const name = url.pathname.slice("/keys/".length);
   const action = Object.hasOwn(keyActions, name) ? keyActions[name] : undefined;
@@ -205,7 +214,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (req.method === "GET" && p === "/keys/login") return login(url, env);
   if (req.method === "GET" && p === "/keys/callback") return callback(req, url, env, ring);
   if (req.method === "POST") return post(req, url, env, ring);
-  return message("Not found", '<a href="/keys">Key page</a>.', 404);
+  return messageHtml("Not found", '<a href="/keys">Key page</a>.', 404);
 }
 
 export const keyPage = {

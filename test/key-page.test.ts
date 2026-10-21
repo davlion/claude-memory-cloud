@@ -1,7 +1,9 @@
 import { env, exports } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import { generateKeyText, parseKeyText } from "../src/crypto";
-import { keyPage } from "../src/key-page";
+import { keyPage, message, messageHtml } from "../src/key-page";
+import { repoSection } from "../src/key-page-html";
+import { toB64Url } from "../src/crypto";
 import { KeyRing, KV } from "../src/keyring";
 import { idPinKey } from "../src/scopes";
 import { json, mockFetch } from "./setup";
@@ -12,7 +14,10 @@ const HEADERS = {
   "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
   "x-frame-options": "DENY",
   "referrer-policy": "no-referrer",
+  "x-content-type-options": "nosniff",
 };
+const hashed = async (sid: string) => toB64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sid))));
+const sessionRecord = async () => env.OAUTH_KV.get(`keysession:${await hashed(jar.get("__Host-keys")!)}`);
 const REPO = "davlion/claude-memory-test";
 
 let jar: Map<string, string>;
@@ -119,7 +124,7 @@ describe("key page", () => {
     github();
     const login = await go("/keys/login");
     const state = new URL(login.headers.get("location")!).searchParams.get("state")!;
-    expect((await go(`/keys/callback?code=GHCODE&state=${state}`)).status).toBe(302);
+    expect((await go(`/keys/callback?code=GHCODE&state=${state}`)).status).toBe(200);
     jar.set("__Host-keys-login", state);
     const replay = await go(`/keys/callback?code=GHCODE&state=${state}`);
     expect(replay.status).toBe(400);
@@ -135,18 +140,20 @@ describe("key page", () => {
     expect(jar.has("__Host-keys")).toBe(false);
   });
 
-  it("success sets a Strict __Host- session cookie; the stored token is wrapped", async () => {
+  it("success sets a Strict __Host- session cookie and reloads /keys from this origin; the stored token is wrapped", async () => {
     const { exchanged } = github();
     const res = await signIn(REPO);
-    expect(res.status).toBe(302);
+    expect(res.status).toBe(200);
     expectHardened(res);
-    expect(res.headers.get("location")).toBe(`/keys?repo=${encodeURIComponent(REPO)}`);
+    expect(res.headers.get("location")).toBeNull();
+    expect(await res.text()).toContain(`content="0;url=/keys?repo=${encodeURIComponent(REPO)}"`);
     const cookies = res.headers.getSetCookie();
     const session = cookies.find((c) => c.startsWith("__Host-keys="))!;
     expect(session).toMatch(/^__Host-keys=[A-Za-z0-9_-]{43}; Path=\/; Secure; HttpOnly; SameSite=Strict$/);
     expect(cookies.some((c) => c.startsWith("__Host-keys-login=;") && /Max-Age=0/.test(c))).toBe(true);
     const sid = jar.get("__Host-keys")!;
-    const raw = (await env.OAUTH_KV.get(`keysession:${sid}`))!;
+    expect(await env.OAUTH_KV.get(`keysession:${sid}`)).toBeNull();
+    const raw = (await env.OAUTH_KV.get(`keysession:${await hashed(sid)}`))!;
     expect(raw).not.toContain("ghu_live");
     const s = JSON.parse(raw) as { login: string; id: number; csrf: string; token: string };
     expect(s).toMatchObject({ login: "dav", id: 42 });
@@ -155,6 +162,14 @@ describe("key page", () => {
     expect(await ring.unwrapText(s.token, `keysession-v1\n${sid}`)).toBe("ghu_live");
     expect(await ring.unwrapText(s.token, "keysession-v1\nother")).toBeNull();
     expect(exchanged[0]!.get("redirect_uri")).toBe(`${BASE}/keys/callback`);
+    expect((await go("/keys")).status).toBe(200);
+  });
+
+  it("the KV key isn't a working cookie: a cookie set to the hashed key is no session", async () => {
+    github();
+    await signIn();
+    jar.set("__Host-keys", await hashed(jar.get("__Host-keys")!));
+    expect((await go("/keys")).status).toBe(302);
   });
 
   it("?repo=<script> is dropped at login and on the page", async () => {
@@ -163,7 +178,7 @@ describe("key page", () => {
     expect(JSON.parse((await env.OAUTH_KV.get(`keystate:${state}`))!).repo).toBeNull();
     github();
     const cb = await go(`/keys/callback?code=GHCODE&state=${state}`);
-    expect(cb.headers.get("location")).toBe("/keys");
+    expect(await cb.text()).toContain('content="0;url=/keys"');
     const page = await go(`/keys?repo=${encodeURIComponent("<script>alert(1)</script>")}`);
     expect(page.status).toBe(200);
     expect(await page.text()).not.toContain("<script>");
@@ -186,7 +201,7 @@ describe("key page", () => {
     expect(body).toMatch(/registered by <strong>dav<\/strong>/);
     expect(body).toMatch(/no expiry/);
     expect(body).not.toContain(text);
-    const csrf = JSON.parse((await env.OAUTH_KV.get(`keysession:${jar.get("__Host-keys")}`))!).csrf as string;
+    const csrf = JSON.parse((await sessionRecord())!).csrf as string;
     expect(body).toContain(`name="csrf" value="${csrf}"`);
   });
 
@@ -218,9 +233,9 @@ describe("key page", () => {
   it("a tampered session token is no session", async () => {
     github();
     await signIn();
-    const sid = jar.get("__Host-keys")!;
-    const s = JSON.parse((await env.OAUTH_KV.get(`keysession:${sid}`))!);
-    await env.OAUTH_KV.put(`keysession:${sid}`, JSON.stringify({ ...s, token: s.token.slice(0, -4) + "AAAA" }));
+    const k = `keysession:${await hashed(jar.get("__Host-keys")!)}`;
+    const s = JSON.parse((await env.OAUTH_KV.get(k))!);
+    await env.OAUTH_KV.put(k, JSON.stringify({ ...s, token: s.token.slice(0, -4) + "AAAA" }));
     expect((await go("/keys")).status).toBe(302);
   });
 
@@ -230,6 +245,28 @@ describe("key page", () => {
     for (let i = 0; i < 12; i++) res = await go("/keys/login", { headers: { "cf-connecting-ip": ip } });
     expect(res!.status).toBe(429);
     expectHardened(res!);
+  });
+
+  it("every /keys POST shares one rate-limit bucket per IP", async () => {
+    const ip = crypto.randomUUID();
+    let res: Response | undefined;
+    for (let i = 0; i < 12; i++) res = await go(`/keys/x${i}`, { method: "POST", headers: { "cf-connecting-ip": ip }, body: "csrf=x" });
+    expect(res!.status).toBe(429);
+  });
+
+  it("message escapes its title and text; messageHtml is the trusted-HTML variant", async () => {
+    const plain = await message("<b>t</b>", "<i>x</i>", 400).text();
+    expect(plain).not.toMatch(/<b>|<i>/);
+    expect(plain).toContain("&#60;i&#62;x&#60;/i&#62;");
+    const trusted = await messageHtml("<b>t</b>", '<a href="/keys">k</a>', 400).text();
+    expect(trusted).not.toContain("<b>");
+    expect(trusted).toContain('<a href="/keys">k</a>');
+  });
+
+  it("a non-finite expiry renders as unknown expiry", () => {
+    const html = repoSection({ repo: REPO, key: { registeredBy: "dav", expiresAt: NaN },
+      status: { encrypted: true, enabled: true, key: "ok", markerProblem: false, sealed: 1, outside: 0 } }, "c", false);
+    expect(html).toContain("unknown expiry");
   });
 
   it("unknown /keys paths are 404 with the headers", async () => {

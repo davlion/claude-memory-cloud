@@ -23,6 +23,7 @@ export const reloadPage = (path: string) => doc("Key page",
   `<p><a href="${esc(path)}">Continue to the key page</a></p>`, `<meta http-equiv="refresh" content="0;url=${esc(path)}">`);
 
 const when = (ms: number) => `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+const expiry = (ms: number | null) => (ms === null ? "no expiry" : Number.isFinite(ms) ? `expires ${esc(when(ms))}` : "unknown expiry");
 
 function state(v: RepoView): string {
   const st = v.status;
@@ -32,7 +33,7 @@ function state(v: RepoView): string {
   lines.push(st.enabled ? "<p><strong>Encrypted.</strong></p>"
     : `<p>Encryption is off; <strong>${st.sealed}</strong> ${st.sealed === 1 ? "memory is" : "memories are"} still encrypted.</p>`);
   if (st.key === "ok" && v.key) {
-    lines.push(`<p>Key registered by <strong>${esc(v.key.registeredBy)}</strong>, ${v.key.expiresAt ? `expires ${esc(when(v.key.expiresAt))}` : "no expiry"}.</p>`);
+    lines.push(`<p>Key registered by <strong>${esc(v.key.registeredBy)}</strong>, ${expiry(v.key.expiresAt)}.</p>`);
   } else if (st.key === "mismatch") {
     lines.push("<p>The registered key doesn't match this repo. Register the repo's current key.</p>");
   } else {
