@@ -3,7 +3,7 @@ import { isEncryptedFile, MARKER_PATH, markerSignedBy, openMemoryFile, parseMark
 import { OpError } from "./errors";
 import type { KeyRing } from "./keyring";
 import { namesOnlyIndex, parseMemoryPath } from "./memory";
-import { splitSet, type GitHubStore, type TreeFile, type TreeWrite } from "./store";
+import { clearSnapshots, splitSet, type GitHubStore, type TreeFile, type TreeWrite } from "./store";
 
 export const trailers = (login: string) => `\n\nMemory-Source: key page (${login})\nMemory-Scope: *\n`;
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -44,18 +44,6 @@ const existingMarker = (files: TreeFile[]): Marker | null => {
   if (!f) return null;
   try { return parseMarker(f.text ?? ""); } catch { return null; }
 };
-
-/** Deletes every cached snapshot of the repo (they can hold plaintext). */
-async function clearSnapshots(cache: KVNamespace, repo: string): Promise<void> {
-  for (const prefix of new Set([`snap:v3:${repo}:`, `snap:v3:${repo.toLowerCase()}:`])) {
-    let cursor: string | undefined;
-    do {
-      const page = await cache.list({ prefix, cursor });
-      await Promise.all(page.keys.map((k) => cache.delete(k.name)));
-      cursor = page.list_complete ? undefined : page.cursor;
-    } while (cursor);
-  }
-}
 
 /** Turns encryption on by replacing the repo's history with one root commit. Saves are held off while it runs. */
 export async function switchOnInPlace(store: GitHubStore, keys: KeyRing, cache: KVNamespace, repo: string, keyText: string, login: string): Promise<{ url: string }> {

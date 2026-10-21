@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { GitHub, GitHubError, toOpError } from "../src/github";
-import { CACHE_TTL_SECONDS, GitHubStore, mapLimit } from "../src/store";
+import { CACHE_TTL_SECONDS, clearSnapshots, GitHubStore, mapLimit } from "../src/store";
 import { MARKER_PATH } from "../src/encrypted-files";
 import { json, mockFetch } from "./setup";
 
@@ -240,6 +240,21 @@ describe("mapLimit", () => {
     });
     expect(out).toEqual([10, 20, 30, 40, 50]);
     expect(peak).toBe(2);
+  });
+});
+
+describe("clearSnapshots", () => {
+  it("deletes only the repo's snapshot keys (either case), at most `max` per call", async () => {
+    const repo = `Dav/Clear-${crypto.randomUUID()}`;
+    const mine = [0, 1, 2, 3].map((i) => `snap:v3:${repo}:c${i}:`).concat(`snap:v3:${repo.toLowerCase()}:c9:`);
+    const other = `snap:v3:${repo}x:c1:`;
+    for (const k of [...mine, other]) await env.CACHE_KV.put(k, "{}");
+    await clearSnapshots(env.CACHE_KV, repo, 3);
+    const left = async () => (await Promise.all(mine.map((k) => env.CACHE_KV.get(k)))).filter((v) => v !== null).length;
+    expect(await left()).toBe(2);
+    await clearSnapshots(env.CACHE_KV, repo);
+    expect(await left()).toBe(0);
+    expect(await env.CACHE_KV.get(other)).toBe("{}");
   });
 });
 

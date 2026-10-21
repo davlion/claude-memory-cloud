@@ -8,7 +8,7 @@ import type { KeyAction, KeySession } from "./key-page";
 import { adminOnly, freshDone, inPlaceDone, message, page, turnOnPage } from "./key-page-html";
 import type { EncryptedRepoRecord, KeyRing } from "./keyring";
 import { REPO_RE } from "./scopes";
-import { GitHubStore } from "./store";
+import { clearSnapshots, GitHubStore } from "./store";
 import { switchOnFresh, switchOnInPlace, trailers } from "./switch-on";
 
 const PENDING_TTL = 900;
@@ -201,7 +201,10 @@ const register: KeyAction = async (_req, env, ring, s, form) => {
   }
   // After the rename the repo carries the copy's marker: the move is done (the key may have expired before a read saw it).
   const move = await ring.getMove(p.repo);
-  if (k.verified && m && move?.repoId === m.repoId) await ring.clearMove(p.repo);
+  if (k.verified && m && move?.repoId === m.repoId) {
+    await ring.clearMove(p.repo);
+    try { await clearSnapshots(env.CACHE_KV, p.repo); } catch { /* they expire by TTL */ }
+  }
   const { expiresAt } = await ring.put(p.repo, k.text, s.login, Date.now());
   if (keptOn) return message("Key registered", `Key registered. Encryption stays on for ${p.repo}; an admin can turn it off with Stop.`, 200);
   const until = expiresAt === null ? "" : ` until ${new Date(expiresAt).toISOString().slice(0, 16).replace("T", " ")} UTC`;

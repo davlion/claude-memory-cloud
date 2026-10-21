@@ -711,8 +711,10 @@ describe("key page actions", () => {
     const marker = await signMarker(key, { enabled: true, repoId, keyId: key.id });
     github({ push: true, admin: false }, [fake(REPO, { marker: serializeMarker(marker) })]);
     await signIn();
+    await env.CACHE_KV.put(`snap:v3:${REPO}:c-old:`, "{}");
     expect((await act("/keys/register", { repo: REPO, key: text })).status).toBe(200);
     expect(await (await ring()).getMove(REPO)).toBeNull();
+    expect(await env.CACHE_KV.get(`snap:v3:${REPO}:c-old:`)).toBeNull();
   });
 
   it("a moving repo: cancel form for admins, the wait-and-reload advice, and the stale warning", () => {

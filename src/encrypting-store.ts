@@ -3,7 +3,7 @@ import { isEncryptedFile, markerSignedBy, openMemoryFile, parseMarker, sealMemor
 import { OpError } from "./errors";
 import type { KeyRing } from "./keyring";
 import { namesOnlyIndex, parseMemoryPath } from "./memory";
-import type { Change, CommitResult, EncryptionStatus, FileEntry, Snapshot, Store } from "./store";
+import { clearSnapshots, type Change, type CommitResult, type EncryptionStatus, type FileEntry, type Snapshot, type Store } from "./store";
 
 export const keyRequired = (repo: string, keysUrl: string) => new OpError("key_required",
   `${repo} is encrypted and its key isn't registered, so this can't be saved yet.`,
@@ -24,9 +24,16 @@ export class EncryptingStore implements Store {
   /** The inner snapshot last taken per repo and prefix, so commit can decide the state without re-reading. */
   private last = new Map<string, Snapshot>();
 
-  constructor(private inner: Store, private keys: KeyRing | null, private keysUrl: string) {}
+  /** `cache` is the snapshot cache (CACHE_KV): cleared when a repo is first seen encrypted or its move ends. */
+  constructor(private inner: Store, private keys: KeyRing | null, private keysUrl: string, private cache?: KVNamespace) {}
 
   get cacheWriteFailed() { return this.inner.cacheWriteFailed; }
+
+  /** Best effort: a cache problem never fails a read. */
+  private async clearCache(repo: string): Promise<void> {
+    if (!this.cache) return;
+    try { await clearSnapshots(this.cache, repo); } catch { /* they expire by TTL */ }
+  }
 
   /** null: not encrypted and no move in progress, so everything passes through unchanged. */
   private async state(repo: string, raw: Snapshot): Promise<State | null> {
@@ -50,7 +57,8 @@ export class EncryptingStore implements Store {
       enabled = m.enabled || downgrade; ids = m; problem = downgrade;
       const want = { repoId: m.repoId, keyId: m.keyId, enabled };
       if (!rec || !sameIds(rec, want)) await ring.putRecord(repo, want);
-      if (move && move.repoId === m.repoId) { await ring.clearMove(repo); move = null; }
+      if (move && move.repoId === m.repoId) { await ring.clearMove(repo); move = null; await this.clearCache(repo); }
+      else if (!rec) await this.clearCache(repo);
     } else {
       if (rec) {
         enabled = rec.enabled; ids = rec;
@@ -68,6 +76,7 @@ export class EncryptingStore implements Store {
       if (ring && !rec && (enabled || sealed.length > 0)) {
         const keyId = m?.keyId ?? sealed.map((f) => /^key_id: ([0-9a-f]{16})$/m.exec(f.content)?.[1]).find(Boolean) ?? "";
         await ring.putRecord(repo, { repoId: m?.repoId ?? "", keyId, enabled: true });
+        await this.clearCache(repo);
       }
     }
 

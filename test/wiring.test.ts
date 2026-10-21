@@ -131,9 +131,10 @@ describe("a broken server configuration is a shaped response, not a 500", () => 
 describe("encryption wiring", () => {
   const gh = new GitHub("t");
   it("builds an EncryptingStore with the key page URL; the key ring is null without the master key", async () => {
-    const s = (await buildStore(gh, env)) as unknown as { keys: unknown; keysUrl: string };
+    const s = (await buildStore(gh, env)) as unknown as { keys: unknown; keysUrl: string; cache: unknown };
     expect(await buildStore(gh, env)).toBeInstanceOf(EncryptingStore);
     expect(s.keys).not.toBeNull();
+    expect(s.cache).toBe(env.CACHE_KV);
     expect(s.keysUrl).toBe(`${env.PUBLIC_URL}/keys`);
     const bare = (await buildStore(gh, { ...env, MEMORY_MASTER_KEY: undefined })) as unknown as { keys: unknown };
     expect(bare.keys).toBeNull();

@@ -68,6 +68,24 @@ const OID_RE = /^[0-9a-f]{40}$/;
 
 const encode = (s: string) => toB64(new TextEncoder().encode(s));
 
+/**
+ * Deletes the repo's cached snapshots (they can hold plaintext), ten at a time and at most `max` per call so a request stays
+ * within its KV operation limit; the rest expire by TTL or go on the next call.
+ */
+export async function clearSnapshots(cache: KVNamespace, repo: string, max = 900): Promise<void> {
+  let left = max;
+  for (const prefix of new Set([`snap:v3:${repo}:`, `snap:v3:${repo.toLowerCase()}:`])) {
+    let cursor: string | undefined;
+    do {
+      if (left <= 0) return;
+      const page = await cache.list({ prefix, cursor, limit: Math.min(1000, left) });
+      await mapLimit(page.keys, 10, (k) => cache.delete(k.name));
+      left -= page.keys.length;
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+  }
+}
+
 /** Runs fn over items with at most `limit` calls in flight; results keep the input order. */
 export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out = new Array<R>(items.length);

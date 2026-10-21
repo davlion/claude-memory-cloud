@@ -351,6 +351,59 @@ describe("EncryptingStore", () => {
     expect(snap.encryption).not.toHaveProperty("moveStale");
   });
 
+  describe("cached plaintext snapshots", () => {
+    const MINE = [`snap:v3:${REPO}:c1:`, `snap:v3:${REPO}:c2:projects/app/`];
+    const OTHER = `snap:v3:${REPO}x:c1:`;
+    const seed = async () => { for (const k of [...MINE, OTHER]) await env.CACHE_KV.put(k, "{}"); };
+    const gone = async () => {
+      for (const k of MINE) expect(await env.CACHE_KV.get(k), k).toBeNull();
+      expect(await env.CACHE_KV.get(OTHER)).toBe("{}");
+    };
+    const cached = () => new EncryptingStore(inner, ring, KEYS_URL, env.CACHE_KV);
+
+    it("the sticky record's first write deletes the repo's cached snapshots", async () => {
+      await seed();
+      inner.put(REPO, MARKER_PATH, await marker(true)); // memcrypt encrypt; key not registered
+      await cached().snapshot(REPO, "");
+      expect(await ring.getRecord(REPO)).not.toBeNull();
+      await gone();
+    });
+
+    it("a record first written from a verified marker deletes them too", async () => {
+      await seed();
+      await ring.put(REPO, KEY_TEXT, "dav", Date.now());
+      inner.put(REPO, MARKER_PATH, await marker(true));
+      await cached().status(REPO, "");
+      await gone();
+    });
+
+    it("clearing the move deletes them (the move window re-cached the old plaintext)", async () => {
+      const newId = newRepoId();
+      await ring.put(REPO, KEY_TEXT, "dav", Date.now());
+      await ring.putRecord(REPO, { repoId: newId, keyId: key.id, enabled: true });
+      await ring.setMove(REPO, { to: "dav/mem-encrypted", repoId: newId, head: "c-old", prevRecord: null });
+      inner.put(REPO, MARKER_PATH, await marker(true, newId));
+      await seed();
+      await cached().snapshot(REPO, "");
+      expect(await ring.getMove(REPO)).toBeNull();
+      await gone();
+    });
+
+    it("an existing record with nothing new leaves the cache alone", async () => {
+      await encrypted();
+      await seed();
+      await cached().snapshot(REPO, "");
+      for (const k of MINE) expect(await env.CACHE_KV.get(k)).toBe("{}");
+    });
+
+    it("a failing cache never blocks the read", async () => {
+      const broken = { list: async () => { throw new Error("KV down"); }, delete: async () => { throw new Error("KV down"); } } as unknown as KVNamespace;
+      inner.put(REPO, MARKER_PATH, await marker(true));
+      const snap = await new EncryptingStore(inner, ring, KEYS_URL, broken).snapshot(REPO, "");
+      expect(snap.encryption).toMatchObject({ encrypted: true, key: "missing" });
+    });
+  });
+
   it("no marker, no record, no sealed files: identical to the inner store", async () => {
     inner.put(REPO, "memories/x.md", mem("x", "plain", "text\n"));
     const plain = new FakeStore();

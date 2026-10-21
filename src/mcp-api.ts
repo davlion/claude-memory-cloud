@@ -13,7 +13,7 @@ const denied = () => Response.json(
 
 /** The memory store for a request: GitHub, sealed and opened per repo by EncryptingStore. Throws if MEMORY_MASTER_KEY is malformed. */
 export async function buildStore(gh: GitHub, env: Env): Promise<Store> {
-  return new EncryptingStore(new GitHubStore(gh, env.CACHE_KV), await KeyRing.fromEnv(env), `${env.PUBLIC_URL}/keys`);
+  return new EncryptingStore(new GitHubStore(gh, env.CACHE_KV), await KeyRing.fromEnv(env), `${env.PUBLIC_URL}/keys`, env.CACHE_KV);
 }
 
 /** API handler for /mcp. OAuthProvider calls fetch(request, env, ctx) with ctx.props set (decrypted). */

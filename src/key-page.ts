@@ -158,7 +158,7 @@ async function home(req: Request, url: URL, env: Env, ring: KeyRing): Promise<Re
   const repos = [...new Map(reach.filter((r) => r.reachable && r.writable).map((r) => [r.repo.toLowerCase(), r])).values()];
   const failed = listingError ?? reach.find((r) => r.reason === "error")?.error;
   const problem = failed ? `Some memory repos couldn't be checked: ${toOpError(failed).message}` : undefined;
-  const store = new EncryptingStore(new GitHubStore(gh, env.CACHE_KV), ring, `${env.PUBLIC_URL}/keys`);
+  const store = new EncryptingStore(new GitHubStore(gh, env.CACHE_KV), ring, `${env.PUBLIC_URL}/keys`, env.CACHE_KV);
   const views = await Promise.all(repos.map(async ({ repo, admin }): Promise<RepoView> => {
     try {
       const status = await store.status(repo, "");
