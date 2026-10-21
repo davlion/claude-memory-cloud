@@ -117,8 +117,8 @@ describe("toOpError: final vs retryable", () => {
     const http = toOpError(new GitHubError("whatever ghu_secret", 503, "unavailable"));
     expect(http.message).toBe("GitHub unavailable (HTTP 503)");
   });
-  it("RETRYABLE is exactly reauth_required, unavailable, server_limit", () =>
-    expect([...RETRYABLE].sort()).toEqual(["reauth_required", "server_limit", "unavailable"]));
+  it("RETRYABLE is exactly key_required, reauth_required, unavailable, server_limit", () =>
+    expect([...RETRYABLE].sort()).toEqual(["key_required", "reauth_required", "server_limit", "unavailable"]));
 });
 
 describe("cachedGet and graphql", () => {

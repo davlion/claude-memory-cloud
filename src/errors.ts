@@ -1,10 +1,10 @@
 export type ErrorCode =
   | "invalid" | "unknown_scope" | "no_memory_repo_for_owner" | "unsupported_remote"
   | "not_reachable" | "repo_public" | "reauth_required" | "unavailable"
-  | "write_rejected" | "internal" | "server_limit" | "access_denied";
+  | "write_rejected" | "internal" | "server_limit" | "access_denied" | "key_required";
 
 /** The only codes a client may retry later (local Claude Code queues the save in its outbox). Every other code is final. */
-export const RETRYABLE: ReadonlySet<ErrorCode> = new Set<ErrorCode>(["reauth_required", "unavailable", "server_limit"]);
+export const RETRYABLE: ReadonlySet<ErrorCode> = new Set<ErrorCode>(["reauth_required", "unavailable", "server_limit", "key_required"]);
 
 export class OpError extends Error {
   constructor(
