@@ -6,7 +6,7 @@ import { isEncryptedFile, MARKER_PATH, sealMemoryFile, serializeMarker, signMark
 import { GitHub } from "../src/github";
 import { KeyRing, KV } from "../src/keyring";
 import { serializeMemory } from "../src/memory";
-import { deleteMemory, getIndex, readMemories, saveMemory, type GuardContext } from "../src/operations";
+import { deleteMemory, getIndex, readMemories, saveMemory, searchMemories, type GuardContext } from "../src/operations";
 import type { Target } from "../src/scopes";
 import { GitHubStore, type Store } from "../src/store";
 import { FakeStore } from "./fake-store";
@@ -191,6 +191,8 @@ describe("EncryptingStore", () => {
     const idx = await getIndex(store, T);
     expect(idx).toContain("(unencrypted) was decrypted");
     expect(idx).not.toContain("added outside");
+    expect((await readMemories(store, T, ["b"]))[0]).toMatchObject({ encryption: "(unencrypted)" });
+    expect((await searchMemories(store, [T], "decrypted")).results[0]).toMatchObject({ encryption: "(unencrypted)" });
   });
 
   it("unverifiable off marker (key missing or stale): not a marker problem; plaintext files still flagged", async () => {

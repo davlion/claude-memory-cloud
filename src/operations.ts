@@ -8,7 +8,7 @@ import {
 } from "./memory";
 import type { Target } from "./scopes";
 import { scanForSecrets } from "./secrets";
-import type { Change, EncryptionStatus, HeadCommit, Snapshot, Store } from "./store";
+import type { Change, EncryptionStatus, FileEntry, HeadCommit, Snapshot, Store } from "./store";
 
 export const MAX_ATTEMPTS = 3;
 const UNREADABLE_MESSAGE = "This file is binary, truncated or otherwise can't be read as text by the memory server.";
@@ -22,7 +22,8 @@ export interface OpResult {
   name: string; scope: string; commit_url?: string; similar?: IndexEntry[]; conflict_file?: string; pattern?: string; category?: string; client?: string; version?: string; message?: string;
 }
 
-export interface SearchHit { scope: string; name: string; description: string; snippet: string }
+/** `encryption`: the index's "added outside" marking, for a plaintext memory in an encrypted repo. */
+export interface SearchHit { scope: string; name: string; description: string; snippet: string; encryption?: string }
 export interface IndexResult { text: string; version: string; head: HeadCommit | null; /** Present only for an encrypted or marked repo. */ encryption?: EncryptionStatus;
   /** Names of memories that look personal (restricted, or candid in a client/project scope). Names only; empty unless an audit kind was passed. */ flagged: string[] }
 export interface ScopeFailure { scope: string; error: ErrorCode; message: string; action?: string; retryable: boolean }
@@ -32,11 +33,16 @@ export function scopeFailure(scope: string, e: unknown): ScopeFailure {
   return { scope, error: err.code, message: err.message, action: err.action, retryable: RETRYABLE.has(err.code) };
 }
 
+/** How a plaintext memory in an encrypted repo is marked (index, read and search); undefined for every other file. */
+function outsideLabel(snap: Snapshot, f: FileEntry): string | undefined {
+  if (!f.outside) return undefined;
+  // Under an off marker the plaintext files may be the decrypted originals, not additions: don't claim where they came from.
+  return snap.encryption?.decrypted || snap.encryption?.markerOff ? "(unencrypted)" : "(unencrypted, added outside the memory tool)";
+}
+
 function entries(snap: Snapshot): { list: IndexEntry[]; conflicts: string[] } {
   const list: IndexEntry[] = [];
   const conflicts: string[] = [];
-  // Under an off marker the plaintext files may be the decrypted originals, not additions: don't claim where they came from.
-  const off = Boolean(snap.encryption?.decrypted || snap.encryption?.markerOff);
   for (const [path, f] of snap.files) {
     const p = parseMemoryPath(path);
     if (!p) continue;
@@ -45,7 +51,8 @@ function entries(snap: Snapshot): { list: IndexEntry[]; conflicts: string[] } {
     if (f.locked) { list.push({ name: p.name, description: "(encrypted; key not registered)" }); continue; }
     try {
       const m = parseMemory(f.content);
-      list.push({ name: p.name, description: (f.outside ? (off ? "(unencrypted) " : "(unencrypted, added outside the memory tool) ") : "") + cleanDescription(m.description) });
+      const label = outsideLabel(snap, f);
+      list.push({ name: p.name, description: (label ? `${label} ` : "") + cleanDescription(m.description) });
     } catch {
       list.push({ name: p.name, description: "(unparseable frontmatter — fix by hand)" });
     }
@@ -183,7 +190,8 @@ export async function readMemories(store: Store, t: Target, names: string[], key
     if (!f) return { name, error: "not_found" as const };
     if (f.unreadable) return { name, error: "unreadable" as const, message: UNREADABLE_MESSAGE };
     if (f.locked) return { name, error: "key_required" as const, message: `${keyClause(t.repo, snap.encryption?.key)}, so this can't be read.`, action: keyRequired(t.repo, keysUrl, snap.encryption?.key).action };
-    return { name, content: f.content, version: f.sha };
+    const label = outsideLabel(snap, f);
+    return { name, content: f.content, version: f.sha, ...(label ? { encryption: label } : {}) };
   });
 }
 
@@ -242,7 +250,9 @@ export async function searchMemories(store: Store, targets: Target[], query: str
       const lower = searchable.toLowerCase();
       if (!terms.every((term) => lower.includes(term))) continue;
       const at = Math.max(0, f.content.toLowerCase().indexOf(terms[0] ?? "") - 40);
-      results.push({ scope: t.displayLabel, name: p.name, description, snippet: f.content.slice(at, at + 120).replace(/\s+/g, " ").trim() });
+      const label = outsideLabel(snap, f);
+      results.push({ scope: t.displayLabel, name: p.name, description, snippet: f.content.slice(at, at + 120).replace(/\s+/g, " ").trim(),
+        ...(label ? { encryption: label } : {}) });
       if (results.length >= 20) return { results, failures };
     }
   }

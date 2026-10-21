@@ -800,6 +800,12 @@ describe("encrypted scopes", () => {
     const t = (await callTool(deps, "memory_index", {})).text;
     expect(t).toContain("[plain](memories/plain.md) — (unencrypted, added outside the memory tool) hand written");
     expect(t).toContain("⚠ encryption:general — encrypted, 1 memories unencrypted, added outside the memory tool");
+    healthyGitHub();
+    const read = (await callTool(deps, "memory_read", { names: ["plain"] })).text;
+    expect(read).toMatch(/<memory scope="general" name="plain" version="[^"]+" encryption="\(unencrypted, added outside the memory tool\)">/);
+    healthyGitHub();
+    const found = (await callTool(deps, "memory_search", { query: "hand" })).text;
+    expect(found).toMatch(/<memory scope="general" name="plain" encryption="\(unencrypted, added outside the memory tool\)">/);
   });
   it("memory_save tells Claude to pick names that don't give the content away", async () => {
     const c = new Client({ name: "t", version: "1" });

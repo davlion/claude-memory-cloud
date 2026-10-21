@@ -438,7 +438,11 @@ describe("encrypted scopes", () => {
   it("an outside file is listed with the prefix and still searchable", async () => {
     store.put("dav/mem", "memories/plain.md", serializeMemory({ name: "plain", description: "hand written", type: "user", body: "findme\n" }));
     expect((await getIndexVersioned(enc, T)).text).toContain("- [plain](memories/plain.md) — (unencrypted, added outside the memory tool) hand written");
-    expect((await searchMemories(enc, [T], "findme", KEYS_URL)).results).toHaveLength(1);
-    expect((await readMemories(enc, T, ["plain"], KEYS_URL))[0]).toMatchObject({ name: "plain", version: expect.any(String) });
+    expect((await searchMemories(enc, [T], "findme", KEYS_URL)).results).toEqual([expect.objectContaining({ name: "plain",
+      encryption: "(unencrypted, added outside the memory tool)" })]);
+    expect((await readMemories(enc, T, ["plain"], KEYS_URL))[0]).toMatchObject({ name: "plain", version: expect.any(String),
+      encryption: "(unencrypted, added outside the memory tool)" });
+    // Sealed memories carry no such marking.
+    expect((await readMemories(enc, T, ["a"], KEYS_URL))[0]).not.toHaveProperty("encryption");
   });
 });

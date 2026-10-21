@@ -147,7 +147,7 @@ async function memoryRead(d: ToolDeps, a: Record<string, unknown>, nonce: string
   const rows = await readMemories(d.store, t, (a.names as string[]).slice(0, 20), d.keysUrl);
   const blocks = rows.map((r) => "error" in r
     ? dataBlock("memory", { scope: t.scopeLabel, name: r.name, error: r.error, message: "message" in r ? r.message : undefined, action: "action" in r ? r.action : undefined }, "", nonce)
-    : dataBlock("memory", { scope: t.scopeLabel, name: r.name, version: r.version }, r.content, nonce));
+    : dataBlock("memory", { scope: t.scopeLabel, name: r.name, version: r.version, encryption: "encryption" in r ? r.encryption : undefined }, r.content, nonce));
   return [preamble(nonce), ...blocks].join("\n\n");
 }
 
@@ -173,7 +173,7 @@ async function memorySearch(d: ToolDeps, a: Record<string, unknown>, nonce: stri
   failures.push(...r.failures);
   const parts = [preamble(nonce)];
   parts.push(r.results.length
-    ? r.results.map((h) => dataBlock("memory", { scope: h.scope, name: h.name }, `${h.description}\n…${h.snippet}…`, nonce)).join("\n\n")
+    ? r.results.map((h) => dataBlock("memory", { scope: h.scope, name: h.name, encryption: h.encryption }, `${h.description}\n…${h.snippet}…`, nonce)).join("\n\n")
     : "No matching memories.");
   if (failures.length) {
     parts.push(`${serverHeading("Search problems", nonce)}\n${failures.map((f) => `✗ ${f.scope} — ${f.error}: ${f.message}${f.action ? ` → ${f.action}` : ""}`).join("\n")}`);
