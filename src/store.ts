@@ -33,6 +33,10 @@ export interface Snapshot {
   encryption?: EncryptionStatus;
 }
 export interface Change { path: string; content: string | null }
+/** One non-tree entry of a repo's tree. `text` only for memory files, `MEMORY.md` files and the marker; null if unreadable or not one of those. */
+export interface TreeFile { path: string; mode: string; sha: string; text: string | null }
+/** A file of a whole-tree write: new content, or an existing object by SHA (a commit SHA for a submodule). */
+export interface TreeWrite { path: string; mode: string; sha?: string; content?: string }
 export type CommitResult = { ok: true; commitSha: string; url: string } | { ok: false; reason: "ref_moved" };
 
 export interface Store {
@@ -75,9 +79,24 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) =>
   return out;
 }
 
-type TreeEntry = { path: string; type: string; sha: string };
+type TreeEntry = { path: string; type: string; sha: string; mode?: string };
 interface CommitTree { head: HeadCommit; treeSha: string; tree: TreeEntry[] }
 interface CachedSnapshot { marker: string | null; indexSha: string | null; head: HeadCommit; files: [string, string, string, boolean?][] }
+
+/** The memory set a repo path belongs to (root "" or `projects/<repo>/`) and the path within it. */
+export const splitSet = (path: string) => {
+  const m = /^(projects\/[^/]+\/)?(.*)$/.exec(path)!;
+  return { prefix: m[1] ?? "", rel: m[2]! };
+};
+const wantsText = (path: string) => {
+  if (path === MARKER_PATH) return true;
+  const { rel } = splitSet(path);
+  return rel === "MEMORY.md" || parseMemoryPath(rel) !== null;
+};
+
+const FORCE_PUSH_ACTION =
+  "A rule on the default branch blocks force pushes (branch protection or a ruleset). Ask a repo admin to allow force pushes while encryption is turned on, or use the fresh-repo path.";
+const MOVED = () => new OpError("unavailable", "The memory repo changed during switch-on; nothing was changed.", "Try again.");
 
 const isEmptyRepo = (e: unknown) =>
   e instanceof GitHubError && (e.kind === "empty_repo" || (e.kind === "not_found" && /empty/i.test(e.message)));
@@ -86,7 +105,7 @@ export class GitHubStore implements Store {
   cacheWriteFailed = false;
   /** Snapshots serialized larger than this skip the KV cache. Overridable for tests. */
   maxCacheBytes = MAX_CACHE_BYTES;
-  private meta = new Map<string, Promise<{ branch: string; isPrivate: boolean }>>();
+  private meta = new Map<string, Promise<{ branch: string; isPrivate: boolean; canWrite: boolean }>>();
   private heads = new Map<string, Promise<string | null>>();
   private trees = new Map<string, Promise<CommitTree>>();
   constructor(private gh: GitHub, private cache?: KVNamespace) {}
@@ -95,8 +114,8 @@ export class GitHubStore implements Store {
     let m = this.meta.get(repo);
     if (!m) {
       // Only "private" counts: "internal" (GitHub Enterprise) is readable by every enterprise member; missing fails closed.
-      m = this.gh.request<{ default_branch: string; visibility?: string }>("GET", `/repos/${repo}`)
-        .then((r) => ({ branch: r.default_branch, isPrivate: r.visibility === "private" }));
+      m = this.gh.request<{ default_branch: string; visibility?: string; permissions?: { push?: boolean } }>("GET", `/repos/${repo}`)
+        .then((r) => ({ branch: r.default_branch, isPrivate: r.visibility === "private", canWrite: r.permissions?.push === true }));
       this.meta.set(repo, m);
       m.catch(() => this.meta.delete(repo));
     }
@@ -257,5 +276,90 @@ export class GitHubStore implements Store {
       throw e;
     }
     return { ok: true, commitSha: commit.sha, url: commit.html_url };
+  }
+  /** The whole tree at the current head (re-read, never memoized), for switch-on. */
+  async readTree(repo: string): Promise<{ head: string | null; branch: string; isPrivate: boolean; canWrite: boolean; files: TreeFile[] }> {
+    this.heads.delete(repo);
+    const { branch, isPrivate, canWrite } = await this.repoMeta(repo);
+    const head = await this.headSha(repo, branch);
+    if (head === null) return { head, branch, isPrivate, canWrite, files: [] };
+    const { tree } = await this.commitTree(repo, head);
+    const entries = tree.filter((t) => t.type !== "tree");
+    const texts = await this.texts(repo, entries.filter((t) => t.type === "blob" && wantsText(t.path)).map((t) => t.sha));
+    return { head, branch, isPrivate, canWrite, files: entries.map((t) => ({
+      path: t.path, mode: t.mode ?? "100644", sha: t.sha, text: t.type === "blob" && wantsText(t.path) ? texts.get(t.sha) ?? null : null,
+    })) };
+  }
+
+  /** Other branches, tags and pull requests (any state): each keeps old commits reachable. Counts are of the first page, so they are lower bounds. */
+  async extraRefs(repo: string): Promise<{ branches: number; tags: number; pulls: number }> {
+    const { branch } = await this.repoMeta(repo);
+    const [branches, tags, pulls] = await Promise.all([
+      this.gh.request<{ name: string }[]>("GET", `/repos/${repo}/branches?per_page=100`),
+      this.gh.request<unknown[]>("GET", `/repos/${repo}/tags?per_page=100`),
+      this.gh.request<unknown[]>("GET", `/repos/${repo}/pulls?state=all&per_page=1`),
+    ]);
+    return { branches: branches.filter((b) => b.name !== branch).length, tags: tags.length, pulls: pulls.length };
+  }
+
+  private async rootCommit(repo: string, files: TreeWrite[], message: string): Promise<{ sha: string; html_url: string }> {
+    const tree = await this.gh.request<{ sha: string }>("POST", `/repos/${repo}/git/trees`, {
+      tree: files.map((f) => f.content !== undefined
+        ? { path: f.path, mode: f.mode, type: "blob", content: f.content }
+        : { path: f.path, mode: f.mode, type: f.mode === "160000" ? "commit" : "blob", sha: f.sha }),
+    });
+    return this.gh.request<{ sha: string; html_url: string }>("POST", `/repos/${repo}/git/commits`, { message, tree: tree.sha, parents: [] });
+  }
+
+  /** Force-moves the branch to `sha`, only if it still points at `expected`. */
+  private async forceMove(repo: string, branch: string, expected: string, sha: string): Promise<void> {
+    const cur = await this.gh.request<{ object: { sha: string } }>("GET", `/repos/${repo}/git/ref/heads/${branch}`);
+    if (cur.object.sha !== expected) throw MOVED();
+    try {
+      await this.gh.request("PATCH", `/repos/${repo}/git/refs/heads/${branch}`, { sha, force: true });
+    } catch (e) {
+      if (e instanceof GitHubError && (e.status === 409 || e.status === 422)) {
+        throw new OpError("write_rejected", `GitHub refused the force push: ${e.message}. Nothing was changed.`, FORCE_PUSH_ACTION);
+      }
+      throw e;
+    }
+  }
+
+  /** Replaces the branch's history with one root commit holding `files`, unless the branch moved from `expectedHead`. */
+  async replaceHistory(repo: string, expectedHead: string, files: TreeWrite[], message: string): Promise<{ sha: string; url: string }> {
+    this.heads.delete(repo);
+    const { branch } = await this.repoMeta(repo);
+    const c = await this.rootCommit(repo, files, message);
+    await this.forceMove(repo, branch, expectedHead, c.sha);
+    return { sha: c.sha, url: c.html_url };
+  }
+
+  /** First commit of an empty repo. Files given by SHA are blobs copied from `from` (or already in `repo`). */
+  async writeFirstCommit(repo: string, files: TreeWrite[], message: string, from?: string): Promise<{ sha: string; url: string }> {
+    this.heads.delete(repo);
+    const { branch } = await this.repoMeta(repo);
+    const notEmpty = () => new OpError("invalid", `${repo} isn't empty.`, "Create a new, empty private repo (no README) and try again.");
+    if (await this.headSha(repo, branch) !== null) throw notEmpty();
+    this.heads.delete(repo);
+    // The Git Data API can't write to an empty repo: a placeholder commit via the contents API comes first, then is replaced.
+    let placeholder: string;
+    try {
+      placeholder = (await this.gh.request<{ commit: { sha: string } }>("PUT", `/repos/${repo}/contents/README.md`,
+        { message: "init: claude-memory", content: encode(README), branch })).commit.sha;
+    } catch (e) {
+      if (e instanceof GitHubError && e.status === 422) throw notEmpty();
+      throw e;
+    }
+    if (from) {
+      const copy = [...new Set(files.filter((f) => f.content === undefined && f.mode !== "160000").map((f) => f.sha!))];
+      await mapLimit(copy, 4, async (sha) => {
+        const b = await this.gh.request<{ content: string; encoding: string }>("GET", `/repos/${from}/git/blobs/${sha}`);
+        if (b.encoding !== "base64") throw new GitHubError(`unexpected blob encoding ${b.encoding}`, 0, "other");
+        await this.gh.request("POST", `/repos/${repo}/git/blobs`, { content: b.content.replace(/\s/g, ""), encoding: "base64" });
+      });
+    }
+    const c = await this.rootCommit(repo, files, message);
+    await this.forceMove(repo, branch, placeholder, c.sha);
+    return { sha: c.sha, url: c.html_url };
   }
 }

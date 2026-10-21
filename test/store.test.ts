@@ -11,7 +11,7 @@ const oid = (n: number) => n.toString(16).padStart(40, "0");
 const [S0, S1, S2, S3, S4, S5, S6, S7] = [0, 1, 2, 3, 4, 5, 6, 7].map((n) => oid(0x100 + n)) as [string, string, string, string, string, string, string, string];
 const TEXTS: Record<string, string> = { [S1]: "A — é\n", [S2]: "P\n", [S4]: "C\n" };
 const META = { default_branch: "main", private: true, visibility: "private" };
-type Entry = { path: string; type: string; sha: string };
+type Entry = { path: string; type: string; sha: string; mode?: string };
 const TREE: Entry[] = [
   { path: "MEMORY.md", type: "blob", sha: S0 },
   { path: "memories/a.md", type: "blob", sha: S1 },
@@ -318,5 +318,162 @@ describe("GitHubStore.commit", () => {
     ]);
     expect(await new GitHubStore(new GitHub("t")).commit("dav/mem", "", null, [{ path: "MEMORY.md", content: "i" }], "m"))
       .toEqual({ ok: false, reason: "ref_moved" });
+  });
+});
+
+describe("GitHubStore switch-on helpers", () => {
+  const SM = oid(0x300);
+  const SI = oid(0x301);
+  const MODE_TREE: Entry[] = [
+    { path: "MEMORY.md", type: "blob", sha: S0, mode: "100644" },
+    { path: "memories", type: "tree", sha: oid(0x400), mode: "040000" },
+    { path: "memories/a.md", type: "blob", sha: S1, mode: "100644" },
+    { path: "memories/notes.txt", type: "blob", sha: S6, mode: "100644" },
+    { path: "projects/billing/MEMORY.md", type: "blob", sha: SI, mode: "100644" },
+    { path: "projects/billing/memories/p.md", type: "blob", sha: S2, mode: "100644" },
+    { path: "README.md", type: "blob", sha: S3, mode: "100755" },
+    { path: "vendor/lib", type: "commit", sha: oid(0x401), mode: "160000" },
+    { path: MARKER_PATH, type: "blob", sha: SM, mode: "100644" },
+  ] as Entry[];
+  const MTEXTS = { ...TEXTS, [S0]: "# idx\n", [SI]: "# billing\n", [SM]: "{}\n", [S3]: "readme\n", [S6]: "notes\n" };
+
+  it("readTree: every non-tree entry with its mode; text only for memory files, MEMORY.md files and the marker", async () => {
+    const { calls } = mockFetch(repoRoutes("c1", MODE_TREE, MTEXTS));
+    const t = await new GitHubStore(new GitHub("t")).readTree("dav/mem");
+    expect(t).toMatchObject({ head: "c1", branch: "main", isPrivate: true });
+    expect(t.files).toEqual([
+      { path: "MEMORY.md", mode: "100644", sha: S0, text: "# idx\n" },
+      { path: "memories/a.md", mode: "100644", sha: S1, text: "A — é\n" },
+      { path: "memories/notes.txt", mode: "100644", sha: S6, text: null },
+      { path: "projects/billing/MEMORY.md", mode: "100644", sha: SI, text: "# billing\n" },
+      { path: "projects/billing/memories/p.md", mode: "100644", sha: S2, text: "P\n" },
+      { path: "README.md", mode: "100755", sha: S3, text: null },
+      { path: "vendor/lib", mode: "160000", sha: oid(0x401), text: null },
+      { path: MARKER_PATH, mode: "100644", sha: SM, text: "{}\n" },
+    ]);
+    const { query } = (await calls.find((c) => c.url === GQL)!.json()) as { query: string };
+    for (const s of [S3, S6]) expect(query).not.toContain(s);
+  });
+
+  it("readTree: an unreadable memory blob has text null", async () => {
+    mockFetch(repoRoutes("c1", MODE_TREE, { ...MTEXTS, [S1]: undefined as unknown as string }));
+    const t = await new GitHubStore(new GitHub("t")).readTree("dav/mem");
+    expect(t.files.find((f) => f.path === "memories/a.md")!.text).toBeNull();
+  });
+
+  it("readTree re-reads the ref after a snapshot", async () => {
+    let head = "c1";
+    const { calls } = mockFetch([
+      ...repoRoutes("c1", MODE_TREE, MTEXTS).filter((r) => !r.url.toString().includes("/git/ref/heads/")),
+      ...repoRoutes("c2", MODE_TREE, MTEXTS).filter((r) => r.url.toString().includes("/git/")),
+      { method: "GET", url: `${R}/git/ref/heads/main`, respond: () => json({ object: { sha: head } }) },
+    ]);
+    const store = new GitHubStore(new GitHub("t"));
+    await store.snapshot("dav/mem", "");
+    head = "c2";
+    expect((await store.readTree("dav/mem")).head).toBe("c2");
+    expect(count(calls, "/git/ref/heads/")).toBe(2);
+  });
+
+  it("readTree: empty repo → head null, no files", async () => {
+    mockFetch([
+      { method: "GET", url: R, respond: () => json(META) },
+      { method: "GET", url: `${R}/git/ref/heads/main`, respond: () => json({ message: "Git Repository is empty." }, 409) },
+    ]);
+    expect(await new GitHubStore(new GitHub("t")).readTree("dav/mem")).toEqual({ head: null, branch: "main", isPrivate: true, canWrite: false, files: [] });
+  });
+
+  it("extraRefs counts other branches, tags and pull requests in any state", async () => {
+    const { calls } = mockFetch([
+      { method: "GET", url: R, respond: () => json(META) },
+      { method: "GET", url: `${R}/branches`, respond: () => json([{ name: "main" }, { name: "feat" }]) },
+      { method: "GET", url: `${R}/tags`, respond: () => json([{ name: "v1" }, { name: "v2" }]) },
+      { method: "GET", url: `${R}/pulls`, respond: () => json([{ number: 1 }]) },
+    ]);
+    expect(await new GitHubStore(new GitHub("t")).extraRefs("dav/mem")).toEqual({ branches: 1, tags: 2, pulls: 1 });
+    expect(calls.find((c) => c.url.includes("/pulls"))!.url).toContain("state=all");
+  });
+
+  it("extraRefs: none", async () => {
+    mockFetch([
+      { method: "GET", url: R, respond: () => json(META) },
+      { method: "GET", url: `${R}/branches`, respond: () => json([{ name: "main" }]) },
+      { method: "GET", url: `${R}/tags`, respond: () => json([]) },
+      { method: "GET", url: `${R}/pulls`, respond: () => json([]) },
+    ]);
+    expect(await new GitHubStore(new GitHub("t")).extraRefs("dav/mem")).toEqual({ branches: 0, tags: 0, pulls: 0 });
+  });
+
+  const historyRoutes = (refNow: string, patch: () => Response = () => json({ object: { sha: "c2" } })) => [
+    { method: "GET", url: R, respond: () => json(META) },
+    { method: "POST", url: `${R}/git/trees`, respond: () => json({ sha: "t2" }) },
+    { method: "POST", url: `${R}/git/commits`, respond: () => json({ sha: "c2", html_url: "https://github.com/dav/mem/commit/c2" }) },
+    { method: "GET", url: `${R}/git/ref/heads/main`, respond: () => json({ object: { sha: refNow } }) },
+    { method: "PATCH", url: `${R}/git/refs/heads/main`, respond: patch },
+  ];
+  const FILES = [
+    { path: "memories/a.md", mode: "100644", content: "sealed" },
+    { path: "README.md", mode: "100755", sha: S3 },
+    { path: "vendor/lib", mode: "160000", sha: oid(0x401) },
+  ];
+
+  it("replaceHistory: tree without base_tree, a root commit, then a force move", async () => {
+    const { calls } = mockFetch(historyRoutes("c1"));
+    expect(await new GitHubStore(new GitHub("t")).replaceHistory("dav/mem", "c1", FILES, "encrypt: x"))
+      .toEqual({ sha: "c2", url: "https://github.com/dav/mem/commit/c2" });
+    expect(await calls.find((c) => c.method === "POST" && c.url.endsWith("/git/trees"))!.json()).toEqual({ tree: [
+      { path: "memories/a.md", mode: "100644", type: "blob", content: "sealed" },
+      { path: "README.md", mode: "100755", type: "blob", sha: S3 },
+      { path: "vendor/lib", mode: "160000", type: "commit", sha: oid(0x401) },
+    ] });
+    expect(await calls.find((c) => c.method === "POST" && c.url.endsWith("/git/commits"))!.json()).toEqual({ message: "encrypt: x", tree: "t2", parents: [] });
+    expect(await calls.find((c) => c.method === "PATCH")!.json()).toEqual({ sha: "c2", force: true });
+  });
+
+  it("replaceHistory: the ref moved → unavailable, no PATCH", async () => {
+    const { calls } = mockFetch(historyRoutes("c9"));
+    await expect(new GitHubStore(new GitHub("t")).replaceHistory("dav/mem", "c1", FILES, "m")).rejects.toMatchObject({
+      code: "unavailable", message: "The memory repo changed during switch-on; nothing was changed.", action: "Try again." });
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
+  });
+
+  it.each([409, 422])("replaceHistory: %i on the force move → write_rejected naming the force-push rule", async (status) => {
+    mockFetch(historyRoutes("c1", () => json({ message: "Cannot force-push to this branch" }, status)));
+    const err = await new GitHubStore(new GitHub("t")).replaceHistory("dav/mem", "c1", FILES, "m").catch((e) => e);
+    expect(err).toMatchObject({ code: "write_rejected" });
+    expect(`${err.message} ${err.action}`).toMatch(/force push/i);
+  });
+
+  const N = "https://api.github.com/repos/dav/new";
+  const firstRoutes = (ref: () => Response) => [
+    { method: "GET", url: N, respond: () => json(META) },
+    { method: "GET", url: `${N}/git/ref/heads/main`, respond: ref },
+    { method: "PUT", url: `${N}/contents/README.md`, respond: () => json({ commit: { sha: "p1" } }, 201) },
+    { method: "GET", url: `${R}/git/blobs/${S3}`, respond: () => json({ sha: S3, content: "cmVh\nZG1l\n", encoding: "base64" }) },
+    { method: "POST", url: `${N}/git/blobs`, respond: () => json({ sha: S3 }, 201) },
+    { method: "POST", url: `${N}/git/trees`, respond: () => json({ sha: "t2" }) },
+    { method: "POST", url: `${N}/git/commits`, respond: () => json({ sha: "c2", html_url: "https://github.com/dav/new/commit/c2" }) },
+    { method: "PATCH", url: `${N}/git/refs/heads/main`, respond: () => json({ object: { sha: "c2" } }) },
+  ];
+
+  it("writeFirstCommit: placeholder via the contents API, blobs copied from the source, one root commit, force move", async () => {
+    let created = false;
+    const routes = firstRoutes(() => created ? json({ object: { sha: "p1" } }) : json({ message: "Git Repository is empty." }, 409));
+    const put = routes.find((r) => r.method === "PUT")!;
+    const { calls } = mockFetch([...routes.filter((r) => r !== put),
+      { ...put, respond: () => { created = true; return json({ commit: { sha: "p1" } }, 201); } }]);
+    await expect(new GitHubStore(new GitHub("t")).writeFirstCommit("dav/new", FILES, "encrypt: fresh", "dav/mem"))
+      .resolves.toEqual({ sha: "c2", url: "https://github.com/dav/new/commit/c2" });
+    const order = calls.map((c) => `${c.method} ${c.url.replace("https://api.github.com/repos/", "")}`);
+    expect(order.indexOf(`PUT dav/new/contents/README.md`)).toBeLessThan(order.indexOf("POST dav/new/git/blobs"));
+    expect(await calls.find((c) => c.method === "POST" && c.url.endsWith("/git/blobs"))!.json()).toEqual({ content: "cmVhZG1l", encoding: "base64" });
+    expect(await calls.find((c) => c.method === "POST" && c.url.endsWith("/git/commits"))!.json()).toEqual({ message: "encrypt: fresh", tree: "t2", parents: [] });
+    expect(await calls.find((c) => c.method === "PATCH")!.json()).toEqual({ sha: "c2", force: true });
+  });
+
+  it("writeFirstCommit refuses a repo that isn't empty, before any write", async () => {
+    const { calls } = mockFetch(firstRoutes(() => json({ object: { sha: "x1" } })));
+    await expect(new GitHubStore(new GitHub("t")).writeFirstCommit("dav/new", FILES, "m", "dav/mem")).rejects.toMatchObject({ code: "invalid" });
+    expect(calls.filter((c) => c.method !== "GET")).toHaveLength(0);
   });
 });
