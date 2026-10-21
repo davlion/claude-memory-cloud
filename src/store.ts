@@ -1,4 +1,5 @@
 import { GitHub, GitHubError } from "./github";
+import { toB64 } from "./crypto";
 import { MARKER_PATH } from "./encrypted-files";
 import { OpError } from "./errors";
 import { parseMemoryPath } from "./memory";
@@ -63,7 +64,7 @@ const GRAPHQL_CHUNK = 100;
 const GRAPHQL_CONCURRENCY = 2;
 const OID_RE = /^[0-9a-f]{40}$/;
 
-const encode = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
+const encode = (s: string) => toB64(new TextEncoder().encode(s));
 
 /** Runs fn over items with at most `limit` calls in flight; results keep the input order. */
 export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {

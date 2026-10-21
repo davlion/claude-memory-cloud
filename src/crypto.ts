@@ -9,7 +9,12 @@ export class DecryptError extends Error {
 }
 
 const enc = new TextEncoder();
-const toB64 = (b: Uint8Array) => btoa(String.fromCharCode(...b));
+/** Standard base64; built in 32 KB chunks, since spreading a large array into fromCharCode overflows the stack. */
+export function toB64(b: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
+  return btoa(s);
+}
 export const toB64Url = (b: Uint8Array) => toB64(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const fromB64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 const rand = (n: number) => crypto.getRandomValues(new Uint8Array(n));

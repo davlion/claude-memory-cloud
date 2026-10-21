@@ -39,6 +39,12 @@ describe("seal/open", () => {
     await expect(open(k.fileKey, "!!!", "aad")).rejects.toBeInstanceOf(DecryptError);
     await expect(open(k.fileKey, "AAAA", "aad")).rejects.toBeInstanceOf(DecryptError);
   });
+  it("round-trips a ~200 KB plaintext (no spread of the whole buffer)", async () => {
+    const k = await parseKeyText(generateKeyText());
+    const big = "記憶".repeat(34_000); // ~204 KB of UTF-8
+    const s = await seal(k.fileKey, big, "aad");
+    expect(await open(k.fileKey, s, "aad")).toBe(big);
+  });
   it("uses a fresh IV each time", async () => {
     const k = await parseKeyText(generateKeyText());
     expect(await seal(k.fileKey, "same", "a")).not.toBe(await seal(k.fileKey, "same", "a"));
