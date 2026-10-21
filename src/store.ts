@@ -1,10 +1,22 @@
 import { GitHub, GitHubError } from "./github";
+import { MARKER_PATH } from "./encrypted-files";
+import { OpError } from "./errors";
 import { parseMemoryPath } from "./memory";
 
 export interface FileEntry {
   path: string; sha: string; content: string;
   /** True when GitHub couldn't give us the blob's full text (binary, truncated, or missing): content is "" and the file must not be overwritten blind. */
   unreadable?: boolean;
+  /** Set only by EncryptingStore: the file is sealed and this repo's key is missing or doesn't match. */
+  locked?: true;
+  /** Set only by EncryptingStore: a plaintext file in an encrypted repo (the memory tool didn't write it). */
+  outside?: true;
+}
+export interface EncryptionStatus {
+  encrypted: boolean; enabled: boolean; key: "ok" | "missing" | "mismatch" | "unsupported";
+  markerProblem: boolean; sealed: number; outside: number;
+  /** Target repo of an in-progress fresh-repo move. */
+  moving?: string;
 }
 export interface HeadCommit { sha: string; message: string; author: string; date: string; url: string }
 export interface Snapshot {
@@ -16,6 +28,9 @@ export interface Snapshot {
   files: Map<string, FileEntry>;
   /** The branch head commit, for provenance checks; null for an empty repo. */
   head: HeadCommit | null;
+  /** Raw text of the repo-root encryption marker (any prefix), or null when there is none. */
+  marker: string | null;
+  encryption?: EncryptionStatus;
 }
 export interface Change { path: string; content: string | null }
 export type CommitResult = { ok: true; commitSha: string; url: string } | { ok: false; reason: "ref_moved" };
@@ -62,7 +77,7 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) =>
 
 type TreeEntry = { path: string; type: string; sha: string };
 interface CommitTree { head: HeadCommit; treeSha: string; tree: TreeEntry[] }
-interface CachedSnapshot { indexSha: string | null; head: HeadCommit; files: [string, string, string, boolean?][] }
+interface CachedSnapshot { marker: string | null; indexSha: string | null; head: HeadCommit; files: [string, string, string, boolean?][] }
 
 const isEmptyRepo = (e: unknown) =>
   e instanceof GitHubError && (e.kind === "empty_repo" || (e.kind === "not_found" && /empty/i.test(e.message)));
@@ -167,21 +182,28 @@ export class GitHubStore implements Store {
   async snapshot(repo: string, prefix: string): Promise<Snapshot> {
     const { branch, isPrivate } = await this.repoMeta(repo);
     const commitSha = await this.headSha(repo, branch);
-    if (commitSha === null) return { commitSha: null, isPrivate, indexSha: null, files: new Map(), head: null };
-    const key = `snap:v2:${repo}:${commitSha}:${prefix}`;
+    if (commitSha === null) return { commitSha: null, isPrivate, indexSha: null, files: new Map(), head: null, marker: null };
+    const key = `snap:v3:${repo}:${commitSha}:${prefix}`;
     let c = await this.cacheGet(key);
     if (!c) {
       const { head, tree } = await this.commitTree(repo, commitSha);
       let indexSha: string | null = null;
       const wanted: TreeEntry[] = [];
+      let markerSha: string | null = null;
       for (const t of tree) {
+        if (t.type === "blob" && t.path === MARKER_PATH) markerSha = t.sha;
         if (t.type !== "blob" || !t.path.startsWith(prefix)) continue;
         const rel = t.path.slice(prefix.length);
         if (rel === "MEMORY.md") indexSha = t.sha;
         else if (parseMemoryPath(rel)) wanted.push(t);
       }
-      const texts = await this.texts(repo, wanted.map((t) => t.sha));
-      c = { indexSha, head, files: wanted.map((t): [string, string, string, boolean?] => {
+      const texts = await this.texts(repo, [...wanted.map((t) => t.sha), ...(markerSha ? [markerSha] : [])]);
+      let marker: string | null = null;
+      if (markerSha) {
+        marker = texts.get(markerSha) ?? null;
+        if (marker === null) throw new OpError("internal", "The repo's encryption marker could not be read.", "Check .claude-memory/encryption.json in the memory repo.");
+      }
+      c = { marker, indexSha, head, files: wanted.map((t): [string, string, string, boolean?] => {
         const text = texts.get(t.sha) ?? null;
         const rel = t.path.slice(prefix.length);
         return text === null ? [rel, t.sha, "", true] : [rel, t.sha, text];
@@ -189,7 +211,7 @@ export class GitHubStore implements Store {
       await this.cachePut(key, c);
     }
     return {
-      commitSha, isPrivate, indexSha: c.indexSha, head: c.head,
+      commitSha, isPrivate, indexSha: c.indexSha, head: c.head, marker: c.marker,
       files: new Map(c.files.map(([path, sha, content, unreadable]) => [path, unreadable ? { path, sha, content, unreadable } : { path, sha, content }])),
     };
   }

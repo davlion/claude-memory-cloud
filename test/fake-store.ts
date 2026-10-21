@@ -1,3 +1,4 @@
+import { MARKER_PATH } from "../src/encrypted-files";
 import { parseMemoryPath } from "../src/memory";
 import type { Change, CommitResult, FileEntry, Snapshot, Store } from "../src/store";
 
@@ -53,6 +54,7 @@ export class FakeStore implements Store {
       isPrivate: !this.publicRepos.has(repo),
       indexSha,
       files,
+      marker: m.get(MARKER_PATH) ?? null,
       head: head === undefined ? null : {
         sha: `c${head}`, message: this.headMessages.get(repo) ?? "", author: this.headAuthors.get(repo) ?? "dav",
         date: "2026-10-13T00:00:00Z", url: `https://github.com/${repo}/commit/c${head}`,

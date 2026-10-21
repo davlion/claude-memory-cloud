@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { GitHub, GitHubError, toOpError } from "../src/github";
 import { CACHE_TTL_SECONDS, GitHubStore, mapLimit } from "../src/store";
+import { MARKER_PATH } from "../src/encrypted-files";
 import { json, mockFetch } from "./setup";
 
 const R = "https://api.github.com/repos/dav/mem";
@@ -47,6 +48,37 @@ function repoRoutes(commit = "c1", tree: Entry[] = TREE, texts: Record<string, s
 }
 
 const count = (calls: Request[], part: string) => calls.filter((c) => c.url.includes(part)).length;
+
+describe("GitHubStore.snapshot marker", () => {
+  const SM = oid(0x300);
+  const withMarker = [...TREE, { path: MARKER_PATH, type: "blob", sha: SM }];
+  const MTEXT = '{"format": 1}\n';
+  it("returns the root marker text for any prefix, in the same GraphQL query", async () => {
+    for (const prefix of ["", "projects/billing/"]) {
+      const { calls } = mockFetch(repoRoutes("c1", withMarker, { ...TEXTS, [SM]: MTEXT }));
+      const snap = await new GitHubStore(new GitHub("t")).snapshot("dav/mem", prefix);
+      expect(snap.marker).toBe(MTEXT);
+      expect(count(calls, "/graphql")).toBe(1);
+      expect([...snap.files.keys()].some((k) => k.includes("encryption.json"))).toBe(false);
+    }
+  });
+  it("marker is null without the file", async () => {
+    mockFetch(repoRoutes());
+    expect((await new GitHubStore(new GitHub("t")).snapshot("dav/mem", "")).marker).toBeNull();
+  });
+  it("an unreadable marker blob throws internal", async () => {
+    mockFetch(repoRoutes("c1", withMarker));
+    await expect(new GitHubStore(new GitHub("t")).snapshot("dav/mem", "")).rejects.toMatchObject({ code: "internal" });
+  });
+  it("the cache round-trips the marker", async () => {
+    const commit = `c-marker-${Date.now()}`;
+    mockFetch(repoRoutes(commit, withMarker, { ...TEXTS, [SM]: MTEXT }));
+    await new GitHubStore(new GitHub("t"), env.CACHE_KV).snapshot("dav/mem", "");
+    const { calls } = mockFetch(repoRoutes(commit, withMarker));
+    expect((await new GitHubStore(new GitHub("t"), env.CACHE_KV).snapshot("dav/mem", "")).marker).toBe(MTEXT);
+    expect(count(calls, "/graphql")).toBe(0);
+  });
+});
 
 describe("GitHubStore.snapshot", () => {
   it("root prefix: memory files only (via one GraphQL query), MEMORY.md as indexSha, head commit, UTF-8", async () => {
@@ -166,7 +198,7 @@ describe("GitHubStore.snapshot", () => {
     const kv = { get: async () => null, put: async (key: string, _v: string, opts: unknown) => { puts.push({ key, opts }); } } as unknown as KVNamespace;
     await new GitHubStore(new GitHub("t"), kv).snapshot("dav/mem", "");
     expect(CACHE_TTL_SECONDS).toBe(604800);
-    expect(puts).toEqual([{ key: "snap:v2:dav/mem:c1:", opts: { expirationTtl: 604800 } }]);
+    expect(puts).toEqual([{ key: "snap:v3:dav/mem:c1:", opts: { expirationTtl: 604800 } }]);
   });
 
   it("skips the cache for an oversized snapshot without flagging a write failure", async () => {
@@ -192,7 +224,7 @@ describe("GitHubStore.snapshot", () => {
       { method: "GET", url: `${R}/git/ref/heads/main`, respond: () => json({ message: "Git Repository is empty." }, 409) },
     ]);
     expect(await new GitHubStore(new GitHub("t")).snapshot("dav/mem", ""))
-      .toEqual({ commitSha: null, isPrivate: true, indexSha: null, files: new Map(), head: null });
+      .toEqual({ commitSha: null, isPrivate: true, indexSha: null, files: new Map(), head: null, marker: null });
   });
 });
 
