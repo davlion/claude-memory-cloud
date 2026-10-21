@@ -110,6 +110,7 @@ function state(v: RepoView): string {
     lines.push(`<p>${esc(MOVE_WAIT(v.repo))}</p>`);
   }
   if (st.decrypted) lines.push("<p>Decrypted outside the memory tool (memcrypt decrypt?). Encryption stays on until an admin confirms.</p>");
+  if (st.markerOff) lines.push("<p>Its encryption marker says off and can't be checked without the key.</p>");
   if (st.markerProblem) lines.push("<p>Its encryption marker is missing or doesn't match. Run memory_health for details.</p>");
   return lines.join("\n");
 }
@@ -125,7 +126,8 @@ ${hidden("csrf", csrf)}${hidden("repo", v.repo)}${withKey ? keyInput : ""}<butto
   const out: string[] = [];
   if (st.key === "ok") out.push(form("remove", "Remove key", true));
   else out.push(form("register", "Register key", true));
-  if (st.decrypted) out.push(change(form("register", "Confirm decryption (turn encryption off)", true)));
+  // Non-admins get the admin-only sentence once, from the Stop/turn-on entry below.
+  if (st.decrypted && v.admin) out.push(form("register", "Confirm decryption (turn encryption off)", true));
   out.push(change(st.moving ? form("cancel-move", "Cancel the move")
     : st.enabled ? form("stop", "Stop encrypting new memories", true) : form("turn-on", "Turn encryption back on")));
   return out.join("\n");

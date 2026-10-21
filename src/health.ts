@@ -262,12 +262,16 @@ export function encryptionChecks(t: Target, repo: string, s: EncryptionStatus, k
     out.push({ check, status: "fail", detail: "encrypted repo, but this memory server doesn't support encryption", action: "Ask the memory server's operator to turn on encryption." });
   } else if (s.rotated) {
     // Covered by the rotated line above.
+  } else if (s.markerOff) {
+    // The marker line already says to register the key.
   } else if (s.key === "missing") {
     out.push({ check, status: "warn", detail: "encrypted, key not registered", action: register });
   } else if (s.key === "mismatch") {
     out.push({ check, status: "warn", detail: "encrypted, the registered key doesn't match (rotated?)", action: register });
   }
-  if (s.outside > 0) {
+  if (s.outside > 0 && (s.decrypted || s.markerOff)) {
+    out.push({ check, status: "warn", detail: `encrypted, ${s.outside} memories unencrypted`, action: "The encryption marker says encryption is off: see the line above." });
+  } else if (s.outside > 0) {
     out.push({ check, status: "warn", detail: `encrypted, ${s.outside} memories unencrypted, added outside the memory tool`, action: "Review them; saving one through Claude encrypts it." });
   }
   if (!s.enabled && s.sealed > 0) {

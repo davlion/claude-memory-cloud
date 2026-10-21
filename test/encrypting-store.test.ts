@@ -180,26 +180,29 @@ describe("EncryptingStore", () => {
     expect(await ring.getRecord(REPO)).toEqual({ repoId: REPO_ID, keyId: key.id, enabled: true });
   });
 
-  it("decrypted outside (verified off marker): plaintext files aren't 'added outside', and nothing else is flagged", async () => {
+  it("decrypted outside (verified off marker): plaintext files stay flagged, labelled just '(unencrypted)'", async () => {
     await encrypted();
     inner.put(REPO, MARKER_PATH, await marker(false));
     inner.put(REPO, "memories/b.md", mem("b", "was decrypted", "plain\n"));
     const snap = await store.snapshot(REPO, "");
-    expect(snap.files.get("memories/b.md")).not.toHaveProperty("outside");
-    expect(snap.encryption).toMatchObject({ decrypted: true, outside: 0 });
-    expect(await store.status(REPO, "")).toMatchObject({ decrypted: true, outside: 0 });
-    expect(await getIndex(store, T)).not.toContain("added outside");
+    expect(snap.files.get("memories/b.md")).toMatchObject({ outside: true });
+    expect(snap.encryption).toMatchObject({ decrypted: true, outside: 1 });
+    expect(await store.status(REPO, "")).toMatchObject({ decrypted: true, outside: 1 });
+    const idx = await getIndex(store, T);
+    expect(idx).toContain("(unencrypted) was decrypted");
+    expect(idx).not.toContain("added outside");
   });
 
-  it("unverifiable off marker (key missing or stale): not a marker problem, not 'added outside'", async () => {
+  it("unverifiable off marker (key missing or stale): not a marker problem; plaintext files still flagged", async () => {
     await encrypted();
     inner.put(REPO, MARKER_PATH, await marker(false));
     inner.put(REPO, "memories/b.md", mem("b", "plain one", "plain\n"));
     await ring.remove(REPO);
     const snap = await new EncryptingStore(inner, ring, KEYS_URL).snapshot(REPO, "");
-    expect(snap.encryption).toMatchObject({ enabled: true, key: "missing", markerProblem: false, markerOff: true, outside: 0 });
+    expect(snap.encryption).toMatchObject({ enabled: true, key: "missing", markerProblem: false, markerOff: true, outside: 1 });
     expect(snap.encryption).not.toHaveProperty("decrypted");
-    expect(snap.files.get("memories/b.md")).not.toHaveProperty("outside");
+    expect(snap.files.get("memories/b.md")).toMatchObject({ outside: true });
+    expect(await getIndex(new EncryptingStore(inner, ring, KEYS_URL), T)).toContain("(unencrypted) plain one");
     // A stale registered key (the marker names another) can't verify it either.
     await ring.put(REPO, OTHER_TEXT, "dav", Date.now());
     expect(await new EncryptingStore(inner, ring, KEYS_URL).status(REPO, "")).toMatchObject({ key: "mismatch", markerProblem: false, markerOff: true });

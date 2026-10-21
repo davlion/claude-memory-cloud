@@ -35,6 +35,8 @@ export function scopeFailure(scope: string, e: unknown): ScopeFailure {
 function entries(snap: Snapshot): { list: IndexEntry[]; conflicts: string[] } {
   const list: IndexEntry[] = [];
   const conflicts: string[] = [];
+  // Under an off marker the plaintext files may be the decrypted originals, not additions: don't claim where they came from.
+  const off = Boolean(snap.encryption?.decrypted || snap.encryption?.markerOff);
   for (const [path, f] of snap.files) {
     const p = parseMemoryPath(path);
     if (!p) continue;
@@ -43,7 +45,7 @@ function entries(snap: Snapshot): { list: IndexEntry[]; conflicts: string[] } {
     if (f.locked) { list.push({ name: p.name, description: "(encrypted; key not registered)" }); continue; }
     try {
       const m = parseMemory(f.content);
-      list.push({ name: p.name, description: (f.outside ? "(unencrypted, added outside the memory tool) " : "") + cleanDescription(m.description) });
+      list.push({ name: p.name, description: (f.outside ? (off ? "(unencrypted) " : "(unencrypted, added outside the memory tool) ") : "") + cleanDescription(m.description) });
     } catch {
       list.push({ name: p.name, description: "(unparseable frontmatter — fix by hand)" });
     }

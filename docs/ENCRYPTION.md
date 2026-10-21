@@ -110,7 +110,7 @@ To remove: paste the key and click **Remove key**. The memory tool loses access 
 
 ### Files added outside the memory tool
 
-A plaintext memory file that appears after switch-on (a hand edit, another tool, an older memory server) is **not** encrypted automatically: an encrypted file is a sign that the memory tool wrote it, and it never encrypts a file it didn't save itself. The index marks each such memory "(unencrypted, added outside the memory tool)", and health warns: `⚠ encryption:<scope> — encrypted, N memories unencrypted, added outside the memory tool`. Review it; if it's right, ask Claude to save it again, which encrypts it.
+A plaintext memory file that appears after switch-on (a hand edit, another tool, an older memory server) is **not** encrypted automatically: an encrypted file is a sign that the memory tool wrote it, and it never encrypts a file it didn't save itself. The index marks each such memory "(unencrypted, added outside the memory tool)", and health warns: `⚠ encryption:<scope> — encrypted, N memories unencrypted, added outside the memory tool`. Review it; if it's right, ask Claude to save it again, which encrypts it. While the encryption marker says off (see the ✗ lines below), the label is just "(unencrypted)" and health says `N memories unencrypted`; during a fresh-repo move, plaintext files in the old repo aren't labelled at all.
 
 Hand edits of encrypted files aren't possible: change a memory through Claude, or decrypt the repo with memcrypt first.
 
@@ -223,7 +223,7 @@ Then register the new key on the key page. The old key is refused from now on. U
 
 The marker, `.claude-memory/encryption.json` at the repo root, records that the repo is encrypted, signed with a key derived from the repo key. The memory tool also remembers on its own which repos are encrypted.
 
-- **Deleted, or edited without the key:** the repo stays encrypted. Saves stay encrypted, and health shows `✗ encryption:<scope> — encrypted, but the encryption marker is missing or not signed`, with a link to the repo's recent commits. Someone may have tried to turn encryption off.
+- **Deleted, or edited without the key:** the repo stays encrypted. Saves stay encrypted, and health shows `✗ encryption:<scope> — encrypted, but the encryption marker is missing or not signed` (or, for an unsigned marker that says off and can't be checked without the key, `… the encryption marker says off and can't be checked without the key`), with a link to the repo's recent commits. Someone may have tried to turn encryption off.
 - **Replaced with a marker for another key** (by someone with write access): saves stop rather than risk the wrong key, and the key page refuses your key for that repo. A marker that differs only in its key looks like a rotate to the memory tool, so health shows the ⚠ "the key was changed (memcrypt rotate?)" line rather than ✗: if nobody ran `memcrypt rotate`, treat it as this case.
 
 To recover, review the recent commits and put the last good marker back from the repo's history, for example in a clone:

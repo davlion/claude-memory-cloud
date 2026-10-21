@@ -611,7 +611,9 @@ describe("key page actions", () => {
     await signIn();
     const page = await (await go(`/keys?repo=${encodeURIComponent(REPO)}`)).text();
     expect(page).toContain("Confirm decryption (turn encryption off)");
-    expect((await act("/keys/register", { repo: REPO, key: text })).status).toBe(200);
+    const done = await act("/keys/register", { repo: REPO, key: text });
+    expect(done.status).toBe(200);
+    expect(await done.text()).toContain(`Encryption is off for ${REPO}: new memories are saved unencrypted.`);
     expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: false });
     const inner = new FakeStore();
     inner.put(REPO, MARKER_PATH, serializeMarker(off));
@@ -804,8 +806,10 @@ describe("key page actions", () => {
     const viewer = repoSection({ repo: REPO, key: { registeredBy: "dav", expiresAt: null }, admin: false, status }, "c", false);
     expect(viewer).toContain("Decrypted outside the memory tool");
     expect(viewer).not.toContain("Confirm decryption");
-    expect(viewer).toContain(esc(ADMIN_ONLY));
+    expect(viewer.split(esc(ADMIN_ONLY)).length - 1).toBe(1);
     expect(viewer).toContain("/keys/remove");
+    const off = repoSection({ repo: REPO, key: null, admin: true, status: { ...status, key: "missing", decrypted: undefined, markerOff: true } }, "c", false);
+    expect(off).toContain("Its encryption marker says off and can't be checked without the key.");
   });
 
   it("the page's forms post to the action routes, with the key for remove and stop", () => {

@@ -122,8 +122,9 @@ export class EncryptingStore implements Store {
     this.last.set(`${repo}\n${prefix}`, raw);
     const st = await this.state(repo, raw);
     if (!st) return raw;
-    // Not "added outside": the old repo's plaintext while moving is the pre-move original, and after a decryption it is the decrypted memories.
-    const flag = st.status.enabled && !st.status.moving && !st.status.decrypted && !st.status.markerOff;
+    // Not "added outside": the old repo's plaintext while moving is the pre-move original. Under an off marker the files stay flagged:
+    // anyone with write access can replay or forge that marker, so the repo can't switch the flag off.
+    const flag = st.status.enabled && !st.status.moving;
     let outside = 0;
     const files = new Map<string, FileEntry>();
     for (const [path, f] of raw.files) {
@@ -147,7 +148,7 @@ export class EncryptingStore implements Store {
     const st = await this.state(repo, raw);
     if (!st) return null;
     const s = st.status;
-    const outside = s.enabled && !s.moving && !s.decrypted && !s.markerOff ? [...raw.files.values()].filter((f) => !f.unreadable && !isEncryptedFile(f.content)).length : 0;
+    const outside = s.enabled && !s.moving ? [...raw.files.values()].filter((f) => !f.unreadable && !isEncryptedFile(f.content)).length : 0;
     return { ...st.status, outside };
   }
 

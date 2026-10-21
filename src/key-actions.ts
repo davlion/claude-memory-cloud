@@ -211,8 +211,9 @@ const register: KeyAction = async (_req, env, ring, s, form) => {
   }
   const { expiresAt } = await ring.put(p.repo, k.text, s.login, Date.now());
   if (keptOn) return message("Key registered", `Key registered. Encryption stays on for ${p.repo}; an admin can turn it off with Stop.`, 200);
+  const wasOff = Boolean(k.verified && m && rec?.enabled && !m.enabled && p.admin);
   const until = expiresAt === null ? "" : ` until ${new Date(expiresAt).toISOString().slice(0, 16).replace("T", " ")} UTC`;
-  return message("Key registered", `The key for ${p.repo} is registered${until}. The memory tool can read and save its memories.`, 200);
+  return message("Key registered", `${wasOff ? `Encryption is off for ${p.repo}: new memories are saved unencrypted. ` : ""}The key for ${p.repo} is registered${until}. The memory tool can read and save its memories.`, 200);
 };
 
 const remove: KeyAction = async (_req, env, ring, s, form) => {

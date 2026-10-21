@@ -298,8 +298,15 @@ describe("encryptionChecks", () => {
   it("a missing or unsigned marker keeps the old line", () => {
     expect(run({ markerProblem: true })[0]!.detail).toBe("encrypted, but the encryption marker is missing or not signed");
   });
-  it("moving: no outside line (the status carries none)", () => {
-    expect(run({ moving: "dav/mem2" }).map((c) => c.detail)).toEqual(["encrypted copy written to dav/mem2; finish the move"]);
+  it("off marker with plaintext files: the count line points at the marker line instead of 'added outside'", () => {
+    const count = { check: "encryption:general", status: "warn", detail: "encrypted, 2 memories unencrypted",
+      action: "The encryption marker says encryption is off: see the line above." };
+    expect(run({ decrypted: true, outside: 2 }).slice(1)).toEqual([count]);
+    expect(run({ markerOff: true, key: "missing", outside: 2 }).slice(1)).toEqual([count]);
+  });
+  it("marker says off and the key is missing: only the marker line (it says to register the key)", () => {
+    expect(run({ markerOff: true, key: "missing" })).toHaveLength(1);
+    expect(run({ markerOff: true, key: "mismatch" })).toHaveLength(1);
   });
   it("encrypted off and nothing sealed: no lines", () => {
     expect(run({ enabled: false, sealed: 0, encrypted: false })).toEqual([]);

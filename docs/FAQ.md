@@ -127,7 +127,7 @@ The server compares the new memory's name and description with existing ones and
 ### Can I edit memories by hand?
 Yes. They're plain Markdown files in your repo. The index is rebuilt from the files every time it's read, and Health notes that the repo was changed outside the server so you know to review it.
 
-In an encrypted repo, memories can't be edited by hand: change them through Claude, or decrypt the repo first with `memcrypt` (see [ENCRYPTION.md](ENCRYPTION.md)). A plaintext memory you add by hand isn't encrypted automatically; the index marks it "unencrypted, added outside the memory tool" until Claude saves it again.
+In an encrypted repo, memories can't be edited by hand: change them through Claude, or decrypt the repo first with `memcrypt` (see [ENCRYPTION.md](ENCRYPTION.md)). A plaintext memory you add by hand isn't encrypted automatically; the index marks it "unencrypted, added outside the memory tool" (just "unencrypted" while the encryption marker says off) until Claude saves it again.
 
 ### What about Claude Code's built-in memory?
 The setup script turns it off, so memories don't end up in two places. Your existing local memory files are left in place as a backup. To move them into GitHub memory, see [MIGRATE.md](MIGRATE.md).
