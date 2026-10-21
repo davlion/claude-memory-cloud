@@ -245,14 +245,23 @@ export function encryptionChecks(t: Target, repo: string, s: EncryptionStatus, k
   } else if (s.moving) {
     out.push({ check, status: "warn", detail: `encrypted copy written to ${s.moving}; finish the move`,
       action: `Delete ${repo}, then rename ${s.moving} to ${repo}. Saves wait until then. ${page}` });
+  } else if (s.decrypted) {
+    out.push({ check, status: "fail", detail: "encrypted, but the repo was decrypted outside the memory tool (the signed marker says off)",
+      action: `If you ran memcrypt decrypt, an admin confirms it on the key page to turn encryption off: ${page}. If not, review recent commits: https://github.com/${repo}/commits. Saves stay encrypted until then.` });
+  } else if (s.markerOff) {
+    out.push({ check, status: "fail", detail: "encrypted, but the encryption marker says off and can't be checked without the key",
+      action: `Register the key on the key page to check it: ${page}. If nobody decrypted this repo, review recent commits: https://github.com/${repo}/commits. Saves stay encrypted.` });
   } else if (s.markerProblem) {
     out.push({ check, status: "fail", detail: "encrypted, but the encryption marker is missing or not signed",
       action: `Someone may have tried to turn encryption off. Saves stay encrypted. Review recent commits: https://github.com/${repo}/commits` });
   } else if (s.rotated) {
-    out.push({ check, status: "warn", detail: "encrypted, the marker names a different key (rotated?)", action: `Register the repo's current key: ${page}` });
+    // One line covers the key too: the registered key (if any) is the old one.
+    out.push({ check, status: "warn", detail: "encrypted, the key was changed (memcrypt rotate?)", action: `Register the repo's new key: ${page}. Saves are queued until then.` });
   }
   if (s.key === "unsupported") {
     out.push({ check, status: "fail", detail: "encrypted repo, but this memory server doesn't support encryption", action: "Ask the memory server's operator to turn on encryption." });
+  } else if (s.rotated) {
+    // Covered by the rotated line above.
   } else if (s.key === "missing") {
     out.push({ check, status: "warn", detail: "encrypted, key not registered", action: register });
   } else if (s.key === "mismatch") {

@@ -5,9 +5,15 @@ import type { KeyRing } from "./keyring";
 import { namesOnlyIndex, parseMemoryPath } from "./memory";
 import { clearSnapshots, type Change, type CommitResult, type EncryptionStatus, type FileEntry, type Snapshot, type Store } from "./store";
 
-export const keyRequired = (repo: string, keysUrl: string) => new OpError("key_required",
-  `${repo} is encrypted and its key isn't registered, so this can't be saved yet.`,
-  `Register the repo's key (from your password manager) at ${keysUrl}?repo=${repo}, then try again.`);
+/** Why a sealed file can't be opened: no key registered, or a different one (memcrypt rotate). */
+export const keyClause = (repo: string, key?: EncryptionStatus["key"]) => key === "mismatch"
+  ? `${repo} is encrypted with a different key than the one registered (changed with memcrypt rotate?)`
+  : `${repo} is encrypted and its key isn't registered`;
+
+export const keyRequired = (repo: string, keysUrl: string, key?: EncryptionStatus["key"]) => new OpError("key_required",
+  `${keyClause(repo, key)}, so this can't be saved yet.`,
+  key === "mismatch" ? `Register the repo's current key (from your password manager) at ${keysUrl}?repo=${repo}, then try again.`
+    : `Register the repo's key (from your password manager) at ${keysUrl}?repo=${repo}, then try again.`);
 
 const moveWait = (repo: string, keysUrl: string) => new OpError("unavailable", "Encryption is being turned on for this memory repo.",
   `Finish or cancel the move on the key page: ${keysUrl}?repo=${repo}`);
@@ -20,7 +26,7 @@ const unsupported = (repo: string) => new OpError("write_rejected",
 export function saveBlocked(repo: string, s: EncryptionStatus | undefined, keysUrl: string): OpError | null {
   if (!s?.enabled || s.key === "ok") return null;
   if (s.moving) return moveWait(repo, keysUrl);
-  return s.key === "unsupported" ? unsupported(repo) : keyRequired(repo, keysUrl);
+  return s.key === "unsupported" ? unsupported(repo) : keyRequired(repo, keysUrl, s.key);
 }
 
 /** A repo's encryption state for one snapshot; `key`/`repoId` are set only when sealed files can be opened and new ones sealed. */
@@ -61,11 +67,13 @@ export class EncryptingStore implements Store {
     let enabled: boolean;
     let problem = false;
     let rotated = false;
+    let decrypted = false;
+    let markerOff = false;
     let ids: { repoId: string; keyId: string } | null;
     if (verified && m && ring) {
       // A verified marker never downgrades an enabled record: an old signed `enabled: false` could be replayed from history.
       const downgrade = Boolean(rec?.enabled && !m.enabled);
-      enabled = m.enabled || downgrade; ids = m; problem = downgrade;
+      enabled = m.enabled || downgrade; ids = m; decrypted = downgrade;
       const want = { repoId: m.repoId, keyId: m.keyId, enabled };
       if (!rec || !sameIds(rec, want)) await ring.putRecord(repo, want);
       if (move && move.repoId === m.repoId) { await ring.clearMove(repo); move = null; await this.clearCache(repo); }
@@ -76,6 +84,8 @@ export class EncryptingStore implements Store {
         problem = !m || !sameIds(m, rec);
         // memcrypt rotate: only the key ID moved on, and the registered key (if any) didn't sign it.
         if (problem && m?.enabled && !forged && sameIds(m, { ...rec, keyId: m.keyId })) { problem = false; rotated = true; }
+        // An off marker no registered key can check (not forged: a registered key that names it would have failed the MAC).
+        if (problem && m && !m.enabled && rec.enabled && !forged && m.repoId === rec.repoId) { problem = false; markerOff = true; }
       } else if (m) {
         enabled = m.enabled || sealed.length > 0; ids = m;
         problem = !m.enabled && sealed.length > 0;
@@ -102,6 +112,7 @@ export class EncryptingStore implements Store {
     const status: EncryptionStatus = {
       encrypted: enabled || sealed.length > 0, enabled, key, markerProblem: move ? false : problem, sealed: sealed.length, outside: 0,
       ...(move ? { moving: move.to } : {}), ...(moveStale ? { moveStale } : {}), ...(rotated && !move ? { rotated } : {}),
+      ...(decrypted && !move ? { decrypted } : {}), ...(markerOff && !move ? { markerOff } : {}),
     };
     return { status, key: key === "ok" ? k!.key : null, repoId: key === "ok" ? ids!.repoId : null };
   }
@@ -111,6 +122,8 @@ export class EncryptingStore implements Store {
     this.last.set(`${repo}\n${prefix}`, raw);
     const st = await this.state(repo, raw);
     if (!st) return raw;
+    // Not "added outside": the old repo's plaintext while moving is the pre-move original, and after a decryption it is the decrypted memories.
+    const flag = st.status.enabled && !st.status.moving && !st.status.decrypted && !st.status.markerOff;
     let outside = 0;
     const files = new Map<string, FileEntry>();
     for (const [path, f] of raw.files) {
@@ -122,7 +135,7 @@ export class EncryptingStore implements Store {
           try { out = { path, sha: f.sha, content: await openMemoryFile(st.key, st.repoId, prefix + path, f.content) }; }
           catch { out = { path, sha: f.sha, content: "", unreadable: true }; }
         }
-      } else if (st.status.enabled) { out = { ...f, outside: true }; outside++; }
+      } else if (flag) { out = { ...f, outside: true }; outside++; }
       files.set(path, out);
     }
     return { ...raw, files, encryption: { ...st.status, outside } };
@@ -133,7 +146,8 @@ export class EncryptingStore implements Store {
     const raw = await this.inner.snapshot(repo, prefix);
     const st = await this.state(repo, raw);
     if (!st) return null;
-    const outside = st.status.enabled ? [...raw.files.values()].filter((f) => !f.unreadable && !isEncryptedFile(f.content)).length : 0;
+    const s = st.status;
+    const outside = s.enabled && !s.moving && !s.decrypted && !s.markerOff ? [...raw.files.values()].filter((f) => !f.unreadable && !isEncryptedFile(f.content)).length : 0;
     return { ...st.status, outside };
   }
 
@@ -151,7 +165,7 @@ export class EncryptingStore implements Store {
     const sealing = st.status.enabled;
     if (sealing && changes.some((c) => c.content !== null && parseMemoryPath(c.path))) {
       if (!this.keys) throw unsupported(repo);
-      if (!st.key || !st.repoId) throw keyRequired(repo, this.keysUrl);
+      if (!st.key || !st.repoId) throw keyRequired(repo, this.keysUrl, st.status.key);
     }
     const out = await Promise.all(changes.map(async (c): Promise<Change> => {
       if (c.content === null) return c;

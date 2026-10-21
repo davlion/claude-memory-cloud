@@ -173,10 +173,47 @@ describe("EncryptingStore", () => {
   it("a replayed signed enabled: false marker never downgrades an enabled record", async () => {
     await encrypted();
     inner.put(REPO, MARKER_PATH, await marker(false));
-    expect((await store.snapshot(REPO, "")).encryption).toMatchObject({ enabled: true, key: "ok", markerProblem: true });
+    // The registered key verifies the marker: the repo was decrypted outside the tool, not a missing or forged marker.
+    expect((await store.snapshot(REPO, "")).encryption).toMatchObject({ enabled: true, key: "ok", markerProblem: false, decrypted: true });
     await save(store, "a", "first thing", "quiet harbor\n");
     expect(isEncryptedFile(files().get("memories/a.md")!)).toBe(true);
     expect(await ring.getRecord(REPO)).toEqual({ repoId: REPO_ID, keyId: key.id, enabled: true });
+  });
+
+  it("decrypted outside (verified off marker): plaintext files aren't 'added outside', and nothing else is flagged", async () => {
+    await encrypted();
+    inner.put(REPO, MARKER_PATH, await marker(false));
+    inner.put(REPO, "memories/b.md", mem("b", "was decrypted", "plain\n"));
+    const snap = await store.snapshot(REPO, "");
+    expect(snap.files.get("memories/b.md")).not.toHaveProperty("outside");
+    expect(snap.encryption).toMatchObject({ decrypted: true, outside: 0 });
+    expect(await store.status(REPO, "")).toMatchObject({ decrypted: true, outside: 0 });
+    expect(await getIndex(store, T)).not.toContain("added outside");
+  });
+
+  it("unverifiable off marker (key missing or stale): not a marker problem, not 'added outside'", async () => {
+    await encrypted();
+    inner.put(REPO, MARKER_PATH, await marker(false));
+    inner.put(REPO, "memories/b.md", mem("b", "plain one", "plain\n"));
+    await ring.remove(REPO);
+    const snap = await new EncryptingStore(inner, ring, KEYS_URL).snapshot(REPO, "");
+    expect(snap.encryption).toMatchObject({ enabled: true, key: "missing", markerProblem: false, markerOff: true, outside: 0 });
+    expect(snap.encryption).not.toHaveProperty("decrypted");
+    expect(snap.files.get("memories/b.md")).not.toHaveProperty("outside");
+    // A stale registered key (the marker names another) can't verify it either.
+    await ring.put(REPO, OTHER_TEXT, "dav", Date.now());
+    expect(await new EncryptingStore(inner, ring, KEYS_URL).status(REPO, "")).toMatchObject({ key: "mismatch", markerProblem: false, markerOff: true });
+  });
+
+  it("an off marker that fails its MAC under the registered key, or lacks the record's repo ID, keeps the old marker problem", async () => {
+    await encrypted();
+    inner.put(REPO, MARKER_PATH, JSON.stringify({ format: 1, enabled: false, repo_id: REPO_ID, key_id: key.id, mac: "00".repeat(32) }));
+    expect(await store.status(REPO, "")).toMatchObject({ markerProblem: true });
+    await ring.remove(REPO);
+    inner.put(REPO, MARKER_PATH, (await marker(false)).replace(REPO_ID, newRepoId()));
+    const s = await new EncryptingStore(inner, ring, KEYS_URL).status(REPO, "");
+    expect(s).toMatchObject({ markerProblem: true });
+    expect(s).not.toHaveProperty("markerOff");
   });
 
   it("a signed marker updates a stale record", async () => {
@@ -334,6 +371,35 @@ describe("EncryptingStore", () => {
     await saveMemory(store, T, { name: "b", description: "hand added", type: "project", body: "now sealed\n", version: snap.files.get("memories/b.md")!.sha, source: "t" }, NOW, G);
     expect(isEncryptedFile(files().get("memories/b.md")!)).toBe(true);
     expect((await store.snapshot(REPO, "")).encryption).toMatchObject({ outside: 0, sealed: 2 });
+  });
+
+  it("moving: the old repo's plaintext is the pre-move original, never 'added outside'", async () => {
+    await encrypted();
+    await ring.setMove(REPO, { to: "dav/mem-encrypted", repoId: newRepoId(), head: (await inner.snapshot(REPO, "")).commitSha, prevRecord: null });
+    inner.put(REPO, "memories/b.md", mem("b", "original", "plain\n"));
+    const snap = await store.snapshot(REPO, "");
+    expect(snap.files.get("memories/b.md")).not.toHaveProperty("outside");
+    expect(snap.encryption).toMatchObject({ moving: "dav/mem-encrypted", outside: 0 });
+    expect(await store.status(REPO, "")).toMatchObject({ outside: 0 });
+  });
+
+  it("key required: the message says whether the key is missing or a different one is registered", async () => {
+    await encrypted();
+    await save(store, "a");
+    await ring.remove(REPO);
+    const missing = { code: "key_required", message: `${REPO} is encrypted and its key isn't registered, so this can't be saved yet.`,
+      action: `Register the repo's key (from your password manager) at ${KEYS_URL}?repo=${REPO}, then try again.` };
+    await expect(save(new EncryptingStore(inner, ring, KEYS_URL), "b")).rejects.toMatchObject(missing);
+    await ring.put(REPO, OTHER_TEXT, "dav", Date.now());
+    const mismatch = { code: "key_required", message: `${REPO} is encrypted with a different key than the one registered (changed with memcrypt rotate?), so this can't be saved yet.`,
+      action: `Register the repo's current key (from your password manager) at ${KEYS_URL}?repo=${REPO}, then try again.` };
+    await expect(save(new EncryptingStore(inner, ring, KEYS_URL), "b")).rejects.toMatchObject(mismatch);
+    const s = new EncryptingStore(inner, ring, KEYS_URL);
+    expect((await readMemories(s, T, ["a"], KEYS_URL))[0]).toMatchObject({ error: "key_required", action: mismatch.action,
+      message: `${REPO} is encrypted with a different key than the one registered (changed with memcrypt rotate?), so this can't be read.` });
+    await ring.remove(REPO);
+    expect((await readMemories(new EncryptingStore(inner, ring, KEYS_URL), T, ["a"], KEYS_URL))[0]).toMatchObject({ error: "key_required", action: missing.action,
+      message: `${REPO} is encrypted and its key isn't registered, so this can't be read.` });
   });
 
   it("saves wait while switching", async () => {

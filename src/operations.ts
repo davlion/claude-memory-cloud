@@ -1,4 +1,4 @@
-import { keyRequired, saveBlocked } from "./encrypting-store";
+import { keyClause, keyRequired, saveBlocked } from "./encrypting-store";
 import { OpError, RETRYABLE, type ErrorCode } from "./errors";
 import { toOpError } from "./github";
 import { scanCrossClient, scanPersonal } from "./guard";
@@ -180,7 +180,7 @@ export async function readMemories(store: Store, t: Target, names: string[], key
     const f = snap.files.get(memoryPath(name));
     if (!f) return { name, error: "not_found" as const };
     if (f.unreadable) return { name, error: "unreadable" as const, message: UNREADABLE_MESSAGE };
-    if (f.locked) return { name, error: "key_required" as const, message: `${t.repo} is encrypted and its key isn't registered, so this can't be read.`, action: keyRequired(t.repo, keysUrl).action };
+    if (f.locked) return { name, error: "key_required" as const, message: `${keyClause(t.repo, snap.encryption?.key)}, so this can't be read.`, action: keyRequired(t.repo, keysUrl, snap.encryption?.key).action };
     return { name, content: f.content, version: f.sha };
   });
 }
@@ -225,8 +225,8 @@ export async function searchMemories(store: Store, targets: Target[], query: str
       const p = parseMemoryPath(path);
       if (!p || p.conflict || f.unreadable) continue;
       if (f.locked) {
-        if (!locked) failures.push({ scope: t.displayLabel, error: "key_required", message: `${t.repo} is encrypted and its key isn't registered, so its memories can't be searched.`,
-          action: keyRequired(t.repo, keysUrl).action, retryable: true });
+        if (!locked) failures.push({ scope: t.displayLabel, error: "key_required", message: `${keyClause(t.repo, snap.encryption?.key)}, so its memories can't be searched.`,
+          action: keyRequired(t.repo, keysUrl, snap.encryption?.key).action, retryable: true });
         locked = true;
         continue;
       }

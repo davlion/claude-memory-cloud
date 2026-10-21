@@ -22,6 +22,10 @@ export interface EncryptionStatus {
   moveStale?: boolean;
   /** The marker is the record's except for its key ID (memcrypt rotate, new key not registered yet): not a marker problem. */
   rotated?: boolean;
+  /** The registered key verifies a marker that says `enabled: false` while the record is enabled: decrypted outside the memory tool (memcrypt decrypt?); an admin confirms on the key page. */
+  decrypted?: boolean;
+  /** The marker parses and says `enabled: false` but no registered key can verify it (key missing or stale), so it can't be told from a forgery. */
+  markerOff?: boolean;
 }
 export interface HeadCommit { sha: string; message: string; author: string; date: string; url: string }
 export interface Snapshot {

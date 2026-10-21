@@ -422,6 +422,11 @@ describe("encrypted scopes", () => {
     const s = await searchMemories(enc, [T], "secret", KEYS_URL);
     expect(s.results).toEqual([]);
     expect(s.failures).toEqual([{ scope: "general", error: "key_required", message: expect.any(String), action: expect.stringContaining(`${KEYS_URL}?repo=dav/mem`), retryable: true }]);
+    // A different key registered: the search message says so too.
+    await ring.put("dav/mem", generateKeyText(), "dav", Date.now());
+    const m = await searchMemories(enc, [T], "secret", KEYS_URL);
+    expect(m.failures[0]).toMatchObject({ message: "dav/mem is encrypted with a different key than the one registered (changed with memcrypt rotate?), so its memories can't be searched.",
+      action: `Register the repo's current key (from your password manager) at ${KEYS_URL}?repo=dav/mem, then try again.` });
   });
   it("a locked file keeps its version for update and delete, and is skipped by the personal audit", async () => {
     await ring.remove("dav/mem");

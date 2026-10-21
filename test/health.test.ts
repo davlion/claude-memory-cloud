@@ -279,9 +279,27 @@ describe("encryptionChecks", () => {
       detail: "encrypted copy written to dav/mem2, but dav/mem changed after the copy",
       action: `Don't delete dav/mem. Cancel the move on the key page and start it again: ${KEY_PAGE}` }]);
   });
-  it("rotated: a warning to register the current key, not the tamper alarm", () => {
-    expect(run({ rotated: true })).toEqual([{ check: "encryption:general", status: "warn",
-      detail: "encrypted, the marker names a different key (rotated?)", action: `Register the repo's current key: ${KEY_PAGE}` }]);
+  it("rotated: one line, no separate mismatch or missing line", () => {
+    const one = [{ check: "encryption:general", status: "warn", detail: "encrypted, the key was changed (memcrypt rotate?)",
+      action: `Register the repo's new key: ${KEY_PAGE}. Saves are queued until then.` }];
+    expect(run({ rotated: true, key: "mismatch" })).toEqual(one);
+    expect(run({ rotated: true, key: "missing" })).toEqual(one);
+  });
+  it("decrypted outside (case A): fail, saves stay encrypted, admin confirms on the key page", () => {
+    expect(run({ decrypted: true })).toEqual([{ check: "encryption:general", status: "fail",
+      detail: "encrypted, but the repo was decrypted outside the memory tool (the signed marker says off)",
+      action: `If you ran memcrypt decrypt, an admin confirms it on the key page to turn encryption off: ${KEY_PAGE}. If not, review recent commits: https://github.com/dav/mem/commits. Saves stay encrypted until then.` }]);
+  });
+  it("marker says off but can't be checked (case B): fail, register the key to check it", () => {
+    expect(run({ markerOff: true, key: "missing" })[0]).toEqual({ check: "encryption:general", status: "fail",
+      detail: "encrypted, but the encryption marker says off and can't be checked without the key",
+      action: `Register the key on the key page to check it: ${KEY_PAGE}. If nobody decrypted this repo, review recent commits: https://github.com/dav/mem/commits. Saves stay encrypted.` });
+  });
+  it("a missing or unsigned marker keeps the old line", () => {
+    expect(run({ markerProblem: true })[0]!.detail).toBe("encrypted, but the encryption marker is missing or not signed");
+  });
+  it("moving: no outside line (the status carries none)", () => {
+    expect(run({ moving: "dav/mem2" }).map((c) => c.detail)).toEqual(["encrypted copy written to dav/mem2; finish the move"]);
   });
   it("encrypted off and nothing sealed: no lines", () => {
     expect(run({ enabled: false, sealed: 0, encrypted: false })).toEqual([]);
