@@ -2,7 +2,7 @@ import { env, exports } from "cloudflare:workers";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateKeyText, newRepoId, parseKeyText } from "../src/crypto";
 import { esc } from "../src/consent";
-import { MARKER_PATH, markerSignedBy, parseMarker, serializeMarker, signMarker } from "../src/encrypted-files";
+import { MARKER_PATH, markerSignedBy, parseMarker, sealMemoryFile, serializeMarker, signMarker } from "../src/encrypted-files";
 import { keyPage, mayChangeEncryption, message, messageHtml } from "../src/key-page";
 import { repoSection } from "../src/key-page-html";
 import { toB64Url } from "../src/crypto";
@@ -740,6 +740,23 @@ describe("key page actions", () => {
     expect(await res.text()).toContain(`Encryption is off for ${REPO}: new memories are saved unencrypted.`);
     expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: false, confirmed: true });
     expect((await (await ring()).get(REPO))!.key.id).toBe(key.id);
+  });
+
+  it("confirm decryption refuses while memories are still encrypted (an old off marker put back, not a decryption)", async () => {
+    const text = generateKeyText();
+    const key = await parseKeyText(text);
+    const repoId = newRepoId();
+    await (await ring()).putRecord(REPO, { repoId, keyId: key.id, enabled: true, confirmed: true });
+    const repo = fake(REPO, { marker: serializeMarker(await signMarker(key, { enabled: false, repoId, keyId: key.id })) });
+    repo.tree.push({ path: "projects/x/memories/b.md", type: "blob", sha: oid(9), mode: "100644" });
+    repo.texts[oid(9)] = await sealMemoryFile(key, repoId, "projects/x/memories/b.md", MEM.replace("name: a", "name: b"));
+    github({ admin: true }, [repo]);
+    await signIn();
+    const res = await act("/keys/confirm-decryption", { repo: REPO, key: text });
+    const body = await res.text();
+    expect(res.status, body).toBe(409);
+    expect(body).toContain(`${REPO} still has 1 encrypted memory file, so it wasn&#39;t decrypted`);
+    expect(await (await ring()).getRecord(REPO)).toMatchObject({ enabled: true });
   });
 
   it("confirm decryption: admin only", async () => {

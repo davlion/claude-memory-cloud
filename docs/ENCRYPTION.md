@@ -208,7 +208,7 @@ With `--in-place`, memcrypt refuses if the repo has other branches, tags, pull r
 
 Writes every memory back in plaintext, in a normal commit, and marks encryption off. That plaintext stays in the repo's history from now on, even if you turn encryption on again later. Each `MEMORY.md` index gets its descriptions back from the decrypted memories.
 
-The memory tool keeps encrypting new saves, and health shows `✗ … decrypted outside the memory tool`, until an admin of the repo clicks **Confirm decryption (turn encryption off)** on the key page and pastes the key (whether or not it's already registered), or uses **Stop** there. The key page answers "Encryption is off for `<owner>/<repo>`: new memories are saved unencrypted." Registering the key with **Register key** doesn't turn encryption off: someone who isn't an admin is told "Encryption stays on for `<owner>/<repo>`; an admin can turn it off with Stop."
+The memory tool keeps encrypting new saves, and health shows `✗ … decrypted outside the memory tool`, until an admin of the repo clicks **Confirm decryption (turn encryption off)** on the key page and pastes the key (whether or not it's already registered), or uses **Stop** there. The key page answers "Encryption is off for `<owner>/<repo>`: new memories are saved unencrypted." It refuses while any memory in the repo is still encrypted: then the off marker isn't from `memcrypt decrypt` (an old one put back from history?). Registering the key with **Register key** doesn't turn encryption off: someone who isn't an admin is told "Encryption stays on for `<owner>/<repo>`; an admin can turn it off with Stop."
 
 ### rotate
 

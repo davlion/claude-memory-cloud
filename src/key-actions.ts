@@ -307,6 +307,13 @@ const confirmDecryption: KeyAction = async (_req, env, ring, s, form) => {
   if (!k.verified || !m || m.enabled) {
     return message(title, `The encryption marker of ${p.repo} doesn't say off, so there is no decryption to confirm. Nothing was changed.`, 409);
   }
+  // memcrypt decrypt leaves no sealed memory; an old off marker put back from history does (and can't remove them without the key).
+  let files;
+  try { files = (await p.store.readTree(p.repo)).files; } catch (e) { return fail(title, e); }
+  const sealed = files.filter((f) => parseMemoryPath(splitSet(f.path).rel) !== null && f.text !== null && isEncryptedFile(f.text)).length;
+  if (sealed) {
+    return message(title, `${p.repo} still has ${sealed} encrypted memory ${sealed === 1 ? "file" : "files"}, so it wasn't decrypted (an old marker put back from history?). Nothing was changed. Run memcrypt decrypt first, or use Stop to keep the encrypted memories and save new ones unencrypted.`, 409);
+  }
   await ring.putRecord(p.repo, { repoId: m.repoId, keyId: m.keyId, enabled: false, confirmed: true });
   const { expiresAt } = await ring.put(p.repo, k.text, s.login, Date.now());
   return message("Encryption is off", `Encryption is off for ${p.repo}: new memories are saved unencrypted. ${registered(p.repo, expiresAt)}`, 200);
