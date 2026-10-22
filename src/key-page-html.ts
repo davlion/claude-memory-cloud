@@ -131,6 +131,11 @@ function state(v: RepoView): string {
       : `<p>Moving to <strong>${esc(st.moving)}</strong>. The encrypted copy is current.</p>`);
     lines.push(`<p>${esc(MOVE_WAIT(v.repo))}</p>`);
   }
+  if (st.unconfirmed) {
+    lines.push(v.admin
+      ? "<p>No admin has confirmed this repo's encryption key with the memory tool yet. Registering the key here confirms it: check that it's the key your team uses.</p>"
+      : `<p>An admin of ${esc(v.repo)} must register its key first: the memory tool hasn't seen an admin confirm this repo's encryption key.</p>`);
+  }
   if (st.decrypted) lines.push("<p>Decrypted outside the memory tool (memcrypt decrypt?). Encryption stays on until an admin confirms.</p>");
   if (st.markerOff) lines.push("<p>Its encryption marker says off and can't be checked without the key.</p>");
   if (st.markerProblem) lines.push("<p>Its encryption marker is missing or doesn't match. Run memory_health for details.</p>");

@@ -12,7 +12,7 @@ Encryption is optional and set per memory repo. Once it's on, each memory's desc
 
 - **A password manager** (1Password or similar). This is a precondition, not a suggestion. The key is shown once, and **without it your memories can't be read by anyone, including you.** Sharing the key through the password manager's sharing is how several people get access to one repo.
 - **A memory tool with encryption turned on.** Open `<server>/keys`. If it says "Encryption isn't turned on for this memory server", ask the memory server's operator to turn it on ([QUICKSTART.md](QUICKSTART.md), "Turning on encryption at rest").
-- **Admin access to the memory repo** to turn encryption on, turn it back on, stop it, confirm a decryption, register a changed key (after `memcrypt rotate`), or forget encryption for a repo that holds nothing encrypted. Registering and removing the repo's current key need write access plus the key. For a client repo, the client's admin turns encryption on. `memory_scopes` shows `admin: true` for each memory repo where you have it.
+- **Admin access to the memory repo** to turn encryption on, turn it back on, stop it, confirm a decryption, register a changed key (after `memcrypt rotate`), or forget encryption for a repo that holds nothing encrypted. Removing a key needs write access plus the key; so does registering the repo's key once an admin has confirmed it (below). For a client repo, the client's admin turns encryption on. `memory_scopes` shows `admin: true` for each memory repo where you have it.
 - **The local kit at version 0.1.5 or later** on each machine where you use Claude Code (rerun `./setup.sh`; see "When do I need to rerun setup?" in the [FAQ](FAQ.md)). Older kits keep descriptions in the local snapshot, and may report a save that waits for a key as "not saved" instead of queuing it.
 
 ---
@@ -96,7 +96,7 @@ Turning on registers the key with the memory tool. You register it yourself in t
 - you rotated the key with memcrypt: only the key that signed the repo's current encryption marker is accepted, so after `memcrypt rotate` the old key is refused ("This isn't the key for `<owner>/<repo>`") and an admin of the repo registers the new one;
 - you use a different memory server (see "Moving to another server, or leaving a host").
 
-To register: on the key page, paste the key next to the repo and click **Register key**. Write access plus the key is enough for the key the memory tool already knows for that repo. A key that differs from it (after `memcrypt rotate`, or a marker someone else put in the repo) needs an admin of the repo: anyone else gets "Only an admin of `<owner>/<repo>` can register a new key for it (the key was changed, e.g. with memcrypt rotate)." Registering never turns encryption off.
+To register: on the key page, paste the key next to the repo and click **Register key**. The first registration of a repo's key must be an admin's: an admin's key page actions (turning on, registering, Stop, Confirm decryption) confirm the key, and a repo the memory tool only learned about from its contents (after `memcrypt encrypt`, or a marker someone else put in the repo) has no confirmed key yet. Anyone else gets "Only an admin of `<owner>/<repo>` can register this key: the memory tool hasn't seen an admin confirm this repo's encryption key.", and the key page tells an admin in that state that registering confirms the key. After that, write access plus the key is enough to register the confirmed key again (when it expires, for example). A key that differs from the confirmed one (after `memcrypt rotate`, or a marker someone else put in the repo) needs an admin again: anyone else gets "Only an admin of `<owner>/<repo>` can register a new key for it (the key was changed, e.g. with memcrypt rotate)." One exception: a write user registering the confirmed key while the repo's signed marker says on also turns encryption back on if it was stopped. Registering never turns encryption off.
 
 To remove: paste the key and click **Remove key**. The memory tool loses access within about a minute (the removal takes that long to reach every Cloudflare location): then it can't read or save that repo's memories until the key is registered again.
 
@@ -192,7 +192,7 @@ The `<remote-url>` below is the memory repo's clone URL, e.g. `git@github.com:<o
 ~/.venvs/memcrypt/bin/python kit/bin/memcrypt.py encrypt <remote-url> --in-place              # encrypt in place (squash)
 ```
 
-The same two paths as the key page, with the same warning and confirmation (typing `<owner>/<repo>`; `--confirm <owner>/<repo>` answers it in advance). Without `--to` or `--in-place` it asks. Then register the key on the key page so the memory tool can read and save.
+The same two paths as the key page, with the same warning and confirmation (typing `<owner>/<repo>`; `--confirm <owner>/<repo>` answers it in advance). Without `--to` or `--in-place` it asks. Then an admin of the repo registers the key on the key page once, so the memory tool can read and save (the memory tool only trusts a key an admin confirmed); after that, anyone with write access can register it again.
 
 **The `--to` repo must be private.** memcrypt talks plain git, which can't tell whether a repo is private, so it prints "Make sure `<new-remote-url>` is a private repository." before you confirm. Check it on github.com.
 
@@ -243,7 +243,7 @@ If a rule (branch protection or a ruleset) blocks direct pushes to the branch, p
 
 Then check that health is clean, and look at who could write to the repo.
 
-**Treated as encrypted, but nothing in it is.** Someone with write access can make the memory tool treat a repo that was never encrypted as encrypted, by committing an encryption marker or a file that looks encrypted. The memory tool remembers that even after the files are removed, and saves then wait for a key nobody has. Remove the planted files first; once the repo holds no encryption marker and no encrypted memory file, an admin of the repo clicks **Forget encryption for this repo** on the key page, which answers "`<owner>/<repo>` isn't treated as encrypted any more." The key page refuses while anything encrypted or marked is left, and says what.
+**Treated as encrypted, but nothing in it is.** Someone with write access can make the memory tool treat a repo that was never encrypted as encrypted, by committing an encryption marker or a file that looks encrypted. The memory tool remembers that even after the files are removed, and saves then wait for a key. That record isn't confirmed by an admin, so only an admin can register a key for it: whoever planted a marker signed with their own key can't get the memory tool to use it. Remove the planted files first; once the repo holds no encryption marker and no encrypted memory file, an admin of the repo clicks **Forget encryption for this repo** on the key page, which answers "`<owner>/<repo>` isn't treated as encrypted any more." The key page refuses while anything encrypted or marked is left, and says what.
 
 ---
 

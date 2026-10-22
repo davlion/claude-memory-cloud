@@ -30,7 +30,7 @@ export function saveBlocked(repo: string, s: EncryptionStatus | undefined, keysU
 }
 
 /** A repo's encryption state for one snapshot; `key`/`repoId` are set only when sealed files can be opened and new ones sealed. */
-interface State { status: EncryptionStatus; key: RepoKey | null; repoId: string | null; recordOnly: boolean }
+interface State { status: EncryptionStatus; key: RepoKey | null; repoId: string | null; recordOnly: boolean; confirmed: boolean }
 
 const sameIds = (a: { enabled: boolean; repoId: string; keyId: string }, b: { enabled: boolean; repoId: string; keyId: string }) =>
   a.enabled === b.enabled && a.repoId === b.repoId && a.keyId === b.keyId;
@@ -70,11 +70,14 @@ export class EncryptingStore implements Store {
     let decrypted = false;
     let markerOff = false;
     let ids: { repoId: string; keyId: string } | null;
+    let confirmed = Boolean(rec?.confirmed);
     if (verified && m && ring) {
       // A verified marker never downgrades an enabled record: an old signed `enabled: false` could be replayed from history.
       const downgrade = Boolean(rec?.enabled && !m.enabled);
       enabled = m.enabled || downgrade; ids = m; decrypted = downgrade;
-      const want = { repoId: m.repoId, keyId: m.keyId, enabled };
+      // An admin's confirmation stays only while the IDs it confirmed do: a marker naming another key or repo ID drops it.
+      confirmed = Boolean(rec?.confirmed && rec.repoId === m.repoId && rec.keyId === m.keyId);
+      const want = { repoId: m.repoId, keyId: m.keyId, enabled, ...(confirmed ? { confirmed: true } : {}) };
       if (!rec || !sameIds(rec, want)) await ring.putRecord(repo, want);
       if (move && move.repoId === m.repoId) { await ring.clearMove(repo); move = null; await this.clearCache(repo); }
       else if (!rec) await this.clearCache(repo);
@@ -115,7 +118,7 @@ export class EncryptingStore implements Store {
       ...(decrypted && !move ? { decrypted } : {}), ...(markerOff && !move ? { markerOff } : {}),
     };
     const recordOnly = Boolean(rec) && raw.marker === null && sealed.length === 0 && !move;
-    return { status, key: key === "ok" ? k!.key : null, repoId: key === "ok" ? ids!.repoId : null, recordOnly };
+    return { status, key: key === "ok" ? k!.key : null, repoId: key === "ok" ? ids!.repoId : null, recordOnly, confirmed: Boolean(ring) && confirmed };
   }
 
   async snapshot(repo: string, prefix: string): Promise<Snapshot> {
@@ -150,7 +153,7 @@ export class EncryptingStore implements Store {
     if (!st) return null;
     const s = st.status;
     const outside = s.enabled && !s.moving ? [...raw.files.values()].filter((f) => !f.unreadable && !isEncryptedFile(f.content)).length : 0;
-    return { ...st.status, outside, ...(st.recordOnly ? { recordOnly: true } : {}) };
+    return { ...st.status, outside, ...(st.recordOnly ? { recordOnly: true } : {}), ...(this.keys && !st.confirmed ? { unconfirmed: true } : {}) };
   }
 
   async commit(repo: string, prefix: string, base: string | null, changes: Change[], message: string): Promise<CommitResult> {

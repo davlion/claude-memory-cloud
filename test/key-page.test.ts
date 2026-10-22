@@ -437,7 +437,7 @@ describe("key page actions", () => {
   const encrypted = async (text: string, enabled = true, repoId = newRepoId()) => {
     const key = await parseKeyText(text);
     const marker = await signMarker(key, { enabled, repoId, keyId: key.id });
-    await (await ring()).putRecord(REPO, { repoId, keyId: key.id, enabled });
+    await (await ring()).putRecord(REPO, { repoId, keyId: key.id, enabled, confirmed: true });
     return { key, marker, repo: fake(REPO, { marker: serializeMarker(marker) }) };
   };
   const turnOn = async () => {
@@ -490,7 +490,7 @@ describe("key page actions", () => {
     expect(await bodyOf(sent, "PATCH", "/git/refs/heads/main")).toEqual({ sha: "c-new", force: true });
     const r = await ring();
     expect((await r.get(REPO))!.key.id).toBe(parsed.id);
-    expect(await r.getRecord(REPO)).toEqual({ repoId: marker.repoId, keyId: parsed.id, enabled: true });
+    expect(await r.getRecord(REPO)).toEqual({ repoId: marker.repoId, keyId: parsed.id, enabled: true, confirmed: true });
     expect(await env.OAUTH_KV.get(`keypending:${hash}:${REPO}`)).toBeNull();
   });
 
@@ -688,7 +688,7 @@ describe("key page actions", () => {
     const said = await reg.text();
     expect(said).not.toContain("Encryption is off");
     expect(said).toContain(`Encryption stays on for ${REPO}`);
-    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true });
+    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true, confirmed: true });
     expect((await (await ring()).get(REPO))!.key.id).toBe(key.id);
 
     // memcrypt rotate: the record names the old key, the marker is signed by the new one.
@@ -697,7 +697,7 @@ describe("key page actions", () => {
     const rotated = await signMarker(nk, { enabled: true, repoId, keyId: nk.id });
     github({ admin: true }, [fake(REPO, { marker: serializeMarker(rotated) })]);
     expect((await act("/keys/register", { repo: REPO, key: next })).status).toBe(200);
-    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: nk.id, enabled: true });
+    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: nk.id, enabled: true, confirmed: true });
   });
 
   it("confirming a decryption with the key already registered turns the record off, and saves go plaintext", async () => {
@@ -715,7 +715,7 @@ describe("key page actions", () => {
     const done = await act("/keys/confirm-decryption", { repo: REPO, key: text });
     expect(done.status).toBe(200);
     expect(await done.text()).toContain(`Encryption is off for ${REPO}: new memories are saved unencrypted.`);
-    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: false });
+    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: false, confirmed: true });
     const inner = new FakeStore();
     inner.put(REPO, MARKER_PATH, serializeMarker(off));
     const enc = new EncryptingStore(inner, await ring(), "https://memory.test/keys");
@@ -738,7 +738,7 @@ describe("key page actions", () => {
     const res = await act("/keys/confirm-decryption", { repo: REPO, key: text });
     expect(res.status, await res.clone().text()).toBe(200);
     expect(await res.text()).toContain(`Encryption is off for ${REPO}: new memories are saved unencrypted.`);
-    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: false });
+    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: false, confirmed: true });
     expect((await (await ring()).get(REPO))!.key.id).toBe(key.id);
   });
 
@@ -772,7 +772,7 @@ describe("key page actions", () => {
     let res = await act("/keys/confirm-decryption", { repo: REPO, key: text });
     expect(res.status).toBe(409);
     expect(await res.text()).toContain(`The encryption marker of ${REPO} doesn&#39;t say off`);
-    expect(await r.getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true });
+    expect(await r.getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true, confirmed: true });
     // An off marker this key didn't sign (another key, or forged).
     const other = await parseKeyText(generateKeyText());
     github({ admin: true }, [fake(REPO, { marker: serializeMarker(await signMarker(other, { enabled: false, repoId, keyId: other.id })) })]);
@@ -783,12 +783,12 @@ describe("key page actions", () => {
     github({ admin: true }, [fake(REPO, { marker: serializeMarker(forged) })]);
     res = await act("/keys/confirm-decryption", { repo: REPO, key: text });
     expect(res.status).toBe(400);
-    expect(await r.getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true });
+    expect(await r.getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true, confirmed: true });
     // No marker at all: the record's key matches, but nothing says the repo was decrypted.
     github({ admin: true }, [fake(REPO)]);
     res = await act("/keys/confirm-decryption", { repo: REPO, key: text });
     expect(res.status).toBe(409);
-    expect(await r.getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true });
+    expect(await r.getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true, confirmed: true });
     // The record is already off (after Stop).
     await r.putRecord(REPO, { repoId, keyId: key.id, enabled: false });
     github({ admin: true }, [fake(REPO, { marker: serializeMarker(await signMarker(key, { enabled: false, repoId, keyId: key.id })) })]);
@@ -803,20 +803,20 @@ describe("key page actions", () => {
     const key = await parseKeyText(text);
     const repoId = newRepoId();
     const off = await signMarker(key, { enabled: false, repoId, keyId: key.id });
-    await (await ring()).putRecord(REPO, { repoId, keyId: key.id, enabled: true });
+    await (await ring()).putRecord(REPO, { repoId, keyId: key.id, enabled: true, confirmed: true });
     github({ push: true, admin: false }, [fake(REPO, { marker: serializeMarker(off) })]);
     await signIn();
     const res = await act("/keys/register", { repo: REPO, key: text });
     expect(res.status).toBe(200);
     expect(await res.text()).toContain(`Key registered. Encryption stays on for ${REPO}; an admin can turn it off with Stop.`);
-    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true });
+    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true, confirmed: true });
     expect((await (await ring()).get(REPO))!.key.id).toBe(key.id);
 
     // Disabled → enabled with the same IDs stays allowed for write users.
-    await (await ring()).putRecord(REPO, { repoId, keyId: key.id, enabled: false });
+    await (await ring()).putRecord(REPO, { repoId, keyId: key.id, enabled: false, confirmed: true });
     github({ push: true, admin: false }, [fake(REPO, { marker: serializeMarker(await signMarker(key, { enabled: true, repoId, keyId: key.id })) })]);
     expect((await act("/keys/register", { repo: REPO, key: text })).status).toBe(200);
-    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true });
+    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true, confirmed: true });
 
     // A new key ID (rotate) needs admin: nothing is written.
     const next = generateKeyText();
@@ -825,8 +825,54 @@ describe("key page actions", () => {
     const res2 = await act("/keys/register", { repo: REPO, key: next });
     expect(res2.status).toBe(403);
     expect(await res2.text()).toContain(esc(`Only an admin of ${REPO} can register a new key for it (the key was changed, e.g. with memcrypt rotate).`));
-    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true });
+    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true, confirmed: true });
     expect((await (await ring()).get(REPO))!.key.id).toBe(key.id);
+  });
+
+  const UNCONFIRMED = `Only an admin of ${REPO} can register this key: the memory tool hasn&#39;t seen an admin confirm this repo&#39;s encryption key.`;
+
+  it("a write user can't take over a never-encrypted repo: a planted marker teaches an unconfirmed record, and register needs admin", async () => {
+    const r = await ring();
+    const mine = generateKeyText();
+    const mk = await parseKeyText(mine);
+    const planted = await signMarker(mk, { enabled: true, repoId: newRepoId(), keyId: mk.id });
+    const { sent } = github({ login: "dav", push: true, admin: false }, [fake(REPO, { marker: serializeMarker(planted) })]);
+    await signIn();
+    // Before any read: no record at all.
+    let res = await act("/keys/register", { repo: REPO, key: mine });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain(UNCONFIRMED);
+    // Opening the key page learns a record from the planted marker; it isn't confirmed.
+    const page = await (await go(`/keys?repo=${encodeURIComponent(REPO)}`)).text();
+    expect(page).toContain("An admin of");
+    const learned = await r.getRecord(REPO);
+    expect(learned).toMatchObject({ keyId: mk.id, enabled: true });
+    expect(learned!.confirmed).toBeUndefined();
+    res = await act("/keys/register", { repo: REPO, key: mine });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain(UNCONFIRMED);
+    expect(await r.get(REPO)).toBeNull();
+    expect(await r.getRecord(REPO)).toEqual(learned);
+    expect(writes(sent)).toEqual([]);
+  });
+
+  it("an admin's register confirms a learned record; a write user can then register that key", async () => {
+    const r = await ring();
+    const text = generateKeyText();
+    const key = await parseKeyText(text);
+    const repoId = newRepoId();
+    const marker = await signMarker(key, { enabled: true, repoId, keyId: key.id });
+    await r.putRecord(REPO, { repoId, keyId: key.id, enabled: true }); // learned (memcrypt encrypt, then a read)
+    github({ admin: true }, [fake(REPO, { marker: serializeMarker(marker) })]);
+    await signIn();
+    const page = await (await go(`/keys?repo=${encodeURIComponent(REPO)}`)).text();
+    expect(page).toContain("Registering the key here confirms it");
+    expect((await act("/keys/register", { repo: REPO, key: text })).status).toBe(200);
+    expect(await r.getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: true, confirmed: true });
+    await r.remove(REPO);
+    github({ push: true, admin: false }, [fake(REPO, { marker: serializeMarker(marker) })]);
+    expect((await act("/keys/register", { repo: REPO, key: text })).status).toBe(200);
+    expect((await r.get(REPO))!.key.id).toBe(key.id);
   });
 
   it("a write user can't take a repo over with a planted marker signed by their own key", async () => {
@@ -834,7 +880,7 @@ describe("key page actions", () => {
     const rk = await parseKeyText(real);
     const repoId = newRepoId();
     const r = await ring();
-    await r.putRecord(REPO, { repoId, keyId: rk.id, enabled: true });
+    await r.putRecord(REPO, { repoId, keyId: rk.id, enabled: true, confirmed: true });
     await r.put(REPO, real, "dav", Date.now());
     const mine = generateKeyText();
     const mk = await parseKeyText(mine);
@@ -845,7 +891,7 @@ describe("key page actions", () => {
       const res = await act("/keys/register", { repo: REPO, key: mine });
       expect(res.status, plantedId).toBe(403);
       expect(await res.text()).toContain(esc(`Only an admin of ${REPO} can register a new key for it (the key was changed, e.g. with memcrypt rotate).`));
-      expect(await r.getRecord(REPO)).toEqual({ repoId, keyId: rk.id, enabled: true });
+      expect(await r.getRecord(REPO)).toEqual({ repoId, keyId: rk.id, enabled: true, confirmed: true });
       expect((await (await ring()).get(REPO))!.key.id).toBe(rk.id);
       expect(writes(sent)).toEqual([]);
     }
@@ -892,7 +938,7 @@ describe("key page actions", () => {
     expect(await markerSignedBy(key, m)).toBe(true);
     expect((await bodyOf(sent, "POST", "/git/commits")).message).toBe("encrypt: stop encrypting new saves\n\nMemory-Source: key page (dav)\nMemory-Scope: *\n");
     expect(await bodyOf(sent, "PATCH", "/git/refs/heads/main")).toEqual({ sha: "c-new", force: false });
-    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId: marker.repoId, keyId: key.id, enabled: false });
+    expect(await (await ring()).getRecord(REPO)).toEqual({ repoId: marker.repoId, keyId: key.id, enabled: false, confirmed: true });
   });
 
   it("a repo not in SCOPES → 403 on every action", async () => {
@@ -1007,7 +1053,7 @@ describe("key page actions", () => {
     const repoId = newRepoId();
     const r = await ring();
     await r.put(REPO, text, "dav", Date.now());
-    await r.putRecord(REPO, { repoId, keyId: key.id, enabled: true });
+    await r.putRecord(REPO, { repoId, keyId: key.id, enabled: true, confirmed: true });
     await r.setMove(REPO, { to: NEW, repoId, head: "c-old", prevRecord });
     return { text, key, repoId };
   };

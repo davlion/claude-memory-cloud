@@ -7,13 +7,19 @@ const SWITCHING_TTL = 300;
 const MIN_TTL = 60;
 
 export interface RegisteredKey { key: RepoKey; registeredBy: string; registeredAt: number; expiresAt: number | null }
-export interface EncryptedRepoRecord { repoId: string; keyId: string; enabled: boolean }
+/**
+ * `confirmed`: written by an admin's key page action (switch-on, register, Confirm decryption, Stop). A record the memory
+ * tool learned from the repo's content (a marker, sealed files) isn't, and neither is one from before this flag existed.
+ */
+export interface EncryptedRepoRecord { repoId: string; keyId: string; enabled: boolean; confirmed?: boolean }
 /** A fresh-repo move: the copy in `to` (its repo ID), the old repo's head that was copied, and the record before the switch. */
 export interface MoveRecord { to: string; repoId: string; head: string | null; prevRecord: EncryptedRepoRecord | null }
 
-type RecordJson = { repo_id: string; key_id: string; enabled: boolean };
-const recordJson = (r: EncryptedRepoRecord): RecordJson => ({ repo_id: r.repoId, key_id: r.keyId, enabled: r.enabled });
-const fromJson = (v: RecordJson): EncryptedRepoRecord => ({ repoId: v.repo_id, keyId: v.key_id, enabled: v.enabled });
+type RecordJson = { repo_id: string; key_id: string; enabled: boolean; confirmed?: boolean };
+const recordJson = (r: EncryptedRepoRecord): RecordJson =>
+  ({ repo_id: r.repoId, key_id: r.keyId, enabled: r.enabled, ...(r.confirmed ? { confirmed: true } : {}) });
+const fromJson = (v: RecordJson): EncryptedRepoRecord =>
+  ({ repoId: v.repo_id, keyId: v.key_id, enabled: v.enabled, ...(v.confirmed === true ? { confirmed: true } : {}) });
 
 const keyAad = (repo: string) => `repokey-v1\n${repo}`;
 

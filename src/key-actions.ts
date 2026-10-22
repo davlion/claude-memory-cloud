@@ -240,6 +240,9 @@ const confirm: KeyAction = async (_req, env, ring, s, form, ctx) => {
 /** Registering a key that names a different key or repo ID than the record (a rotate, or a planted marker) needs admin. */
 export const newKeyAdminOnly = (repo: string) =>
   `Only an admin of ${repo} can register a new key for it (the key was changed, e.g. with memcrypt rotate).`;
+/** No admin has confirmed the repo's key yet (the record was learned from repo content, or is missing): only an admin may register. */
+export const unconfirmedAdminOnly = (repo: string) =>
+  `Only an admin of ${repo} can register this key: the memory tool hasn't seen an admin confirm this repo's encryption key.`;
 
 const register: KeyAction = async (_req, env, ring, s, form) => {
   const title = "Key not registered";
@@ -249,17 +252,25 @@ const register: KeyAction = async (_req, env, ring, s, form) => {
   if (k instanceof Response) return k;
   const m = p.st.marker;
   const rec = p.st.rec;
-  // A marker this key signed with other IDs than the record's (memcrypt rotate, or one a co-writer planted under a key only
-  // they hold): following it would move every later save to that key, so only an admin may.
-  if (k.verified && m && rec && (m.keyId !== rec.keyId || m.repoId !== rec.repoId) && !p.admin) {
-    return message("Not allowed", newKeyAdminOnly(p.repo), 403);
+  // A write user may register only the key an admin confirmed: a record written by an admin's key page action whose IDs the
+  // verified marker repeats. A record the memory tool learned from the repo (a planted marker) or a changed key needs admin,
+  // or a co-writer could make the memory tool seal everyone's saves under a key only they hold.
+  if (!p.admin) {
+    if (!rec?.confirmed || !k.verified || !m) return message("Not allowed", unconfirmedAdminOnly(p.repo), 403);
+    if (m.keyId !== rec.keyId || m.repoId !== rec.repoId) return message("Not allowed", newKeyAdminOnly(p.repo), 403);
   }
   // The record follows the marker this key signed, except that registering never turns encryption off: an off marker
   // (memcrypt decrypt, or an old one put back from history) leaves an enabled record on until an admin confirms.
+  // An admin's register confirms the key.
   const keptOn = Boolean(k.verified && m && rec?.enabled && !m.enabled);
+  const confirmed = p.admin || Boolean(rec?.confirmed);
   if (k.verified && m) {
-    const want = { repoId: m.repoId, keyId: m.keyId, enabled: m.enabled || keptOn };
-    if (!rec || rec.repoId !== want.repoId || rec.keyId !== want.keyId || rec.enabled !== want.enabled) await ring.putRecord(p.repo, want);
+    const want = { repoId: m.repoId, keyId: m.keyId, enabled: m.enabled || keptOn, ...(confirmed ? { confirmed: true } : {}) };
+    if (!rec || rec.repoId !== want.repoId || rec.keyId !== want.keyId || rec.enabled !== want.enabled || Boolean(rec.confirmed) !== confirmed) {
+      await ring.putRecord(p.repo, want);
+    }
+  } else if (rec && p.admin && !rec.confirmed) {
+    await ring.putRecord(p.repo, { ...rec, confirmed: true }); // no marker: the record's key, which the pasted key matched
   }
   // After the rename the repo carries the copy's marker: the move is done (the key may have expired before a read saw it).
   const move = await ring.getMove(p.repo);
@@ -296,7 +307,7 @@ const confirmDecryption: KeyAction = async (_req, env, ring, s, form) => {
   if (!k.verified || !m || m.enabled) {
     return message(title, `The encryption marker of ${p.repo} doesn't say off, so there is no decryption to confirm. Nothing was changed.`, 409);
   }
-  await ring.putRecord(p.repo, { repoId: m.repoId, keyId: m.keyId, enabled: false });
+  await ring.putRecord(p.repo, { repoId: m.repoId, keyId: m.keyId, enabled: false, confirmed: true });
   const { expiresAt } = await ring.put(p.repo, k.text, s.login, Date.now());
   return message("Encryption is off", `Encryption is off for ${p.repo}: new memories are saved unencrypted. ${registered(p.repo, expiresAt)}`, 200);
 };
@@ -332,7 +343,7 @@ const stop: KeyAction = async (_req, env, ring, s, form) => {
     if (!res.ok) return message(title, "The memory repo changed while this ran. Nothing was changed. Try again.", 409);
   } catch (e) { return fail(title, e); }
   try {
-    await ring.putRecord(p.repo, { repoId, keyId: k.key.id, enabled: false });
+    await ring.putRecord(p.repo, { repoId, keyId: k.key.id, enabled: false, confirmed: true });
   } catch {
     return message("Encryption stopped, but didn't finish", `The marker of ${p.repo} now says encryption is off, but this memory tool couldn't record it, so saves stay encrypted: register the key on this page.`, 500);
   }

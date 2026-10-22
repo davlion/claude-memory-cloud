@@ -479,13 +479,13 @@ def run(a: argparse.Namespace) -> int:
             print("Encryption is off in the repo. To let the memory tool see it, an admin of "
                   f"{repo} clicks Confirm decryption on the key page{f' ({page})' if page else ''} and pastes this key, or uses Stop there.")
         elif path == "fresh":
-            print(_move_steps(a, repo, "Register the key" if a.cmd == "encrypt" else "Register the new key"))
+            print(_move_steps(a, repo, f"An admin of {repo} registers the key once" if a.cmd == "encrypt" else f"An admin of {repo} registers the new key"))
         elif a.cmd == "encrypt":
             print(f"Encryption is on for {repo}; its history is now one commit. Ask GitHub Support to purge the old commits: "
-                  "https://support.github.com/request\nRegister the key so the memory tool can read and save"
+                  f"https://support.github.com/request\nAn admin of {repo} registers the key once so the memory tool can read and save"
                   f"{': ' + page if page else ' on the key page.'}")
         if a.cmd == "rotate" and path != "fresh":
-            print(f"Register the new key{': ' + page if page else ' on the key page.'}")
+            print(f"An admin of {repo} registers the new key{': ' + page if page else ' on the key page.'}")
         if interrupted:
             raise interrupted
         return 0

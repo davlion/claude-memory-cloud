@@ -345,7 +345,7 @@ class Memcrypt(unittest.TestCase):
         self.assertEqual(self.run_generated("rotate", self.origin, "--key-env", "MK", "--commit"), 130)
         self.assertIn("The new key WAS applied: keep it.", self.out)
         self.assertNotIn("NOT applied", self.out)
-        self.assertIn("Register the new key", self.out)
+        self.assertIn("An admin of acme/memory registers the new key", self.out)
         self.assertTrue(crypt.marker_signed_by(crypt.parse_key_text(KEY2), crypt.parse_marker(self.show(self.origin, crypt.MARKER_PATH))))
         self.assertEqual(self.out.count(KEY2), 1)
 
@@ -357,7 +357,7 @@ class Memcrypt(unittest.TestCase):
         self.assertEqual(self.run_generated("encrypt", self.origin, "--in-place"), 0, self.out)
         self.assertIn("The new key WAS applied: keep it.", self.out)
         self.assertIn("Done: acme/memory is encrypted.", self.out)
-        self.assertIn("Register the key", self.out)
+        self.assertIn("An admin of acme/memory registers the key once", self.out)
         self.assertNotIn("NOT applied", self.out)
 
     def test_push_that_never_reached_the_remote_says_not_applied(self):
@@ -438,7 +438,7 @@ class Memcrypt(unittest.TestCase):
                 self.assertEqual(crypt.open_memory_file(new, m.repo_id, p, got), t)
                 with self.assertRaises(crypt.DecryptError):
                     crypt.open_memory_file(old, m.repo_id, p, got)
-        self.assertIn("Register the new key: https://mem.example/keys?repo=acme/memory", self.out)
+        self.assertIn("An admin of acme/memory registers the new key: https://mem.example/keys?repo=acme/memory", self.out)
         self.assert_key_hidden(KEY, KEY2)
 
     def test_rotate_generated_key_must_be_confirmed(self):
@@ -453,7 +453,7 @@ class Memcrypt(unittest.TestCase):
                                env={"MK": KEY, "CK": KEY2})
         self.assertEqual(code, 0, self.out)
         self.assertEqual(self.out.count(KEY2), 1)
-        self.assertIn("Register the new key", self.out)
+        self.assertIn("An admin of acme/memory registers the new key", self.out)
         self.assertTrue(crypt.marker_signed_by(crypt.parse_key_text(KEY2), crypt.parse_marker(self.show(self.origin, crypt.MARKER_PATH))))
         self.assertEqual(len(self.git("--git-dir", self.origin, "rev-list", "--all").split()), 1)
         self.assert_key_hidden(KEY, KEY2)

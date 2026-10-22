@@ -49,6 +49,24 @@ async function encrypted() {
 }
 
 describe("EncryptingStore", () => {
+  it("records learned from the repo are unconfirmed; a rewrite keeps an admin's confirmation only while the IDs stay", async () => {
+    // Learned from a marker (no record yet): unconfirmed, and status says so.
+    inner.put(REPO, MARKER_PATH, await marker(true));
+    expect(await store.status(REPO, "")).toMatchObject({ unconfirmed: true });
+    expect((await ring.getRecord(REPO))!.confirmed).toBeUndefined();
+    // Confirmed and off; the registered key verifies an on marker with the same IDs: enabled follows, confirmation stays.
+    await ring.put(REPO, KEY_TEXT, "dav", Date.now());
+    await ring.putRecord(REPO, { repoId: REPO_ID, keyId: key.id, enabled: false, confirmed: true });
+    const s = await new EncryptingStore(inner, ring, KEYS_URL).status(REPO, "");
+    expect(s).not.toHaveProperty("unconfirmed");
+    expect(await ring.getRecord(REPO)).toEqual({ repoId: REPO_ID, keyId: key.id, enabled: true, confirmed: true });
+    // A verified marker with another repo ID: the record follows it, unconfirmed.
+    const other = newRepoId();
+    inner.put(REPO, MARKER_PATH, await marker(true, other));
+    expect(await new EncryptingStore(inner, ring, KEYS_URL).status(REPO, "")).toMatchObject({ unconfirmed: true });
+    expect(await ring.getRecord(REPO)).toEqual({ repoId: other, keyId: key.id, enabled: true });
+  });
+
   it("round trip: a save is stored sealed and reads back as plaintext", async () => {
     await encrypted();
     expect(await save(store, "a", "first thing", "hello\n")).toMatchObject({ status: "created" });

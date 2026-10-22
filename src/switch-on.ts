@@ -83,7 +83,7 @@ export async function switchOnInPlace(store: GitHubStore, keys: KeyRing, cache: 
       ? await store.writeFirstCommit(repo, plan.files, message)
       : await store.replaceHistory(repo, tree.head, plan.files, message);
     progress?.("Wrote the new history (one commit)");
-    await keys.putRecord(repo, { repoId: plan.marker.repoId, keyId: key.id, enabled: true });
+    await keys.putRecord(repo, { repoId: plan.marker.repoId, keyId: key.id, enabled: true, confirmed: true }); // only an admin switches on
     await keys.put(repo, keyText, login, Date.now());
     progress?.("Stored the key");
     await clearCache(cache, repo);
@@ -126,7 +126,7 @@ export async function switchOnFresh(store: GitHubStore, keys: KeyRing, cache: KV
     }
     progress?.(`Checked ${repo} didn't change during the copy`);
     await keys.setMove(repo, { to: newRepo, repoId: plan.marker.repoId, head: tree.head, prevRecord });
-    await keys.putRecord(repo, { repoId: plan.marker.repoId, keyId: key.id, enabled: true });
+    await keys.putRecord(repo, { repoId: plan.marker.repoId, keyId: key.id, enabled: true, confirmed: true }); // only an admin switches on
     await keys.put(repo, keyText, login, Date.now());
     progress?.("Stored the key");
     await clearCache(cache, repo);

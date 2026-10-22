@@ -181,7 +181,7 @@ describe("switchOnInPlace", () => {
     expect(await body(calls, "PATCH", "/git/refs/heads/main")).toEqual({ sha: "c-new", force: true });
     await expectNoPlaintext(calls);
 
-    expect(await keys.getRecord(r.name)).toEqual({ repoId: marker.repoId, keyId: key.id, enabled: true });
+    expect(await keys.getRecord(r.name)).toEqual({ repoId: marker.repoId, keyId: key.id, enabled: true, confirmed: true });
     expect((await (await ring()).get(r.name))!.key.id).toBe(key.id);
     expect(await keys.isSwitching(r.name)).toBe(false);
   });
@@ -322,7 +322,7 @@ describe("switchOnInPlace", () => {
     const marker = parseMarker(by.get(MARKER_PATH)!.content!);
     expect(marker).toMatchObject({ enabled: true, repoId: "keep-this-id-012345678" });
     expect(await openMemoryFile(key, "keep-this-id-012345678", "memories/a.md", by.get("memories/a.md")!.content!)).toBe(MEM_A);
-    expect(await keys.getRecord(r.name)).toEqual({ repoId: "keep-this-id-012345678", keyId: key.id, enabled: true });
+    expect(await keys.getRecord(r.name)).toEqual({ repoId: "keep-this-id-012345678", keyId: key.id, enabled: true, confirmed: true });
   });
 });
 
@@ -404,7 +404,7 @@ describe("switchOnFresh", () => {
     await expectNoPlaintext(calls);
 
     expect(await keys.getMove(r.name)).toEqual({ to: n.name, repoId: marker.repoId, head: "c1", prevRecord: null });
-    expect(await keys.getRecord(r.name)).toEqual({ repoId: marker.repoId, keyId: key.id, enabled: true });
+    expect(await keys.getRecord(r.name)).toEqual({ repoId: marker.repoId, keyId: key.id, enabled: true, confirmed: true });
     expect((await (await ring()).get(r.name))!.key.id).toBe(key.id);
     expect(await keys.get(n.name)).toBeNull();
     expect(await keys.isSwitching(r.name)).toBe(false);

@@ -28,6 +28,8 @@ export interface EncryptionStatus {
   markerOff?: boolean;
   /** Only from `status`: a record exists, but the repo has no marker and this set no encrypted file (a record learned from files since removed?); an admin may forget it on the key page. */
   recordOnly?: boolean;
+  /** Only from `status`: no admin has confirmed this repo's encryption key on the key page (the record was learned from the repo, or predates confirmation). */
+  unconfirmed?: boolean;
 }
 export interface HeadCommit { sha: string; message: string; author: string; date: string; url: string }
 export interface Snapshot {
