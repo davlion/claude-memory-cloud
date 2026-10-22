@@ -72,6 +72,8 @@ Memories for Claude, maintained by the claude-memory-cloud server.
 export const CACHE_TTL_SECONDS = 7 * 24 * 3600;
 /** KV values max out at 25 MiB; a larger snapshot is simply not cached (that is not a KV write problem). */
 export const MAX_CACHE_BYTES = 24 * 1024 * 1024;
+/** Git's well-known empty tree: what a commit holds after its last file is deleted. */
+const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const GRAPHQL_CHUNK = 100;
 const GRAPHQL_CONCURRENCY = 2;
 const OID_RE = /^[0-9a-f]{40}$/;
@@ -177,7 +179,14 @@ export class GitHubStore implements Store {
       p = (async () => {
         const c = await this.gh.request<{ sha: string; message: string; author?: { name?: string; date?: string }; html_url: string; tree: { sha: string } }>(
           "GET", `/repos/${repo}/git/commits/${sha}`);
-        const t = await this.gh.request<{ tree: TreeEntry[]; truncated: boolean }>("GET", `/repos/${repo}/git/trees/${c.tree.sha}?recursive=1`);
+        // Deleting the last file leaves a commit on the empty tree, which GitHub may answer with 404 instead of an empty list.
+        const t = c.tree.sha === EMPTY_TREE_SHA
+          ? await this.gh.request<{ tree: TreeEntry[]; truncated: boolean }>("GET", `/repos/${repo}/git/trees/${c.tree.sha}?recursive=1`)
+              .catch((e: unknown) => {
+                if (e instanceof GitHubError && e.status === 404) return { tree: [] as TreeEntry[], truncated: false };
+                throw e;
+              })
+          : await this.gh.request<{ tree: TreeEntry[]; truncated: boolean }>("GET", `/repos/${repo}/git/trees/${c.tree.sha}?recursive=1`);
         if (t.truncated) throw new GitHubError("memory repo tree too large (truncated)", 0, "other");
         return {
           head: { sha: c.sha, message: c.message, author: c.author?.name ?? "unknown", date: c.author?.date ?? "", url: c.html_url },
@@ -274,6 +283,12 @@ export class GitHubStore implements Store {
     return (await this.gh.request<{ tree: { sha: string } }>("GET", `/repos/${repo}/git/commits/${sha}`)).tree.sha;
   }
 
+  /** `base_tree` for a write on top of `sha`; the empty tree isn't a stored object GitHub can base on, so it is left out. */
+  private async baseTree(repo: string, sha: string): Promise<{ base_tree?: string }> {
+    const t = await this.baseTreeSha(repo, sha);
+    return t === EMPTY_TREE_SHA ? {} : { base_tree: t };
+  }
+
   async commit(repo: string, prefix: string, base: string | null, changes: Change[], message: string): Promise<CommitResult> {
     this.heads.delete(repo); // whatever happens below, the next snapshot re-reads the ref
     const { branch } = await this.repoMeta(repo);
@@ -289,7 +304,7 @@ export class GitHubStore implements Store {
       return { ok: false, reason: "ref_moved" };
     }
     const tree = await this.gh.request<{ sha: string }>("POST", `/repos/${repo}/git/trees`, {
-      base_tree: await this.baseTreeSha(repo, base),
+      ...await this.baseTree(repo, base),
       tree: changes.map((c) => c.content === null
         ? { path: prefix + c.path, mode: "100644", type: "blob", sha: null }
         : { path: prefix + c.path, mode: "100644", type: "blob", content: c.content }),

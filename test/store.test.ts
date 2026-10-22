@@ -47,6 +47,7 @@ function repoRoutes(commit = "c1", tree: Entry[] = TREE, texts: Record<string, s
   ];
 }
 
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const count = (calls: Request[], part: string) => calls.filter((c) => c.url.includes(part)).length;
 
 describe("GitHubStore.snapshot marker", () => {
@@ -216,6 +217,38 @@ describe("GitHubStore.snapshot", () => {
     mockFetch([...repoRoutes().filter((r) => !r.url.includes("/git/trees/")),
       { method: "GET", url: `${R}/git/trees/t-c1?recursive=1`, respond: () => json({ truncated: true, tree: [] }) }]);
     await expect(new GitHubStore(new GitHub("t")).snapshot("dav/mem", "")).rejects.toBeInstanceOf(GitHubError);
+  });
+
+  it("a last-file deletion leaves the empty tree: GitHub's 404 for it means no files, not unreachable", async () => {
+    mockFetch([...repoRoutes().filter((r) => !r.url.includes("/git/trees/") && !r.url.includes("/git/commits/") && r.url !== GQL),
+      { method: "GET", url: `${R}/git/commits/c1`, respond: () => json({ sha: "c1", message: "delete: x", author: { name: "Dav", date: "2026-10-14T10:00:00Z" },
+        html_url: "https://github.com/dav/mem/commit/c1", tree: { sha: EMPTY_TREE } }) },
+      { method: "GET", url: `${R}/git/trees/${EMPTY_TREE}?recursive=1`, respond: () => json({ message: "Not Found" }, 404) }]);
+    const snap = await new GitHubStore(new GitHub("t")).snapshot("dav/mem", "");
+    expect(snap.commitSha).toBe("c1");
+    expect(snap.files.size).toBe(0);
+  });
+  it("an empty tree: [] answer is an empty set too", async () => {
+    mockFetch(repoRoutes("c1", []));
+    expect((await new GitHubStore(new GitHub("t")).snapshot("dav/mem", "")).files.size).toBe(0);
+  });
+  it("any other 404 for a tree stays an error", async () => {
+    mockFetch([...repoRoutes().filter((r) => !r.url.includes("/git/trees/")),
+      { method: "GET", url: `${R}/git/trees/t-c1?recursive=1`, respond: () => json({ message: "Not Found" }, 404) }]);
+    await expect(new GitHubStore(new GitHub("t")).snapshot("dav/mem", "")).rejects.toBeInstanceOf(GitHubError);
+  });
+  it("saving on top of the empty tree writes the tree without base_tree", async () => {
+    const { calls } = mockFetch([
+      { method: "GET", url: R, respond: () => json(META) },
+      { method: "GET", url: `${R}/git/commits/c1`, respond: () => json({ sha: "c1", tree: { sha: EMPTY_TREE } }) },
+      { method: "POST", url: `${R}/git/trees`, respond: () => json({ sha: "t2" }) },
+      { method: "POST", url: `${R}/git/commits`, respond: () => json({ sha: "c2", html_url: "u" }) },
+      { method: "PATCH", url: `${R}/git/refs/heads/main`, respond: () => json({}) },
+    ]);
+    const res = await new GitHubStore(new GitHub("t")).commit("dav/mem", "", "c1", [{ path: "a.md", content: "x" }], "save: a");
+    expect(res.ok).toBe(true);
+    const body = await calls.find((c) => c.url.endsWith("/git/trees") && c.method === "POST")!.json() as Record<string, unknown>;
+    expect("base_tree" in body).toBe(false);
   });
 
   it("empty repo → commitSha null, no files, no head", async () => {
