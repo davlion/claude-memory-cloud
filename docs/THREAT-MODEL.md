@@ -364,6 +364,10 @@ Switch-on can't reach every copy:
 - **No auto-sealing.** A plaintext memory that appears after switch-on is marked "unencrypted, added outside the memory tool" in the index and in health (not during a fresh-repo move, when the old repo's plaintext is the original; while the marker says off it is marked just "(unencrypted)"; the marker changes only the wording, never whether the file is flagged, since anyone with write access can plant one), never encrypted by the server, so an encrypted file remains a sign that the memory tool wrote it.
 - **Bound ciphertext.** Each file is sealed with the repo ID and its path as additional data, so files can't be moved between memories or repos unnoticed.
 
+### Private repos only
+
+Encryption at rest is a second lock on a private repo, not a way to use a public one. The memory tool refuses public and internal memory repos whether or not they are encrypted, and switch-on refuses them too. A public encrypted repo would still publish memory names, project folder names, commit messages, timestamps, authors and sizes, and its ciphertext would be copied by forks, scrapers and archives for good, so a key leaked later (or a plaintext slip: a hand-added file, a misconfigured server, pre-switch-on history) could never be contained. If an encrypted repo becomes public, health's `repo_public` action says what was exposed and to rotate the key and move to a fresh private repo.
+
 ### Accepted limits
 
 - **Rollback and deletion aren't detected.** Encryption protects each file, not the repo. Someone with write access can delete memories or put back an older encrypted version of one. The provenance warning (§3) still flags commits made outside the server.

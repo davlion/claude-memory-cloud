@@ -147,11 +147,13 @@ export async function runHealth(o: { gh: GitHub; cfg: ScopeConfig; props: Props;
       const name = `scope:${r.scope}`;
       if (r.reason === "repo_public") {
         const tail = "Saves to this scope are blocked until then.";
+        // Encryption doesn't make a public repo safe: names, history and the ciphertext itself were out.
+        const exposed = "If it holds encrypted memories, their ciphertext, memory names and commit history were exposed while it wasn't private: after making it private, rotate the key and move to a fresh private repo (docs/ENCRYPTION.md).";
         const fix = "repo Settings → General → Danger Zone → Change visibility";
         const action = r.visibility === "internal"
-          ? `${r.repo} is internal, so every member of its enterprise can read these memories. Make it private: ${fix}. ${tail}`
+          ? `${r.repo} is internal, so every member of its enterprise can read these memories. Make it private: ${fix}. ${tail} ${exposed}`
           : r.visibility === "public"
-            ? `${r.repo} is public, so anyone can read these memories. Make it private: ${fix}. ${tail}`
+            ? `${r.repo} is public, so anyone can read these memories. Make it private: ${fix}. ${tail} ${exposed}`
             : `Couldn't confirm ${r.repo} is private (GitHub didn't report its visibility); make sure it is private (Settings → General → Danger Zone → Change visibility). ${tail}`;
         checks.push({ check: name, status: "fail", detail: `repo_public ${r.repo}`, action });
       } else if (r.reachable && r.writable) checks.push({ check: name, status: "ok", detail: `ok ${r.repo}` });

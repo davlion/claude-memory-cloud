@@ -10,6 +10,7 @@ Encryption is optional and set per memory repo. Once it's on, each memory's desc
 
 ## Before you start
 
+- **A private memory repo.** Encryption adds to privacy; it doesn't replace it. The memory tool refuses public and internal repos, encrypted or not: memory names, folder names, commit messages and history stay readable, and published ciphertext can't be taken back if a key ever leaks. If an encrypted repo was ever public, make it private, then rotate the key and move to a fresh private repo.
 - **A password manager** (1Password or similar). This is a precondition, not a suggestion. The key is shown once, and **without it your memories can't be read by anyone, including you.** Sharing the key through the password manager's sharing is how several people get access to one repo.
 - **A memory tool with encryption turned on.** Open `<server>/keys`. If it says "Encryption isn't turned on for this memory server", ask the memory server's operator to turn it on ([QUICKSTART.md](QUICKSTART.md), "Turning on encryption at rest").
 - **Admin access to the memory repo** to turn encryption on, turn it back on, stop it, confirm a decryption, register a changed key (after `memcrypt rotate`), or forget encryption for a repo that holds nothing encrypted. Removing a key needs write access plus the key; so does registering the repo's key once an admin has confirmed it (below). For a client repo, the client's admin turns encryption on. `memory_scopes` shows `admin: true` for each memory repo where you have it.

@@ -27,6 +27,8 @@ function routes(o: { installs?: unknown[]; repos?: Record<number, unknown[]>; us
 
 const byCheck = (cs: Check[], name: string) => cs.find((c) => c.check === name)!;
 
+const EXPOSED = "If it holds encrypted memories, their ciphertext, memory names and commit history were exposed while it wasn't private: after making it private, rotate the key and move to a fresh private repo (docs/ENCRYPTION.md).";
+
 describe("runHealth", () => {
   it("all ok", async () => {
     mockFetch(routes());
@@ -41,6 +43,7 @@ describe("runHealth", () => {
     const cs = await runHealth({ gh: new GitHub("t"), cfg, props, appSlug: "s", now: NOW });
     expect(byCheck(cs, "scope:acme")).toMatchObject({ status: "fail", detail: "repo_public acme-org/claude-memory",
       action: expect.stringMatching(/is internal, so every member of its enterprise can read/) });
+    expect(byCheck(cs, "scope:acme")!.action).toContain(EXPOSED);
   });
 
   it("an installation with access to all repositories → fail with the restrict action", async () => {
@@ -108,6 +111,7 @@ describe("runHealth", () => {
     const cs = await runHealth({ gh: new GitHub("t"), cfg, props, appSlug: "s", now: NOW });
     expect(byCheck(cs, "scope:acme")).toMatchObject({ status: "fail", detail: "repo_public acme-org/claude-memory",
       action: expect.stringMatching(/is public.*Change visibility.*Saves to this scope are blocked/) });
+    expect(byCheck(cs, "scope:acme")!.action).toContain(EXPOSED);
   });
 
   it("missing visibility → repo_public worded as 'couldn't confirm private'", async () => {
@@ -116,6 +120,7 @@ describe("runHealth", () => {
     const a = byCheck(cs, "scope:acme")!.action!;
     expect(a).toMatch(/Couldn't confirm acme-org\/claude-memory is private.*make sure it is private \(Settings → General/);
     expect(a).not.toMatch(/anyone/);
+    expect(a).not.toContain(EXPOSED);
   });
 
   it("project checks: ok, unconfigured owner, non-GitHub", async () => {
