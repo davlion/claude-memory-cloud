@@ -360,17 +360,67 @@ class Memcrypt(unittest.TestCase):
         self.assertIn("An admin of acme/memory registers the key once", self.out)
         self.assertNotIn("NOT applied", self.out)
 
-    def test_push_that_never_reached_the_remote_says_not_applied(self):
+    def test_push_the_remote_rejected_says_not_applied(self):
+        before = self.head(self.origin)
+
+        def push(call):
+            raise self.mc.Abort("git push failed: To github.com:acme/memory.git\n"
+                                " ! [remote rejected] main -> main (protected branch hook declined)\nerror: failed to push some refs")
+        self.push_hook(push)
+        self.assertEqual(self.run_generated("encrypt", self.origin, "--in-place"), 1)
+        self.assertIn("The new key shown above was NOT applied: acme/memory is unchanged. "
+                      "Discard the new key; run memcrypt again to get another.", self.out)
+        self.assertNotIn("still uses its current key", self.out)
+        self.assertEqual(self.head(self.origin), before)
+
+    def assert_maybe(self):
+        kid = crypt.parse_key_text(KEY2).id
+        self.assertIn("The push may have gone through. Keep the new key until you've checked acme/memory on GitHub: "
+                      f"if its encryption marker names key {kid}, the new key is in use.", self.out)
+        self.assertNotIn("NOT applied", self.out)
+        self.assertNotIn("Discard", self.out)
+
+    def test_push_interrupted_with_the_ref_unchanged_says_keep_the_key(self):
         before = self.head(self.origin)
 
         def push(call):
             raise KeyboardInterrupt
         self.push_hook(push)
         self.assertEqual(self.run_generated("encrypt", self.origin, "--in-place"), 130)
-        self.assertIn("The new key shown above was NOT applied: acme/memory is unchanged. "
-                      "Discard the new key; run memcrypt again to get another.", self.out)
-        self.assertNotIn("still uses its current key", self.out)
+        self.assert_maybe()
         self.assertEqual(self.head(self.origin), before)
+
+    def test_connection_drop_then_the_push_lands_later_says_keep_the_key(self):
+        # The pack was uploaded, the connection dropped, and GitHub updates the ref only after memcrypt looked.
+        self.encrypt()
+        pending = []
+
+        def push(call):
+            pending.append(call)
+            raise self.mc.Abort("git push failed: error: RPC failed; HTTP 502\nfatal: the remote end hung up unexpectedly")
+
+        def ls_remote(call):
+            out = call()
+            if pending:
+                pending.pop()()
+            return out
+        self.push_hook(push, ls_remote)
+        self.assertNotEqual(self.run_generated("rotate", self.origin, "--key-env", "MK", "--in-place"), 0)
+        self.assert_maybe()
+        # It did land: discarding the key would have lost every memory.
+        self.assertTrue(crypt.marker_signed_by(crypt.parse_key_text(KEY2), crypt.parse_marker(self.show(self.origin, crypt.MARKER_PATH))))
+
+    def test_applied_push_is_recognised_despite_a_ref_whose_name_ends_the_same(self):
+        self.encrypt()
+        # `git ls-remote <url> refs/heads/main` also matches refs/a/refs/heads/main, which sorts first.
+        self.git("--git-dir", self.origin, "update-ref", "refs/a/refs/heads/main", self.head(self.origin))
+
+        def push(call):
+            call()
+            raise KeyboardInterrupt
+        self.push_hook(push)
+        self.assertEqual(self.run_generated("rotate", self.origin, "--key-env", "MK", "--commit"), 130)
+        self.assertIn("The new key WAS applied: keep it.", self.out)
 
     def test_push_outcome_unknown_says_keep_the_key_until_checked(self):
         self.encrypt()
@@ -382,10 +432,7 @@ class Memcrypt(unittest.TestCase):
             raise self.mc.Abort("git ls-remote failed: Could not resolve host")
         self.push_hook(push, ls_remote)
         self.assertNotEqual(self.run_generated("rotate", self.origin, "--key-env", "MK", "--in-place"), 0)
-        kid = crypt.parse_key_text(KEY2).id
-        self.assertIn("The push may have gone through. Keep the new key until you've checked acme/memory on GitHub: "
-                      f"if its encryption marker names key {kid}, the new key is in use.", self.out)
-        self.assertNotIn("NOT applied", self.out)
+        self.assert_maybe()
         self.assertEqual(self.out.count(KEY2), 1)
 
     def test_fresh_copy_check_failing_after_the_push_keeps_its_message_and_the_key(self):

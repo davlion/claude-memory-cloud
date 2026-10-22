@@ -318,12 +318,27 @@ def _choose(a: argparse.Namespace, choices: List[str]) -> str:
     return ans
 
 
+# git's wording when the remote refused the update itself (so it can't land later): a refused lease or fast-forward,
+# or a hook or branch rule (" ! [remote rejected] main -> main (protected branch hook declined)").
+_REJECTED = re.compile(r"\[(?:remote )?rejected\]|stale info|non-fast-forward|fetch first|hook declined|protected branch", re.I)
+
+
+def _ref(r: Run, url: str, branch: str, here: bool = False) -> Optional[str]:
+    """The sha of exactly refs/heads/<branch> (ls-remote also tail-matches refs like refs/x/refs/heads/<branch>)."""
+    want = f"refs/heads/{branch}"
+    for line in r.out("ls-remote", url, want, here=here).splitlines():
+        sha, _, name = line.partition("\t")
+        if name == want:
+            return sha
+    return None
+
+
 def _pushed(r: Run, url: str, branch: str, sha: str, old: Optional[str]) -> Optional[bool]:
-    """Whether a push that failed or was interrupted reached the remote: True if the branch holds `sha` (or a descendant),
-    False if it is still `old` (None: absent) or doesn't contain `sha`, None if the remote can't be read."""
+    """Whether a push that failed or was interrupted is in the remote right now: True if the branch holds `sha` (or a
+    descendant), False if it is still `old` (None: absent) or doesn't contain `sha`, None if the remote can't be read.
+    False isn't proof it won't land: the server may still be finishing the update."""
     try:
-        out = r.out("ls-remote", url, f"refs/heads/{branch}", here=False)
-        now = out.split("\t")[0] if out else None
+        now = _ref(r, url, branch)
         if now == sha:
             return True
         if now == old or now is None:
@@ -438,8 +453,12 @@ def run(a: argparse.Namespace) -> int:
                 if isinstance(e, EOFError):
                     raise Abort("No input. Nothing was changed.") from None
                 raise
-            # Before the push started nothing reached the remote; after, the remote says what it holds.
-            outcome = _pushed(r, a.to if path == "fresh" else a.remote, branch, sha, None if path == "fresh" else head) if pushing else False
+            # Before the push started nothing reached the remote. After, "applied" needs the commit in the remote; "not applied"
+            # needs git's report that the remote refused it (an interrupt or dropped connection can still land later).
+            outcome: Optional[bool] = False
+            if pushing:
+                landed = _pushed(r, a.to if path == "fresh" else a.remote, branch, sha, None if path == "fresh" else head)
+                outcome = True if landed else False if isinstance(e, Abort) and _REJECTED.search(str(e)) else None
             if outcome is True:
                 print(APPLIED, file=sys.stderr)   # then on as if the push had succeeded
                 interrupted = e if isinstance(e, KeyboardInterrupt) else None
@@ -457,7 +476,7 @@ def run(a: argparse.Namespace) -> int:
             # The copy is pushed: a problem from here on leaves the new key in use in the new repo.
             applied = f"\n{APPLIED}" if r.key_shown else ""
             try:
-                moved = r.out("ls-remote", "origin", f"refs/heads/{branch}").split("\t")[0] != head
+                moved = _ref(r, "origin", branch, here=True) != head
             except Abort as e:
                 raise Abort(f"{e}{applied}") from None
             except KeyboardInterrupt:
