@@ -759,6 +759,22 @@ describe("key page actions", () => {
     expect(await (await ring()).getRecord(REPO)).toMatchObject({ enabled: true });
   });
 
+  it("confirm decryption refuses while a memory file couldn't be read (it may still be encrypted)", async () => {
+    const text = generateKeyText();
+    const key = await parseKeyText(text);
+    const repoId = newRepoId();
+    await (await ring()).putRecord(REPO, { repoId, keyId: key.id, enabled: true, confirmed: true });
+    const repo = fake(REPO, { marker: serializeMarker(await signMarker(key, { enabled: false, repoId, keyId: key.id })) });
+    repo.tree.push({ path: "memories/b.md", type: "blob", sha: oid(9), mode: "100644" }); // no text: the blob can't be read
+    github({ admin: true }, [repo]);
+    await signIn();
+    const res = await act("/keys/confirm-decryption", { repo: REPO, key: text });
+    const body = await res.text();
+    expect(res.status, body).toBe(409);
+    expect(body).toContain("memories/b.md");
+    expect(await (await ring()).getRecord(REPO)).toMatchObject({ enabled: true });
+  });
+
   it("confirm decryption: admin only", async () => {
     const text = generateKeyText();
     const key = await parseKeyText(text);

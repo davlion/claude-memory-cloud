@@ -310,9 +310,15 @@ const confirmDecryption: KeyAction = async (_req, env, ring, s, form) => {
   // memcrypt decrypt leaves no sealed memory; an old off marker put back from history does (and can't remove them without the key).
   let files;
   try { files = (await p.store.readTree(p.repo)).files; } catch (e) { return fail(title, e); }
-  const sealed = files.filter((f) => parseMemoryPath(splitSet(f.path).rel) !== null && f.text !== null && isEncryptedFile(f.text)).length;
+  const memory = files.filter((f) => parseMemoryPath(splitSet(f.path).rel) !== null);
+  const sealed = memory.filter((f) => f.text !== null && isEncryptedFile(f.text)).length;
   if (sealed) {
     return message(title, `${p.repo} still has ${sealed} encrypted memory ${sealed === 1 ? "file" : "files"}, so it wasn't decrypted (an old marker put back from history?). Nothing was changed. Run memcrypt decrypt first, or use Stop to keep the encrypted memories and save new ones unencrypted.`, 409);
+  }
+  // As for Forget: a file that couldn't be read may still be encrypted.
+  const unreadable = memory.filter((f) => f.text === null).map((f) => f.path);
+  if (unreadable.length) {
+    return message(title, `${unreadable.length} memory ${unreadable.length === 1 ? "file" : "files"} in ${p.repo} couldn't be read (${unreadable.join(", ")}), so the decryption can't be checked. Nothing was changed. Try again in a moment.`, 409);
   }
   await ring.putRecord(p.repo, { repoId: m.repoId, keyId: m.keyId, enabled: false, confirmed: true });
   const { expiresAt } = await ring.put(p.repo, k.text, s.login, Date.now());

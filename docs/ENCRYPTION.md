@@ -222,6 +222,8 @@ Decrypts with the old key and encrypts with a new one in memory, with no plainte
 
 Then an admin of the repo registers the new key on the key page (a changed key needs admin, so a co-writer can't switch the memory tool to a key only they hold). The old key is refused from now on. Until you register it, health shows `⚠ encryption:<scope> — encrypted, the key was changed (memcrypt rotate?)`.
 
+**Rotating to cut someone off?** Remove their write access to the repo first. Anyone who still has write access and the old key can put back a marker signed with the old key and register it, before the admin registers the new one or within the minute it takes that change to reach every Cloudflare location.
+
 ---
 
 ## If the encryption marker is missing or changed
