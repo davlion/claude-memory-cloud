@@ -14,6 +14,8 @@ import { clearSnapshots, GitHubStore, splitSet } from "./store";
 import { checkFreshTarget, switchOnFresh, switchOnInPlace, trailers, type Progress } from "./switch-on";
 
 const PENDING_TTL = 900;
+/** Keys and records live in KV, which reaches every Cloudflare location only after a while (several minutes seen in staging). */
+const FEW = "within a few minutes (the change takes that long to reach every Cloudflare location)";
 const NOT_ON = "Encryption wasn't turned on";
 
 export const sidHash = async (sid: string) =>
@@ -284,7 +286,7 @@ const register: KeyAction = async (_req, env, ring, s, form) => {
       ? `Key registered. Encryption stays on for ${p.repo}: its marker says it was decrypted (memcrypt decrypt?). To turn encryption off, use Confirm decryption on the key page.`
       : `Key registered. Encryption stays on for ${p.repo}; an admin can turn it off with Stop.`, 200);
   }
-  return message("Key registered", `${registered(p.repo, expiresAt)} The memory tool can read and save its memories.`, 200);
+  return message("Key registered", `${registered(p.repo, expiresAt)} The memory tool can read and save its memories ${FEW}.`, 200);
 };
 
 const registered = (repo: string, expiresAt: number | null) =>
@@ -322,7 +324,7 @@ const confirmDecryption: KeyAction = async (_req, env, ring, s, form) => {
   }
   await ring.putRecord(p.repo, { repoId: m.repoId, keyId: m.keyId, enabled: false, confirmed: true });
   const { expiresAt } = await ring.put(p.repo, k.text, s.login, Date.now());
-  return message("Encryption is off", `Encryption is off for ${p.repo}: new memories are saved unencrypted. ${registered(p.repo, expiresAt)}`, 200);
+  return message("Encryption is off", `Encryption is off for ${p.repo}: new memories are saved unencrypted. ${registered(p.repo, expiresAt)} The memory tool starts saving them unencrypted ${FEW}.`, 200);
 };
 
 const remove: KeyAction = async (_req, env, ring, s, form) => {
@@ -332,7 +334,7 @@ const remove: KeyAction = async (_req, env, ring, s, form) => {
   const k = await withKey(form, p.st, p.repo, title);
   if (k instanceof Response) return k;
   await ring.remove(p.repo);
-  return message("Key removed", `The key for ${p.repo} is removed. The memory tool can't read or save its memories until it is registered again.`, 200);
+  return message("Key removed", `The key for ${p.repo} is removed. The memory tool can't read or save its memories ${FEW}, and stays that way until the key is registered again.`, 200);
 };
 
 const stop: KeyAction = async (_req, env, ring, s, form) => {
@@ -360,7 +362,7 @@ const stop: KeyAction = async (_req, env, ring, s, form) => {
   } catch {
     return message("Encryption stopped, but didn't finish", `The marker of ${p.repo} now says encryption is off, but this memory tool couldn't record it, so saves stay encrypted: register the key on this page.`, 500);
   }
-  return message("Encryption stopped", `New memories in ${p.repo} are saved unencrypted from now on. Existing memories stay encrypted; to decrypt them, run memcrypt decrypt (docs/ENCRYPTION.md).`, 200);
+  return message("Encryption stopped", `New memories in ${p.repo} are saved unencrypted from now on. Existing memories stay encrypted; to decrypt them, run memcrypt decrypt (docs/ENCRYPTION.md). The memory tool starts saving them unencrypted ${FEW}.`, 200);
 };
 
 /** Abandons a fresh-repo move: the record from before the switch comes back and saves to the old repo go through again. */
@@ -403,7 +405,7 @@ const forget: KeyAction = async (_req, env, ring, s, form) => {
   await ring.remove(t.repo);
   await ring.clearMove(t.repo);
   try { await clearSnapshots(env.CACHE_KV, t.repo); } catch { /* they expire by TTL */ }
-  return message("Encryption forgotten", `${t.repo} isn't treated as encrypted any more.`, 200);
+  return message("Encryption forgotten", `${t.repo} isn't treated as encrypted any more. The memory tool stops treating it as encrypted ${FEW}.`, 200);
 };
 
 /** POST /keys/<name> handlers; key-page.ts runs them only after the Origin, session and csrf checks. */

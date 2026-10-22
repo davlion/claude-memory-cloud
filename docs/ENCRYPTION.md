@@ -57,7 +57,7 @@ The encrypted memories go into a new, empty private repo as its first commit. Yo
 
 **Saves wait until you finish.** From the moment the copy is written until the rename, saves to that repo answer "Encryption is being turned on for this memory repo"; in Claude Code they're queued in the outbox and replayed later. Health shows `encrypted copy written to <new repo>; finish the move` until then. If the key expired before you renamed, register it once on the key page; that also ends the move.
 
-**Wait a minute before deleting the old repo.** The switch takes up to a minute to reach every Cloudflare location, so a save made elsewhere in that minute can still land in the old repo after its copy was written. Reload the key page after a minute, and delete the old repo only when it says "The encrypted copy is current." If it says instead that `<owner>/<repo>` changed after the copy was written (health: `encrypted copy written to <new repo>, but <owner>/<repo> changed after the copy`), don't delete it: cancel the move, delete and recreate the new repo as an empty private repo, and start again.
+**Wait a few minutes before deleting the old repo.** Cloudflare documents up to 60 seconds or more for a change to reach every location, and in staging it took several minutes, so a save made elsewhere in that time can still land in the old repo after its copy was written. Reload the key page after a few minutes, and delete the old repo only when it says "The encrypted copy is current." If it says instead that `<owner>/<repo>` changed after the copy was written (health: `encrypted copy written to <new repo>, but <owner>/<repo> changed after the copy`), don't delete it: cancel the move, delete and recreate the new repo as an empty private repo, and start again.
 
 **Cancelling.** Until you rename, an admin can click **Cancel the move** on the key page. Saves to the old repo then go through again as before the switch, and you can delete the new repo.
 
@@ -98,7 +98,7 @@ Turning on registers the key with the memory tool. You register it yourself in t
 
 To register: on the key page, paste the key next to the repo and click **Register key**. The first registration of a repo's key must be an admin's: an admin's key page actions (turning on, registering, Stop, Confirm decryption) confirm the key, and a repo the memory tool only learned about from its contents (after `memcrypt encrypt`, or a marker someone else put in the repo) has no confirmed key yet. Anyone else gets "Only an admin of `<owner>/<repo>` can register this key: the memory tool hasn't seen an admin confirm this repo's encryption key.", and the key page tells an admin in that state that registering confirms the key. After that, write access plus the key is enough to register the confirmed key again (when it expires, for example). A key that differs from the confirmed one (after `memcrypt rotate`, or a marker someone else put in the repo) needs an admin again: anyone else gets "Only an admin of `<owner>/<repo>` can register a new key for it (the key was changed, e.g. with memcrypt rotate)." One exception: a write user registering the confirmed key while the repo's signed marker says on also turns encryption back on if it was stopped. Registering never turns encryption off.
 
-To remove: paste the key and click **Remove key**. The memory tool loses access within about a minute (the removal takes that long to reach every Cloudflare location): then it can't read or save that repo's memories until the key is registered again.
+To remove: paste the key and click **Remove key**. The memory tool loses access within a few minutes (Cloudflare documents up to 60 seconds or more for a change to reach every location; in staging it took several minutes): then it can't read or save that repo's memories until the key is registered again.
 
 **How long a key stays registered** is set by the memory server's operator: by default until it's removed; with `REPO_KEY_TTL_SECONDS` set, for that long, at least 60 seconds (`86400` means you paste it once a day). The key page shows who registered the key and when it expires.
 
@@ -222,7 +222,7 @@ Decrypts with the old key and encrypts with a new one in memory, with no plainte
 
 Then an admin of the repo registers the new key on the key page (a changed key needs admin, so a co-writer can't switch the memory tool to a key only they hold). The old key is refused from now on. Until you register it, health shows `⚠ encryption:<scope> — encrypted, the key was changed (memcrypt rotate?)`.
 
-**Rotating to cut someone off?** Remove their write access to the repo first. Anyone who still has write access and the old key can put back a marker signed with the old key and register it, before the admin registers the new one or within the minute it takes that change to reach every Cloudflare location.
+**Rotating to cut someone off?** Remove their write access to the repo first. Anyone who still has write access and the old key can put back a marker signed with the old key and register it, before the admin registers the new one or within the few minutes it takes that change to reach every Cloudflare location.
 
 ---
 

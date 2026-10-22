@@ -144,6 +144,8 @@ beforeEach(async () => {
   for (const p of Object.values(KV)) await env.OAUTH_KV.delete(p + REPO);
 });
 
+const FEW = "within a few minutes (the change takes that long to reach every Cloudflare location)";
+
 describe("key page", () => {
   it("without MEMORY_MASTER_KEY every route says encryption isn't turned on", async () => {
     const off = { ...env, MEMORY_MASTER_KEY: undefined };
@@ -473,7 +475,7 @@ describe("key page actions", () => {
     const { text } = await expectStreamed(conf);
     expectInOrder(text, [`<h1>Turning on encryption for ${REPO}</h1>`, "<ol>", `<li>Read ${REPO}: 1 memory</li>`, "<li>Encrypted 1 memory</li>",
       "<li>Wrote the new history (one commit)</li>", "<li>Stored the key</li>", "</ol>", `<h2>Encryption is on for ${REPO}</h2>`,
-      `https://github.com/${REPO}/commit/c-new`, '<a href="/keys">Back to the key page</a>']);
+      `https://github.com/${REPO}/commit/c-new`, `The memory tool starts using the key ${FEW}.`, '<a href="/keys">Back to the key page</a>']);
     for (const [, v] of conf.headers) expect(v).not.toContain(key);
     expect(text).toContain(`https://github.com/${REPO}/commit/c-new`);
     expect(text).toContain("https://support.github.com/request");
@@ -665,11 +667,14 @@ describe("key page actions", () => {
     expect(notAKey.status).toBe(400);
     const ok = await act("/keys/register", { repo: REPO, key: text });
     expect(ok.status, await ok.clone().text()).toBe(200);
+    expect(await ok.text()).toContain(`The memory tool can read and save its memories ${FEW}.`);
     expect((await (await ring()).get(REPO))!.key.id).toBe(key.id);
     const badRemove = await act("/keys/remove", { repo: REPO, key: generateKeyText() });
     expect(badRemove.status).toBe(400);
     expect(await (await ring()).get(REPO)).not.toBeNull();
-    expect((await act("/keys/remove", { repo: REPO, key: text })).status).toBe(200);
+    const removed = await act("/keys/remove", { repo: REPO, key: text });
+    expect(removed.status).toBe(200);
+    expect(await removed.text()).toContain(`can&#39;t read or save its memories ${FEW}, and stays that way until the key is registered again.`);
     expect(await (await ring()).get(REPO)).toBeNull();
   });
 
@@ -714,7 +719,9 @@ describe("key page actions", () => {
     expect(page).toMatch(/action="\/keys\/confirm-decryption"[\s\S]*Confirm decryption \(turn encryption off\)/);
     const done = await act("/keys/confirm-decryption", { repo: REPO, key: text });
     expect(done.status).toBe(200);
-    expect(await done.text()).toContain(`Encryption is off for ${REPO}: new memories are saved unencrypted.`);
+    const doneText = await done.text();
+    expect(doneText).toContain(`Encryption is off for ${REPO}: new memories are saved unencrypted.`);
+    expect(doneText).toContain(`starts saving them unencrypted ${FEW}.`);
     expect(await (await ring()).getRecord(REPO)).toEqual({ repoId, keyId: key.id, enabled: false, confirmed: true });
     const inner = new FakeStore();
     inner.put(REPO, MARKER_PATH, serializeMarker(off));
@@ -962,6 +969,7 @@ describe("key page actions", () => {
     const body = await res.text();
     expect(res.status, body).toBe(200);
     expect(body).toContain("memcrypt decrypt");
+    expect(body).toContain(`starts saving them unencrypted ${FEW}.`);
     const tree = (await bodyOf(sent, "POST", "/git/trees")) as { base_tree: string; tree: { path: string; content: string }[] };
     expect(tree.base_tree).toBe(`t-${head}`);
     expect(tree.tree).toHaveLength(1);
@@ -1022,7 +1030,7 @@ describe("key page actions", () => {
     const res = await act("/keys/forget", { repo: REPO });
     const text = await res.text();
     expect(res.status, text).toBe(200);
-    expect(text).toContain(`${REPO} isn&#39;t treated as encrypted any more.`);
+    expect(text).toContain(`${REPO} isn&#39;t treated as encrypted any more. The memory tool stops treating it as encrypted ${FEW}.`);
     expect(await r.getRecord(REPO)).toBeNull();
     expect(await (await ring()).get(REPO)).toBeNull();
     expect(await r.getMove(REPO)).toBeNull();
@@ -1151,7 +1159,7 @@ describe("key page actions", () => {
     expect(html).toMatch(/action="\/keys\/cancel-move"[\s\S]*Cancel the move/);
     expect(html).not.toContain("/keys/stop");
     expect(html).toContain("The encrypted copy is current.");
-    expect(html).toMatch(/Wait a minute, then reload this page/);
+    expect(html).toMatch(/Wait a few minutes, then reload this page/);
     expect(html).not.toMatch(/changed after the copy/);
     const stale = repoSection({ repo: REPO, key: null, admin: true, status: { ...status, moveStale: true } }, "c", false);
     expect(stale).toContain(`${esc(REPO)} changed after the copy was written. Don&#39;t delete it: cancel the move and start it again.`);
