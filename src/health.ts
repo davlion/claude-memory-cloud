@@ -253,7 +253,9 @@ export function encryptionChecks(t: Target, repo: string, s: EncryptionStatus, k
       action: `Register the key on the key page to check it: ${page}. If nobody decrypted this repo, review recent commits: https://github.com/${repo}/commits. Saves stay encrypted.` });
   } else if (s.markerProblem) {
     out.push({ check, status: "fail", detail: "encrypted, but the encryption marker is missing or not signed",
-      action: `Someone may have tried to turn encryption off. Saves stay encrypted. Review recent commits: https://github.com/${repo}/commits` });
+      action: s.enabled
+        ? `Someone may have tried to turn encryption off. Saves stay encrypted. Review recent commits: https://github.com/${repo}/commits`
+        : `Someone may have tried to tamper with the encryption marker. New saves are NOT encrypted (encryption is off for this repo). Review recent commits: https://github.com/${repo}/commits` });
   } else if (s.rotated) {
     // One line covers the key too: the registered key (if any) is the old one.
     out.push({ check, status: "warn", detail: "encrypted, the key was changed (memcrypt rotate?)", action: `Register the repo's new key: ${page}. Saves are queued until then.` });

@@ -247,6 +247,11 @@ describe("encryptionChecks", () => {
       detail: "encrypted, but the encryption marker is missing or not signed",
       action: "Someone may have tried to turn encryption off. Saves stay encrypted. Review recent commits: https://github.com/dav/mem/commits" }]);
   });
+  it("marker problem with encryption off: says new saves are NOT encrypted", () => {
+    expect(run({ markerProblem: true, enabled: false })[0]).toEqual({ check: "encryption:general", status: "fail",
+      detail: "encrypted, but the encryption marker is missing or not signed",
+      action: "Someone may have tried to tamper with the encryption marker. New saves are NOT encrypted (encryption is off for this repo). Review recent commits: https://github.com/dav/mem/commits" });
+  });
   it("unsupported key ring: fail", () => {
     expect(run({ key: "unsupported" })).toEqual([{ check: "encryption:general", status: "fail",
       detail: "encrypted repo, but this memory server doesn't support encryption", action: "Ask the memory server's operator to turn on encryption." }]);
