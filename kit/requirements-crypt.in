@@ -1,7 +1,8 @@
 # Regenerate (with Python 3.10, not newer): python3 -m piptools compile --generate-hashes --output-file kit/requirements-crypt.txt kit/requirements-crypt.in
 cryptography==50.0.2
-# Transitive pins: the newest cffi and pycparser still installable on Python 3.9 (later ones need 3.10).
-cffi==2.0.0
+# Transitive pins. cffi 2.0.0 is the last for Python 3.9 and has no wheels for 3.15; 2.1.x needs 3.10 or later.
+cffi==2.0.0; python_version < "3.10"
+cffi==2.1.1; python_version >= "3.10"
 pycparser==2.23
 # cryptography needs typing-extensions on Python < 3.11 only; compile under Python 3.10 so the marker is kept.
 typing-extensions==4.16.0; python_version < "3.11"

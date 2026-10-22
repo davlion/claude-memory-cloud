@@ -35,7 +35,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, python: "3.9" }   # the oldest Python the kit supports
+          - { os: ubuntu-24.04, python: "3.9" }    # the oldest Python the kit supports; ubuntu-latest (26.04) has no 3.9
           - { os: ubuntu-latest, python: "3.x" }
           - { os: macos-latest, python: "3.x" }
     steps:
@@ -50,11 +50,13 @@ jobs:
 
   crypt:
     name: Kit encryption (Python ${{ matrix.python }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.9", "3.x"]   # 3.9 is the oldest Python the kit supports
+        include:
+          - { os: ubuntu-24.04, python: "3.9" }    # the oldest Python the kit supports; ubuntu-latest (26.04) has no 3.9
+          - { os: ubuntu-latest, python: "3.x" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
