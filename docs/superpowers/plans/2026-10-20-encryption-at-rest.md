@@ -577,3 +577,23 @@ Follow-ups found in the run:
 - **F6 (bug)** after `memcrypt decrypt` with the key still registered, the key page offers only **Remove key**, so the documented "register the key" step is impossible; offer admins "Confirm decryption (turn encryption off)".
 - **W1** the key page shows no progress while switch-on runs; show an "Encrypting…" state with progress.
 - **W2** the Worker's `/` is a bare 404, so the Cloudflare dashboard's Visit link dead-ends; serve a landing page linking to `/keys`.
+
+### Staging re-check (after the staging and security fixes)
+
+Run 2026-10-22 on `claude-memory-staging` with the branch at `17ff687`.
+
+| Check | Result |
+|---|---|
+| Landing page `/` (W2) | ✓ text, key-page link, CSP with `base-uri 'none'`; unknown paths 404 |
+| Turn back on, in place, with progress (W1) | ✓ switched on; progress lines arrived but too fast on a 15-file repo to tell streamed from buffered — not distinguishable at this size |
+| `memcrypt decrypt` prompts and Done line (F2) | ✓ |
+| Health after decrypt (F5) | ✓ `✗ … decrypted outside the memory tool (the signed marker says off)` and `⚠ … N memories unencrypted → … see the line above` |
+| Confirm decryption (F6, C-I1) | ✓ admin action, "Encryption is off …", plaintext save after |
+| Planted fake encrypted file in a repo never seen (C-I3) | ✓ locks the repo (`key_required`); after removing the file, admin **Forget encryption** unlocks it; plaintext save after |
+| `memcrypt rotate --commit` (F2, F4) | ✓ numbered prompts, Done line; health shows the single "key was changed" line; read error names a different key; admin registers the new key |
+| Non-admin checks (W-I-1, D-I1) | not run: no second GitHub account. Relies on GitHub's documented `permissions.admin`; missing data fails closed |
+
+Found in the re-check:
+- **F7** with the record off, a planted encrypted file and no marker, the ✗ marker line still says "Saves stay encrypted" while saves go plaintext.
+- **F8** (likely pre-existing) a repo whose last file was deleted reads as `not_reachable: Not Found` with the app-installation hint (GitHub 404s the empty tree).
+- **F9** after registering a key, the memory tool kept the old key for several minutes (KV propagation between the browser's and Anthropic's Cloudflare locations); the page and docs promise immediate / about a minute.
